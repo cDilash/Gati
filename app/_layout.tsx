@@ -1,57 +1,84 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import { useFonts } from 'expo-font';
-import { Stack } from 'expo-router';
-import * as SplashScreen from 'expo-splash-screen';
-import { useEffect } from 'react';
-import 'react-native-reanimated';
-
-import { useColorScheme } from '@/components/useColorScheme';
-
-export {
-  // Catch any errors thrown by the Layout component.
-  ErrorBoundary,
-} from 'expo-router';
-
-export const unstable_settings = {
-  // Ensure that reloading on `/modal` keeps a back button present.
-  initialRouteName: '(tabs)',
-};
-
-// Prevent the splash screen from auto-hiding before asset loading is complete.
-SplashScreen.preventAutoHideAsync();
+import { useEffect, useState } from 'react';
+import { Stack, useRouter, useSegments } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
+import { View, ActivityIndicator, StyleSheet } from 'react-native';
+import { initializeDatabase } from '../src/db/client';
+import { useAppStore } from '../src/store';
+import { COLORS } from '../src/utils/constants';
 
 export default function RootLayout() {
-  const [loaded, error] = useFonts({
-    SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
-  });
-
-  // Expo Router uses Error Boundaries to catch errors in the navigation tree.
-  useEffect(() => {
-    if (error) throw error;
-  }, [error]);
+  const [dbReady, setDbReady] = useState(false);
+  const router = useRouter();
+  const segments = useSegments();
+  const { initializeApp, isInitialized, userProfile, isLoading } = useAppStore();
 
   useEffect(() => {
-    if (loaded) {
-      SplashScreen.hideAsync();
+    try {
+      initializeDatabase();
+      setDbReady(true);
+    } catch (error) {
+      console.error('DB init error:', error);
     }
-  }, [loaded]);
+  }, []);
 
-  if (!loaded) {
-    return null;
+  useEffect(() => {
+    if (dbReady && !isInitialized) {
+      initializeApp();
+    }
+  }, [dbReady, isInitialized]);
+
+  useEffect(() => {
+    if (isInitialized) {
+      // Fire-and-forget: sync health data in background
+      useAppStore.getState().syncHealthData();
+    }
+  }, [isInitialized]);
+
+  useEffect(() => {
+    if (!isInitialized || isLoading) return;
+
+    const inSetup = segments[0] === 'setup';
+
+    if (!userProfile && !inSetup) {
+      router.replace('/setup');
+    } else if (userProfile && inSetup) {
+      router.replace('/(tabs)');
+    }
+  }, [isInitialized, isLoading, userProfile, segments]);
+
+  if (!dbReady || !isInitialized || isLoading) {
+    return (
+      <View style={styles.loading}>
+        <ActivityIndicator size="large" color={COLORS.accent} />
+        <StatusBar style="light" />
+      </View>
+    );
   }
 
-  return <RootLayoutNav />;
-}
-
-function RootLayoutNav() {
-  const colorScheme = useColorScheme();
-
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack>
+    <>
+      <StatusBar style="light" />
+      <Stack
+        screenOptions={{
+          headerStyle: { backgroundColor: COLORS.background },
+          headerTintColor: COLORS.text,
+          headerTitleStyle: { fontWeight: '600' },
+          contentStyle: { backgroundColor: COLORS.background },
+        }}
+      >
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="setup" options={{ headerShown: false, presentation: 'fullScreenModal' }} />
+        <Stack.Screen name="workout/[id]" options={{ title: 'Workout Details', presentation: 'modal' }} />
       </Stack>
-    </ThemeProvider>
+    </>
   );
 }
+
+const styles = StyleSheet.create({
+  loading: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: COLORS.background,
+  },
+});
