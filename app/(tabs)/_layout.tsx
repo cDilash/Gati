@@ -1,69 +1,58 @@
-import React from 'react';
-import { SymbolView } from 'expo-symbols';
-import { Link, Tabs } from 'expo-router';
-import { Platform, Pressable } from 'react-native';
-
-import Colors from '@/constants/Colors';
-import { useColorScheme } from '@/components/useColorScheme';
-import { useClientOnlyValue } from '@/components/useClientOnlyValue';
+import { Tabs } from 'expo-router';
+import { CalendarBlank, ChatCircle, Gauge, GearSix, House } from 'phosphor-react-native';
+import { COLORS } from '../../src/utils/constants';
 
 export default function TabLayout() {
-  const colorScheme = useColorScheme();
-
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme].tint,
-        // Disable the static render of the header on web
-        // to prevent a hydration error in React Navigation v6.
-        headerShown: useClientOnlyValue(false, true),
-      }}>
+        tabBarActiveTintColor: COLORS.accent,
+        tabBarInactiveTintColor: COLORS.textTertiary,
+        tabBarStyle: {
+          backgroundColor: COLORS.background,
+          borderTopColor: COLORS.border,
+          borderTopWidth: 0.5,
+        },
+        headerStyle: {
+          backgroundColor: COLORS.background,
+        },
+        headerTintColor: COLORS.text,
+        headerTitleStyle: { fontWeight: '700' },
+      }}
+    >
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Tab One',
-          tabBarIcon: ({ color }) => (
-            <SymbolView
-              name={{
-                ios: 'chevron.left.forwardslash.chevron.right',
-                android: 'code',
-                web: 'code',
-              }}
-              tintColor={color}
-              size={28}
-            />
-          ),
-          headerRight: () => (
-            <Link href="/modal" asChild>
-              <Pressable style={{ marginRight: 15 }}>
-                {({ pressed }) => (
-                  <SymbolView
-                    name={{ ios: 'info.circle', android: 'info', web: 'info' }}
-                    size={25}
-                    tintColor={Colors[colorScheme].text}
-                    style={{ opacity: pressed ? 0.5 : 1 }}
-                  />
-                )}
-              </Pressable>
-            </Link>
-          ),
+          title: 'Today',
+          tabBarIcon: ({ color, size }) => <House size={size} color={color} weight="fill" />,
         }}
       />
       <Tabs.Screen
-        name="two"
+        name="calendar"
         options={{
-          title: 'Tab Two',
-          tabBarIcon: ({ color }) => (
-            <SymbolView
-              name={{
-                ios: 'chevron.left.forwardslash.chevron.right',
-                android: 'code',
-                web: 'code',
-              }}
-              tintColor={color}
-              size={28}
-            />
-          ),
+          title: 'Plan',
+          tabBarIcon: ({ color, size }) => <CalendarBlank size={size} color={color} weight="fill" />,
+        }}
+      />
+      <Tabs.Screen
+        name="coach"
+        options={{
+          title: 'Coach',
+          tabBarIcon: ({ color, size }) => <ChatCircle size={size} color={color} weight="fill" />,
+        }}
+      />
+      <Tabs.Screen
+        name="zones"
+        options={{
+          title: 'Zones',
+          tabBarIcon: ({ color, size }) => <Gauge size={size} color={color} weight="fill" />,
+        }}
+      />
+      <Tabs.Screen
+        name="settings"
+        options={{
+          title: 'Settings',
+          tabBarIcon: ({ color, size }) => <GearSix size={size} color={color} weight="fill" />,
         }}
       />
     </Tabs>
