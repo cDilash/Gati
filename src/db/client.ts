@@ -1,6 +1,6 @@
 import * as SQLite from 'expo-sqlite';
 import * as Crypto from 'expo-crypto';
-import { ALL_TABLES, MIGRATE_WORKOUT_ADAPTIVE, CREATE_HEALTH_SNAPSHOT_INDEX } from './schema';
+import { ALL_TABLES, MIGRATE_WORKOUT_ADAPTIVE } from './schema';
 import { UserProfile, TrainingPlan, TrainingWeek, Workout, PerformanceMetric, CoachMessage, GeneratedPlan, AdaptiveLog, HealthSnapshot } from '../types';
 
 const DB_NAME = 'marathon_coach.db';
@@ -35,12 +35,6 @@ export function initializeDatabase(): void {
     }
   }
 
-  // Create health snapshot index
-  try {
-    database.execSync(CREATE_HEALTH_SNAPSHOT_INDEX);
-  } catch {
-    // Index already exists
-  }
 }
 
 // User Profile CRUD

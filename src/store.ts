@@ -484,7 +484,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     // Check cache first
     if (isHealthSnapshotFresh(todayStr)) {
       const cached = getHealthSnapshot(todayStr);
-      if (cached && cached.signal_count >= 2 && cached.recovery_score != null) {
+      if (cached) {
         const recentMetrics = getMetricsForDateRange(
           new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0],
           todayStr
