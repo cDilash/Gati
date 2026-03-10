@@ -29,8 +29,10 @@ export default function RootLayout() {
 
   useEffect(() => {
     if (isInitialized) {
-      // Fire-and-forget: sync health data in background
-      useAppStore.getState().syncHealthData();
+      // Fire-and-forget: sync health data + workout data in background
+      const store = useAppStore.getState();
+      store.syncHealthData();
+      store.syncWorkoutFromHealthKit();
     }
   }, [isInitialized]);
 

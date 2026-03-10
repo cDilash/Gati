@@ -18,6 +18,8 @@ export default function TodayScreen() {
 
   useEffect(() => {
     refreshTodaysWorkout();
+    // Sync HealthKit workout data whenever Today tab is focused
+    useAppStore.getState().syncWorkoutFromHealthKit();
   }, []);
 
   const today = getToday();

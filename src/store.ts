@@ -14,6 +14,7 @@ import {
   saveAdaptiveLog, getRecentAdaptiveLogs, getUnacknowledgedAdaptiveLogs,
   acknowledgeAdaptiveLog as dbAcknowledgeLog, getMetricsForDateRange,
   getCompletedWorkoutsForDateRange, getFutureWorkouts,
+  savePerformanceMetric, getMetricsForWorkout,
 } from './db/client';
 import { calculatePaceZones, calculateHRZones } from './engine/paceZones';
 import { generatePlan } from './engine/planGenerator';
@@ -79,6 +80,7 @@ interface AppState {
   acknowledgeAdaptiveLog: (logId: string) => void;
   getAdaptiveSummary: () => string;
   syncHealthData: () => Promise<void>;
+  syncWorkoutFromHealthKit: () => Promise<void>;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -554,6 +556,55 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ recoveryStatus });
     } catch (e) {
       console.warn('Health sync failed (expected in Expo Go):', e);
+    }
+  },
+
+  syncWorkoutFromHealthKit: async () => {
+    const { todaysWorkout, activePlan } = get();
+    if (!activePlan) return;
+
+    try {
+      const { isHealthKitAvailable, initHealthKit, getWorkoutsForDate, matchHealthKitToMetric } = require('./health/healthkit');
+      if (!isHealthKitAvailable()) return;
+
+      const initialized = await initHealthKit();
+      if (!initialized) return;
+
+      const today = new Date();
+      const todayStr = today.toISOString().split('T')[0];
+      const hkWorkouts = await getWorkoutsForDate(today);
+
+      if (!hkWorkouts || hkWorkouts.length === 0) return;
+
+      // Find the scheduled workout for today (if any and still scheduled)
+      const scheduledWorkout = todaysWorkout && todaysWorkout.status === 'scheduled' ? todaysWorkout : null;
+
+      // Check if we already have metrics for today's workout to avoid duplicates
+      if (scheduledWorkout) {
+        const existingMetrics = getMetricsForWorkout(scheduledWorkout.id);
+        if (existingMetrics.length > 0) return; // Already synced
+      }
+
+      // Use the longest run if multiple (e.g., warmup jog + main run logged separately)
+      const bestRun = hkWorkouts.reduce((best: any, curr: any) =>
+        curr.distance > (best?.distance || 0) ? curr : best
+      , null);
+
+      if (!bestRun || bestRun.distance < 0.5) return; // Ignore very short activities
+
+      // Save performance metric linked to today's workout
+      const metric = matchHealthKitToMetric(bestRun, scheduledWorkout?.id);
+      savePerformanceMetric(metric);
+
+      // Auto-complete the workout if it's scheduled
+      if (scheduledWorkout) {
+        get().markWorkoutComplete(scheduledWorkout.id);
+      }
+
+      // Refresh to pick up changes
+      get().refreshTodaysWorkout();
+    } catch (e) {
+      console.warn('HealthKit workout sync failed:', e);
     }
   },
 
