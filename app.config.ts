@@ -28,7 +28,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     'expo-sqlite',
   ],
   extra: {
-    geminiApiKey: 'REDACTED',
+    geminiApiKey: process.env.GEMINI_API_KEY || '',
     eas: {
       projectId: 'marathon-coach-local',
     },
