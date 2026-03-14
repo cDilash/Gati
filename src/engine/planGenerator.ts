@@ -8,10 +8,24 @@ import {
   Phase,
   WorkoutType,
   PaceZoneName,
+  UserProfile,
 } from '../types';
 import * as Crypto from 'expo-crypto';
 
 const uuid = () => Crypto.randomUUID();
+
+/** Parse a YYYY-MM-DD string as local midnight (not UTC). */
+function parseLocalDate(dateStr: string): Date {
+  return new Date(dateStr + 'T00:00:00');
+}
+
+/** Format a Date as YYYY-MM-DD in local timezone. */
+export function formatLocalDate(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
 
 /**
  * Generate a full marathon training plan using a 5-step macrocycle algorithm:
@@ -26,8 +40,16 @@ export function generatePlan(config: PlanGeneratorConfig): GeneratedPlan {
   // -----------------------------------------------------------------------
   // Step 1: Initialization
   // -----------------------------------------------------------------------
-  const startDate = new Date(config.startDate);
-  const raceDate = new Date(config.raceDate);
+  // Snap start date to previous Monday so day_of_week labels are correct
+  // (day_of_week 0 = Mon, 1 = Tue, ..., 6 = Sun)
+  // IMPORTANT: Use local-midnight parsing to avoid UTC timezone shift
+  const rawStart = parseLocalDate(config.startDate);
+  const jsDay = rawStart.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
+  const daysToSubtract = jsDay === 0 ? 6 : jsDay - 1; // Mon=0, Tue=1, ..., Sun=6
+  const startDate = new Date(rawStart);
+  startDate.setDate(startDate.getDate() - daysToSubtract);
+
+  const raceDate = parseLocalDate(config.raceDate);
   const totalWeeks = Math.floor(
     (raceDate.getTime() - startDate.getTime()) / (7 * 24 * 60 * 60 * 1000)
   );
@@ -129,8 +151,8 @@ export function generatePlan(config: PlanGeneratorConfig): GeneratedPlan {
       is_cutback: isCutback,
       target_volume_miles: weekVolume,
       actual_volume_miles: 0,
-      start_date: weekStart.toISOString().split('T')[0],
-      end_date: weekEnd.toISOString().split('T')[0],
+      start_date: formatLocalDate(weekStart),
+      end_date: formatLocalDate(weekEnd),
     };
     weeks.push(week);
 
@@ -376,11 +398,13 @@ export function generatePlan(config: PlanGeneratorConfig): GeneratedPlan {
       // Quality volume already subtracted via qualityVolume calculation
     }
 
-    // Fill remaining easy runs
+    // Fill remaining easy runs — always leave at least 1 rest day (cap at availableDays.length - 1)
     const easyDays = config.availableDays.filter((d) => !dayWorkouts.has(d));
-    if (remainingVolume >= 3 && easyDays.length > 0) {
+    const maxMoreRuns = Math.max(config.availableDays.length - 1 - dayWorkouts.size, 0);
+    if (remainingVolume >= 3 && easyDays.length > 0 && maxMoreRuns > 0) {
       const runsNeeded = Math.min(
         easyDays.length,
+        maxMoreRuns,
         Math.floor(remainingVolume / 3)
       );
       const perRun = remainingVolume / Math.max(runsNeeded, 1);
@@ -398,7 +422,7 @@ export function generatePlan(config: PlanGeneratorConfig): GeneratedPlan {
     for (let d = 0; d < 7; d++) {
       const workoutDate = new Date(weekStart);
       workoutDate.setDate(workoutDate.getDate() + d);
-      const dateStr = workoutDate.toISOString().split('T')[0];
+      const dateStr = formatLocalDate(workoutDate);
 
       const scheduled = dayWorkouts.get(d);
       const workout: Workout = {
@@ -453,4 +477,55 @@ export function summarizePlan(
   }
 
   return lines.join('\n');
+}
+
+/**
+ * Generates a new plan anchored to the runner's current fitness,
+ * not their original profile inputs. Used when trajectory has shifted.
+ *
+ * V_start = actual recent mileage (not profile.current_weekly_mileage)
+ * VDOT = current (possibly updated)
+ * startDate = next Monday from today
+ * Race date, available days, long run day = unchanged from profile
+ *
+ * Returns null if < 2 weeks remain before race.
+ */
+export function replanFromCurrentState(
+  profile: UserProfile,
+  currentVDOT: number,
+  actualRecentMileage: number,
+  today: string,
+): GeneratedPlan | null {
+  // Calculate next Monday
+  const todayDate = new Date(today + 'T00:00:00');
+  const dayOfWeek = todayDate.getDay(); // 0=Sun
+  const daysUntilMonday = dayOfWeek === 0 ? 1 : (8 - dayOfWeek);
+  const nextMonday = new Date(todayDate);
+  nextMonday.setDate(nextMonday.getDate() + daysUntilMonday);
+  const startDate = formatLocalDate(nextMonday);
+
+  // Check minimum weeks remaining
+  const raceDate = new Date(profile.race_date + 'T00:00:00');
+  const msRemaining = raceDate.getTime() - nextMonday.getTime();
+  const weeksRemaining = Math.floor(msRemaining / (7 * 24 * 60 * 60 * 1000));
+
+  if (weeksRemaining < 2) {
+    return null; // Too close to race
+  }
+
+  // Parse available_days (stored as JSON string or number[])
+  const availableDays = typeof profile.available_days === 'string'
+    ? JSON.parse(profile.available_days)
+    : profile.available_days;
+
+  return generatePlan({
+    startDate,
+    raceDate: profile.race_date,
+    currentWeeklyMileage: Math.max(actualRecentMileage, 10), // floor at 10mi
+    longestRecentRun: Math.round(actualRecentMileage * 0.3), // estimate from recent volume
+    level: profile.level,
+    vdot: currentVDOT,
+    availableDays,
+    preferredLongRunDay: profile.preferred_long_run_day,
+  });
 }

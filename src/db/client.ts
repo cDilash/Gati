@@ -411,6 +411,83 @@ export function isHealthSnapshotFresh(date: string, maxAgeMs: number = 2 * 60 * 
   return age < maxAgeMs;
 }
 
+// ─── Replan Helpers ──────────────────────────────────────────
+
+/**
+ * Deletes only future scheduled workouts and orphaned weeks.
+ * Preserves completed/skipped workout history.
+ */
+export function deleteScheduledFutureWorkouts(): void {
+  const database = getDatabase();
+  database.withTransactionSync(() => {
+    // NULL out workout_id in performance_metric for scheduled workouts about to be deleted
+    database.execSync(
+      `UPDATE performance_metric SET workout_id = NULL
+       WHERE workout_id IN (
+         SELECT w.id FROM workout w
+         WHERE w.status = 'scheduled'
+       )`
+    );
+    // Delete scheduled workouts
+    database.execSync(`DELETE FROM workout WHERE status = 'scheduled'`);
+    // Delete weeks that no longer have any workouts
+    database.execSync(
+      `DELETE FROM training_week
+       WHERE id NOT IN (SELECT DISTINCT week_id FROM workout WHERE week_id IS NOT NULL)`
+    );
+    // Delete training plan
+    database.execSync('DELETE FROM training_plan');
+    // Clear caches
+    database.execSync('DELETE FROM ai_briefing_cache');
+  });
+}
+
+/**
+ * Returns average weekly mileage over the last N weeks based on actual performance metrics.
+ */
+export function getRecentActualMileage(weeks: number = 2): number {
+  const database = getDatabase();
+  const cutoffDate = new Date();
+  cutoffDate.setDate(cutoffDate.getDate() - weeks * 7);
+  const cutoffStr = cutoffDate.toISOString().split('T')[0];
+
+  const rows = database.getAllSync<{ total: number }>(
+    `SELECT SUM(distance_miles) as total
+     FROM performance_metric
+     WHERE date >= ?
+       AND source IN ('strava', 'healthkit', 'manual')
+     GROUP BY strftime('%Y-%W', date)
+     ORDER BY date DESC`,
+    cutoffStr
+  );
+  if (rows.length === 0) return 0;
+  const total = rows.reduce((s, r) => s + (r.total || 0), 0);
+  return Math.round((total / rows.length) * 10) / 10;
+}
+
+/**
+ * Returns completion rate per week for the last N weeks.
+ */
+export function getWeeklyCompletionHistory(limit: number = 8): { week: number; rate: number }[] {
+  const database = getDatabase();
+  const rows = database.getAllSync<{ week_number: number; total: number; completed: number }>(
+    `SELECT tw.week_number,
+            COUNT(w.id) as total,
+            SUM(CASE WHEN w.status = 'completed' THEN 1 ELSE 0 END) as completed
+     FROM training_week tw
+     JOIN workout w ON w.week_id = tw.id
+     WHERE w.workout_type != 'rest'
+     GROUP BY tw.week_number
+     ORDER BY tw.week_number DESC
+     LIMIT ?`,
+    limit
+  );
+  return rows.map(r => ({
+    week: r.week_number,
+    rate: r.total > 0 ? r.completed / r.total : 0,
+  })).reverse();
+}
+
 export function saveHealthSnapshot(snapshot: HealthSnapshot): void {
   const database = getDatabase();
   database.runSync(
