@@ -417,19 +417,21 @@ export function isHealthSnapshotFresh(date: string, maxAgeMs: number = 2 * 60 * 
  * Deletes only future scheduled workouts and orphaned weeks.
  * Preserves completed/skipped workout history.
  */
-export function deleteScheduledFutureWorkouts(): void {
+export function deleteScheduledFutureWorkouts(afterDate?: string): void {
   const database = getDatabase();
+  const cutoff = afterDate || getToday();
   database.withTransactionSync(() => {
-    // NULL out workout_id in performance_metric for scheduled workouts about to be deleted
-    database.execSync(
+    // NULL out workout_id in performance_metric for future scheduled workouts about to be deleted
+    database.runSync(
       `UPDATE performance_metric SET workout_id = NULL
        WHERE workout_id IN (
          SELECT w.id FROM workout w
-         WHERE w.status = 'scheduled'
-       )`
+         WHERE w.status = 'scheduled' AND w.date > ?
+       )`,
+      cutoff
     );
-    // Delete scheduled workouts
-    database.execSync(`DELETE FROM workout WHERE status = 'scheduled'`);
+    // Delete only future scheduled workouts (preserve current week)
+    database.runSync(`DELETE FROM workout WHERE status = 'scheduled' AND date > ?`, cutoff);
     // Delete weeks that no longer have any workouts
     database.execSync(
       `DELETE FROM training_week
@@ -449,7 +451,7 @@ export function getRecentActualMileage(weeks: number = 2): number {
   const database = getDatabase();
   const cutoffDate = new Date();
   cutoffDate.setDate(cutoffDate.getDate() - weeks * 7);
-  const cutoffStr = cutoffDate.toISOString().split('T')[0];
+  const cutoffStr = `${cutoffDate.getFullYear()}-${String(cutoffDate.getMonth() + 1).padStart(2, '0')}-${String(cutoffDate.getDate()).padStart(2, '0')}`;
 
   const rows = database.getAllSync<{ total: number }>(
     `SELECT SUM(distance_miles) as total

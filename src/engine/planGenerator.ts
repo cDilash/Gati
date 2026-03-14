@@ -499,7 +499,8 @@ export function replanFromCurrentState(
   // Calculate next Monday
   const todayDate = new Date(today + 'T00:00:00');
   const dayOfWeek = todayDate.getDay(); // 0=Sun
-  const daysUntilMonday = dayOfWeek === 0 ? 1 : (8 - dayOfWeek);
+  // Always start next Monday (even if today is Monday — keep current week intact)
+  const daysUntilMonday = dayOfWeek === 0 ? 1 : dayOfWeek === 1 ? 7 : (8 - dayOfWeek);
   const nextMonday = new Date(todayDate);
   nextMonday.setDate(nextMonday.getDate() + daysUntilMonday);
   const startDate = formatLocalDate(nextMonday);
@@ -510,7 +511,26 @@ export function replanFromCurrentState(
   const weeksRemaining = Math.floor(msRemaining / (7 * 24 * 60 * 60 * 1000));
 
   if (weeksRemaining < 2) {
-    return null; // Too close to race
+    return null; // Too close to race — refuse replan
+  }
+
+  // < 4 weeks: generate taper-only plan (no base/build/peak phases)
+  if (weeksRemaining < 4) {
+    const availableDaysParsed = typeof profile.available_days === 'string'
+      ? JSON.parse(profile.available_days)
+      : profile.available_days;
+    // Use reduced mileage with forced taper multipliers
+    const taperMileage = Math.max(actualRecentMileage * 0.75, 10);
+    return generatePlan({
+      startDate,
+      raceDate: profile.race_date,
+      currentWeeklyMileage: taperMileage,
+      longestRecentRun: Math.min(Math.round(taperMileage * 0.3), 16),
+      level: profile.level,
+      vdot: currentVDOT,
+      availableDays: availableDaysParsed,
+      preferredLongRunDay: profile.preferred_long_run_day,
+    });
   }
 
   // Parse available_days (stored as JSON string or number[])

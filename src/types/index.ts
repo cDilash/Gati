@@ -308,7 +308,7 @@ export interface AdaptiveEventContext {
   eventType: AdaptiveEventType;
   workout: Workout;
   metric: PerformanceMetric | null;
-  stravaDetail: any | null;
+  stravaDetail: Partial<StravaActivityDetail> | null;
   profile: UserProfile;
   acwr: number;
   banisterState: BanisterState;

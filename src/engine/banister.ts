@@ -54,8 +54,9 @@ export function calculateTRIMP(
       const hrFraction = Math.max(0, Math.min(1,
         (metric.avg_hr - profile.resting_hr) / hrReserve,
       ));
+      // Banister TRIMP: duration × intensity, where intensity = 0.64 × e^(1.92 × hrFraction)
       const intensity = 0.64 * Math.exp(1.92 * hrFraction);
-      const trimp = Math.round(durationMinutes * hrFraction * intensity * 10) / 10;
+      const trimp = Math.round(durationMinutes * intensity * 10) / 10;
       return { date: metric.date, trimp, source: 'hr' };
     }
   }
@@ -209,6 +210,9 @@ export function calculateBanisterState(
   const performance = fitness - fatigue;
 
   // Normalize readiness to 0-100
+  // Uses peak observed performance as denominator (not current fitness) to avoid
+  // wild swings when fitness is low but performance is high relative to current fitness.
+  // +50 baseline: when performance=0 (fatigue=fitness), readiness=50 (neutral).
   let readiness: number;
   if (maxPerformance > 0) {
     readiness = (performance / maxPerformance) * 100 + 50;
