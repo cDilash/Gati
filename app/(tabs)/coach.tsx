@@ -22,7 +22,7 @@ export default function CoachScreen() {
   const [conversationId, setConversationId] = useState('');
   const [pendingMutation, setPendingMutation] = useState<{ mutation: PlanMutation; messageId: string } | null>(null);
   const scrollRef = useRef<ScrollView>(null);
-  const { getTrainingContext, applyWorkoutUpdate, refreshPlan } = useAppStore();
+  const { getTrainingContext, applyWorkoutUpdate, refreshPlan, shoes } = useAppStore();
   const units = useSettingsStore(s => s.units);
 
   useEffect(() => {
@@ -63,7 +63,13 @@ export default function CoachScreen() {
         throw new Error('Training context not available. Complete setup first.');
       }
 
-      const { response, mutation } = await sendCoachMessage(updatedMessages, context, units);
+      let shoesSummary: string | undefined;
+      try {
+        const { formatShoesForPrompt } = require('../../src/strava/shoes');
+        if (shoes.length > 0) shoesSummary = formatShoesForPrompt(shoes);
+      } catch { /* Not critical */ }
+
+      const { response, mutation } = await sendCoachMessage(updatedMessages, context, units, shoesSummary);
 
       const assistantMessage: CoachMessage = {
         id: Crypto.randomUUID(),

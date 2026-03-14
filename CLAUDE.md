@@ -7,7 +7,7 @@ A personal-use React Native marathon training app. Single user, local-first, nev
 - **Framework**: React Native + Expo SDK 52+ (managed workflow)
 - **Language**: TypeScript (strict)
 - **Routing**: Expo Router (file-based)
-- **Database**: expo-sqlite — fully local, NO backend, NO Supabase, NO cloud anything
+- **Database**: expo-sqlite (local) + Supabase (cloud sync/backend)
 - **Health Data**: react-native-health (Apple HealthKit read-only)
 - **AI Coach**: Google Gemini 2.5 Flash via `@google/generative-ai` SDK (free tier)
 - **State Management**: Zustand (minimal — most state lives in SQLite)
@@ -412,13 +412,13 @@ Garmin Watch → Garmin Connect App → Apple HealthKit → react-native-health 
 1. Plan generation MUST enforce ALL safety constraints (volume caps, cutback injection, long run limits)
 2. VDOT must be calculated from ACTUAL recent race time, not goal time
 3. AI coach receives fresh context every message — no stale state
-4. Everything is local-first — plan is deterministically regenerable from same inputs
+4. Local-first with Supabase cloud sync — plan is deterministically regenerable from same inputs
 5. Gemini API key in `app.config.ts` `extra` field via `expo-constants`
 6. UUID generation: `expo-crypto` randomUUID() — NEVER `uuid` package
 7. HealthKit is read-only — we never write health data
 8. No auth, no onboarding, no subscriptions, no multi-user
 9. Gemini is for coaching chat ONLY — plan generation is deterministic TypeScript
-10. No cloud sync, no backend, no Supabase — SQLite only
+10. Supabase for cloud sync/backend — SQLite remains primary local store
 
 ## Testing Strategy
 

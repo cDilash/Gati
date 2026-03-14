@@ -105,6 +105,11 @@ export function calculateVDOTFrom10K(seconds: number): number {
   return Math.round(reverseInterpolate(seconds, 'tenK') * 10) / 10;
 }
 
+/** Calculate VDOT from a half-marathon time in seconds. */
+export function calculateVDOTFromHalf(seconds: number): number {
+  return Math.round(reverseInterpolate(seconds, 'halfMarathon') * 10) / 10;
+}
+
 /** Predict marathon finish time in seconds for a given VDOT. */
 export function predictMarathonTime(vdot: number): number {
   return Math.round(interpolate(vdot, 'marathon'));

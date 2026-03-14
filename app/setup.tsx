@@ -1,13 +1,14 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import {
   View, Text, ScrollView, TextInput, Pressable, StyleSheet,
-  Animated, KeyboardAvoidingView, Platform, Modal,
+  Animated, KeyboardAvoidingView, Platform, Modal, ActivityIndicator, Alert,
 } from 'react-native';
-import DateTimePicker from '@react-native-community/datetimepicker';
+// DateTimePicker native module broken with Old Arch — using JS-based picker instead
 import { useRouter } from 'expo-router';
 import * as Crypto from 'expo-crypto';
 import { useAppStore } from '../src/store';
 import { useSettingsStore } from '../src/stores/settingsStore';
+import { signIn } from '../src/backup/auth';
 import {
   calculateVDOTFrom10K, calculateVDOTFrom5K,
   parseTimeToSeconds, formatTime, predictMarathonTime,
@@ -110,6 +111,114 @@ function TimePickerModal({
         </View>
       </View>
     </Modal>
+  );
+}
+
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function DatePickerModal({
+  visible,
+  onClose,
+  onConfirm,
+  initialDate,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onConfirm: (date: Date) => void;
+  initialDate: Date;
+}) {
+  const [month, setMonth] = useState(initialDate.getMonth());
+  const [day, setDay] = useState(initialDate.getDate());
+  const [year, setYear] = useState(initialDate.getFullYear());
+
+  const currentYear = new Date().getFullYear();
+  const years = Array.from({ length: 3 }, (_, i) => currentYear + i);
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const days = Array.from({ length: daysInMonth }, (_, i) => i + 1);
+
+  // Clamp day if month changes
+  const clampedDay = Math.min(day, daysInMonth);
+
+  return (
+    <Modal visible={visible} transparent animationType="slide">
+      <View style={tp.overlay}>
+        <View style={tp.sheet}>
+          <View style={tp.header}>
+            <Pressable onPress={onClose}>
+              <Text style={tp.cancelText}>Cancel</Text>
+            </Pressable>
+            <Text style={tp.title}>Race Date</Text>
+            <Pressable onPress={() => {
+              onConfirm(new Date(year, month, clampedDay));
+            }}>
+              <Text style={tp.doneText}>Done</Text>
+            </Pressable>
+          </View>
+
+          <View style={tp.wheelRow}>
+            <DateWheelColumn
+              values={MONTH_NAMES}
+              selected={month}
+              onSelect={setMonth}
+            />
+            <DateWheelColumn
+              values={days.map(d => String(d))}
+              selected={clampedDay - 1}
+              onSelect={(idx) => setDay(idx + 1)}
+            />
+            <DateWheelColumn
+              values={years.map(y => String(y))}
+              selected={years.indexOf(year)}
+              onSelect={(idx) => setYear(years[idx])}
+            />
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function DateWheelColumn({
+  values,
+  selected,
+  onSelect,
+}: {
+  values: string[];
+  selected: number;
+  onSelect: (idx: number) => void;
+}) {
+  const scrollRef = useRef<ScrollView>(null);
+  const ITEM_HEIGHT = 44;
+
+  return (
+    <View style={tp.wheelCol}>
+      <View style={tp.wheelWindow}>
+        <ScrollView
+          ref={scrollRef}
+          showsVerticalScrollIndicator={false}
+          snapToInterval={ITEM_HEIGHT}
+          decelerationRate="fast"
+          contentContainerStyle={{ paddingVertical: ITEM_HEIGHT * 2 }}
+          onLayout={() => {
+            scrollRef.current?.scrollTo({ y: selected * ITEM_HEIGHT, animated: false });
+          }}
+          onMomentumScrollEnd={(e) => {
+            const idx = Math.round(e.nativeEvent.contentOffset.y / ITEM_HEIGHT);
+            const clamped = Math.max(0, Math.min(idx, values.length - 1));
+            onSelect(clamped);
+          }}
+        >
+          {values.map((v, i) => (
+            <View key={`${v}-${i}`} style={[tp.wheelItem, { height: ITEM_HEIGHT }]}>
+              <Text style={[tp.wheelText, i === selected && tp.wheelTextActive]}>
+                {v}
+              </Text>
+            </View>
+          ))}
+        </ScrollView>
+        <View style={tp.wheelHighlight} pointerEvents="none" />
+      </View>
+    </View>
   );
 }
 
@@ -277,7 +386,7 @@ export default function SetupScreen() {
   const [level, setLevel] = useState<Level>('intermediate');
 
   // Step 3: Schedule
-  const [availableDays, setAvailableDays] = useState<number[]>([0, 1, 2, 3, 5, 6]);
+  const [availableDays, setAvailableDays] = useState<number[]>([0, 1, 3, 5, 6]);
   const [longRunDay, setLongRunDay] = useState(6);
 
   // Step 4: Race Goal
@@ -293,6 +402,42 @@ export default function SetupScreen() {
   const [showGoalTimePicker, setShowGoalTimePicker] = useState(false);
 
   const [errors, setErrors] = useState<string[]>([]);
+
+  // Welcome screen mode: login-first, tap "New here?" to show setup form
+  const [showNewUserForm, setShowNewUserForm] = useState(false);
+
+  // Restore from backup state
+  const [showRestoreModal, setShowRestoreModal] = useState(false);
+  const [restoreEmail, setRestoreEmail] = useState('');
+  const [restorePassword, setRestorePassword] = useState('');
+  const [restoreLoading, setRestoreLoading] = useState(false);
+  const [restoreError, setRestoreError] = useState<string | null>(null);
+  const { performRestore } = useAppStore();
+
+  const handleRestoreSignIn = useCallback(async () => {
+    setRestoreError(null);
+    if (!restoreEmail.trim() || !restorePassword.trim()) {
+      setRestoreError('Email and password are required.');
+      return;
+    }
+    setRestoreLoading(true);
+    const result = await signIn(restoreEmail.trim().toLowerCase(), restorePassword);
+    if (result.error) {
+      setRestoreLoading(false);
+      setRestoreError(result.error);
+      return;
+    }
+    // Signed in — now restore
+    const restoreResult = await performRestore();
+    setRestoreLoading(false);
+    if (restoreResult.success) {
+      setShowRestoreModal(false);
+      Alert.alert('Welcome Back!', 'Your training data has been restored.');
+      // initializeApp was called by performRestore — _layout.tsx will redirect to (tabs)
+    } else {
+      setRestoreError(restoreResult.error || 'Restore failed. You can set up manually instead.');
+    }
+  }, [restoreEmail, restorePassword, performRestore]);
 
   // Derived values
   const estimatedMaxHr = age ? String(220 - parseInt(age, 10)) : '';
@@ -470,11 +615,43 @@ export default function SetupScreen() {
   // ─── Step Renderers ────────────────────────────────────────
 
   function renderStepWelcome() {
+    // Login-first flow: show sign-in prominently, "New here?" reveals setup form
+    if (!showNewUserForm) {
+      return (
+        <>
+          <Text style={s.heroTitle}>Marathon{'\n'}Coach</Text>
+          <Text style={s.heroSubtitle}>
+            Your personal training plan, built on sports science.
+          </Text>
+
+          <View style={s.card}>
+            <Text style={s.cardTitle}>Welcome Back</Text>
+            <Text style={s.cardDesc}>Sign in to restore your training data from the cloud.</Text>
+
+            <Pressable style={s.signInButton} onPress={() => setShowRestoreModal(true)}>
+              <Text style={s.signInButtonText}>Sign In & Restore</Text>
+            </Pressable>
+          </View>
+
+          <View style={s.restoreDivider}>
+            <View style={s.restoreLine} />
+            <Text style={s.restoreOrText}>or</Text>
+            <View style={s.restoreLine} />
+          </View>
+
+          <Pressable style={s.newUserButton} onPress={() => setShowNewUserForm(true)}>
+            <Text style={s.newUserButtonText}>New Here? Set Up Your Plan</Text>
+          </Pressable>
+          <Text style={s.restoreHint}>First time? We'll ask a few questions to build your plan.</Text>
+        </>
+      );
+    }
+
+    // New user form (original profile setup)
     return (
       <>
         <Text style={s.heroTitle}>Marathon{'\n'}Coach</Text>
         <Text style={s.heroSubtitle}>
-          Your personal training plan, built on sports science.{'\n'}
           Let's get to know you first.
         </Text>
 
@@ -849,8 +1026,8 @@ export default function SetupScreen() {
       style={s.container}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      {/* Header with progress */}
-      <View style={s.header}>
+      {/* Header with progress — hidden on login-first Welcome screen */}
+      {(step > 0 || showNewUserForm) && <View style={s.header}>
         <View style={s.progressTrack}>
           <Animated.View style={[s.progressFill, { width: progressWidth }]} />
         </View>
@@ -860,7 +1037,7 @@ export default function SetupScreen() {
           </Text>
           <Text style={s.stepTitle}>{STEP_TITLES[step]}</Text>
         </View>
-      </View>
+      </View>}
 
       {/* Content */}
       <ScrollView
@@ -883,14 +1060,16 @@ export default function SetupScreen() {
         <View style={{ height: 120 }} />
       </ScrollView>
 
-      {/* Bottom navigation */}
-      <View style={s.nav}>
+      {/* Bottom navigation — hidden on Welcome login screen */}
+      {(step > 0 || showNewUserForm) && <View style={s.nav}>
         {step > 0 ? (
-          <Pressable style={s.backBtn} onPress={back}>
+          <Pressable style={s.backBtn} onPress={() => { if (step === 0) { setShowNewUserForm(false); } else { back(); } }}>
             <Text style={s.backBtnText}>Back</Text>
           </Pressable>
         ) : (
-          <View style={s.backBtn} />
+          <Pressable style={s.backBtn} onPress={() => setShowNewUserForm(false)}>
+            <Text style={s.backBtnText}>Back</Text>
+          </Pressable>
         )}
         <Pressable
           style={[s.nextBtn, isLast && s.submitBtn]}
@@ -900,7 +1079,7 @@ export default function SetupScreen() {
             {isLast ? 'Generate Plan' : 'Continue'}
           </Text>
         </Pressable>
-      </View>
+      </View>}
 
       {/* ─── Picker Modals ─── */}
 
@@ -937,40 +1116,89 @@ export default function SetupScreen() {
         }}
       />
 
-      {/* Date Picker */}
-      {showDatePicker && (
-        <Modal visible transparent animationType="slide">
-          <View style={s.datePickerOverlay}>
-            <View style={s.datePickerSheet}>
-              <View style={s.datePickerHeader}>
-                <Pressable onPress={() => setShowDatePicker(false)}>
-                  <Text style={s.datePickerCancel}>Cancel</Text>
-                </Pressable>
-                <Text style={s.datePickerTitle}>Race Date</Text>
-                <Pressable onPress={() => setShowDatePicker(false)}>
-                  <Text style={s.datePickerDone}>Done</Text>
-                </Pressable>
-              </View>
-              <DateTimePicker
-                value={raceDateObj || new Date(Date.now() + 120 * 24 * 60 * 60 * 1000)}
-                mode="date"
-                display="spinner"
-                minimumDate={new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)}
-                maximumDate={new Date(Date.now() + 365 * 24 * 60 * 60 * 1000)}
-                onChange={(_, selectedDate) => {
-                  if (selectedDate) setRaceDateObj(selectedDate);
-                }}
-                textColor={COLORS.text}
-                themeVariant="dark"
-                style={{ height: 200 }}
-              />
+      {/* Date Picker — JS-based using WheelColumn */}
+      <DatePickerModal
+        visible={showDatePicker}
+        onClose={() => setShowDatePicker(false)}
+        onConfirm={(date) => {
+          setRaceDateObj(date);
+          setShowDatePicker(false);
+        }}
+        initialDate={raceDateObj || new Date(Date.now() + 120 * 24 * 60 * 60 * 1000)}
+      />
+
+      {/* ─── Restore Auth Modal ─── */}
+      <Modal visible={showRestoreModal} transparent animationType="slide">
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={restore.overlay}>
+          <View style={restore.sheet}>
+            <View style={restore.header}>
+              <Pressable onPress={() => { setShowRestoreModal(false); setRestoreError(null); }}>
+                <Text style={restore.cancelText}>Cancel</Text>
+              </Pressable>
+              <Text style={restore.title}>Restore Backup</Text>
+              <View style={{ width: 60 }} />
             </View>
+
+            <Text style={restore.subtitle}>
+              Sign in to download your training data from the cloud.
+            </Text>
+
+            <Text style={restore.label}>Email</Text>
+            <TextInput
+              style={restore.input}
+              value={restoreEmail}
+              onChangeText={setRestoreEmail}
+              placeholder="you@email.com"
+              placeholderTextColor={COLORS.textTertiary}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+
+            <Text style={restore.label}>Password</Text>
+            <TextInput
+              style={restore.input}
+              value={restorePassword}
+              onChangeText={setRestorePassword}
+              placeholder="Your password"
+              placeholderTextColor={COLORS.textTertiary}
+              secureTextEntry
+            />
+
+            {restoreError && <Text style={restore.errorText}>{restoreError}</Text>}
+
+            <Pressable
+              style={[restore.submitButton, restoreLoading && { opacity: 0.5 }]}
+              onPress={handleRestoreSignIn}
+              disabled={restoreLoading}
+            >
+              {restoreLoading
+                ? <ActivityIndicator size="small" color="#fff" />
+                : <Text style={restore.submitText}>Sign In & Restore</Text>
+              }
+            </Pressable>
           </View>
-        </Modal>
-      )}
+        </KeyboardAvoidingView>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
+
+// ─── Restore Modal Styles ────────────────────────────────────
+
+const restore = StyleSheet.create({
+  overlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' },
+  sheet: { backgroundColor: COLORS.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 24, paddingBottom: 40 },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+  cancelText: { color: COLORS.accent, fontSize: 16 },
+  title: { color: COLORS.text, fontSize: 17, fontWeight: '700' },
+  subtitle: { color: COLORS.textSecondary, fontSize: 14, lineHeight: 20, marginBottom: 20 },
+  label: { color: COLORS.textSecondary, fontSize: 12, fontWeight: '600', letterSpacing: 0.5, marginBottom: 6, marginTop: 12 },
+  input: { backgroundColor: COLORS.background, color: COLORS.text, fontSize: 16, padding: 14, borderRadius: 10, borderWidth: 1, borderColor: COLORS.border },
+  errorText: { color: COLORS.danger, fontSize: 13, marginTop: 12, textAlign: 'center' },
+  submitButton: { backgroundColor: COLORS.accent, borderRadius: 12, padding: 16, alignItems: 'center', marginTop: 20 },
+  submitText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+});
 
 // ─── Styles ──────────────────────────────────────────────────
 
@@ -1439,5 +1667,61 @@ const s = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: COLORS.accent,
+  },
+
+  // Welcome login-first screen
+  signInButton: {
+    backgroundColor: COLORS.accent,
+    borderRadius: 12,
+    padding: 16,
+    alignItems: 'center',
+    marginTop: 20,
+  },
+  signInButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  cardDesc: {
+    color: COLORS.textSecondary,
+    fontSize: 14,
+    lineHeight: 20,
+    marginBottom: 4,
+  },
+  newUserButton: {
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
+    borderRadius: 12,
+    padding: 14,
+    alignItems: 'center',
+  },
+  newUserButtonText: {
+    color: COLORS.text,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+
+  // Restore divider
+  restoreDivider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 28,
+    marginBottom: 20,
+  },
+  restoreLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: COLORS.border,
+  },
+  restoreOrText: {
+    color: COLORS.textTertiary,
+    fontSize: 13,
+    marginHorizontal: 16,
+  },
+  restoreHint: {
+    color: COLORS.textTertiary,
+    fontSize: 12,
+    textAlign: 'center',
+    marginTop: 8,
   },
 });

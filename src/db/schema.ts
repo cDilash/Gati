@@ -109,6 +109,17 @@ export const MIGRATE_WORKOUT_ADAPTIVE = [
   `ALTER TABLE workout ADD COLUMN adjustment_reason TEXT;`,
 ];
 
+export const MIGRATE_STRAVA_DETAIL_9A = [
+  `ALTER TABLE strava_activity_detail ADD COLUMN best_efforts_json TEXT;`,
+  `ALTER TABLE strava_activity_detail ADD COLUMN gear_id TEXT;`,
+  `ALTER TABLE strava_activity_detail ADD COLUMN gear_name TEXT;`,
+  `ALTER TABLE strava_activity_detail ADD COLUMN perceived_exertion INTEGER;`,
+  `ALTER TABLE strava_activity_detail ADD COLUMN strava_workout_type INTEGER;`,
+  `ALTER TABLE strava_activity_detail ADD COLUMN moving_time_sec INTEGER;`,
+  `ALTER TABLE strava_activity_detail ADD COLUMN elapsed_time_sec INTEGER;`,
+  `ALTER TABLE performance_metric ADD COLUMN rpe_score INTEGER;`,
+];
+
 export const CREATE_HEALTH_SNAPSHOT = `
 CREATE TABLE IF NOT EXISTS health_snapshot (
   id TEXT PRIMARY KEY NOT NULL,
@@ -128,6 +139,67 @@ CREATE TABLE IF NOT EXISTS health_snapshot (
 export const CREATE_HEALTH_SNAPSHOT_INDEX = `
 CREATE UNIQUE INDEX IF NOT EXISTS idx_health_snapshot_date ON health_snapshot(date);`;
 
+export const CREATE_AI_BRIEFING_CACHE = `
+CREATE TABLE IF NOT EXISTS ai_briefing_cache (
+  id TEXT PRIMARY KEY NOT NULL,
+  type TEXT NOT NULL,
+  date TEXT NOT NULL,
+  context_hash TEXT NOT NULL,
+  content TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);`;
+
+export const CREATE_AI_BRIEFING_CACHE_INDEX = `
+CREATE INDEX IF NOT EXISTS idx_briefing_cache_lookup ON ai_briefing_cache(type, date);`;
+
+export const CREATE_STRAVA_ACTIVITY_DETAIL = `
+CREATE TABLE IF NOT EXISTS strava_activity_detail (
+  id TEXT PRIMARY KEY NOT NULL,
+  performance_metric_id TEXT NOT NULL,
+  strava_activity_id INTEGER NOT NULL UNIQUE,
+  splits_json TEXT,
+  laps_json TEXT,
+  hr_stream_json TEXT,
+  pace_stream_json TEXT,
+  elevation_gain_ft REAL,
+  calories INTEGER,
+  cadence_avg REAL,
+  suffer_score INTEGER,
+  device_name TEXT,
+  FOREIGN KEY (performance_metric_id) REFERENCES performance_metric(id)
+);`;
+
+export const CREATE_STRAVA_TOKENS = `
+CREATE TABLE IF NOT EXISTS strava_tokens (
+  id INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+  access_token TEXT NOT NULL,
+  refresh_token TEXT NOT NULL,
+  expires_at INTEGER NOT NULL,
+  athlete_id INTEGER NOT NULL,
+  athlete_name TEXT,
+  connected_at TEXT NOT NULL DEFAULT (datetime('now')),
+  last_sync_at TEXT
+);`;
+
+export const CREATE_SHOES = `
+CREATE TABLE IF NOT EXISTS shoes (
+  id TEXT PRIMARY KEY NOT NULL,
+  strava_gear_id TEXT UNIQUE,
+  name TEXT NOT NULL,
+  brand TEXT,
+  total_miles REAL NOT NULL DEFAULT 0,
+  max_miles REAL NOT NULL DEFAULT 500,
+  retired INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);`;
+
+export const MIGRATE_STRAVA_DETAIL_10A = [
+  `ALTER TABLE strava_activity_detail ADD COLUMN polyline_encoded TEXT;`,
+  `ALTER TABLE strava_activity_detail ADD COLUMN summary_polyline_encoded TEXT;`,
+  `ALTER TABLE strava_activity_detail ADD COLUMN distance_stream_json TEXT;`,
+  `ALTER TABLE strava_activity_detail ADD COLUMN elevation_stream_json TEXT;`,
+];
+
 export const ALL_TABLES = [
   CREATE_USER_PROFILE,
   CREATE_TRAINING_PLAN,
@@ -138,4 +210,9 @@ export const ALL_TABLES = [
   CREATE_ADAPTIVE_LOG,
   CREATE_HEALTH_SNAPSHOT,
   CREATE_HEALTH_SNAPSHOT_INDEX,
+  CREATE_AI_BRIEFING_CACHE,
+  CREATE_AI_BRIEFING_CACHE_INDEX,
+  CREATE_STRAVA_TOKENS,
+  CREATE_STRAVA_ACTIVITY_DETAIL,
+  CREATE_SHOES,
 ];

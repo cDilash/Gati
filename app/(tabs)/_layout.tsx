@@ -1,8 +1,11 @@
 import { Tabs } from 'expo-router';
-import { CalendarBlank, ChatCircle, Gauge, GearSix, House } from 'phosphor-react-native';
+import { CalendarBlank, ChatCircle, Heartbeat, GearSix, House } from 'phosphor-react-native';
 import { COLORS } from '../../src/utils/constants';
+import { useAppStore } from '../../src/store';
 
 export default function TabLayout() {
+  const hasUnreadDigest = useAppStore(s => s.hasUnreadDigest);
+
   return (
     <Tabs
       screenOptions={{
@@ -23,7 +26,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Today',
+          title: 'Home',
           tabBarIcon: ({ color, size }) => <House size={size} color={color} weight="fill" />,
         }}
       />
@@ -32,6 +35,8 @@ export default function TabLayout() {
         options={{
           title: 'Plan',
           tabBarIcon: ({ color, size }) => <CalendarBlank size={size} color={color} weight="fill" />,
+          tabBarBadge: hasUnreadDigest ? ' ' : undefined,
+          tabBarBadgeStyle: hasUnreadDigest ? { backgroundColor: COLORS.accent, minWidth: 10, maxHeight: 10, borderRadius: 5, top: 2 } : undefined,
         }}
       />
       <Tabs.Screen
@@ -42,10 +47,16 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="recovery"
+        options={{
+          title: 'Recovery',
+          tabBarIcon: ({ color, size }) => <Heartbeat size={size} color={color} weight="fill" />,
+        }}
+      />
+      <Tabs.Screen
         name="zones"
         options={{
-          title: 'Zones',
-          tabBarIcon: ({ color, size }) => <Gauge size={size} color={color} weight="fill" />,
+          href: null, // Hidden from tab bar, still accessible via navigation
         }}
       />
       <Tabs.Screen
