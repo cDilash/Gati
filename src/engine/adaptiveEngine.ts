@@ -61,12 +61,16 @@ export function calculateACWR(metrics: PerformanceMetric[], today: string): numb
  * - > 1.3: Convert quality sessions to easy runs
  * - > 1.5: Reduce ALL scheduled run distances by 20%
  * - < 0.8: No auto-adjustment (detraining flag only)
+ *
+ * @param recentRPEAvg - Average RPE from the last 4-7 runs (optional Strava data).
+ *   High subjective effort (≥ 7) lowers thresholds even without HealthKit recovery data.
  */
 export function checkACWRSafety(
   acwr: number,
   upcomingWorkouts: Workout[],
   today: string,
   recoveryStatus?: RecoveryStatus | null,
+  recentRPEAvg?: number | null,
 ): WorkoutAdjustment[] {
   const adjustments: WorkoutAdjustment[] = [];
   const now = new Date().toISOString();
@@ -81,6 +85,18 @@ export function checkACWRSafety(
     } else if (recoveryStatus.score < 40) {
       convertThreshold = 1.2;
       reduceThreshold = 1.4;
+    }
+  }
+
+  // RPE-based threshold shifting — catches subjective fatigue even without HealthKit
+  // High RPE (≥ 7 average) means the athlete is working harder than volume alone shows
+  if (recentRPEAvg != null && (!recoveryStatus || recoveryStatus.signalCount < 2)) {
+    if (recentRPEAvg >= 8) {
+      convertThreshold = Math.min(convertThreshold, 1.2);
+      reduceThreshold = Math.min(reduceThreshold, 1.4);
+    } else if (recentRPEAvg >= 7) {
+      convertThreshold = Math.min(convertThreshold, 1.25);
+      reduceThreshold = Math.min(reduceThreshold, 1.45);
     }
   }
 
@@ -135,6 +151,73 @@ export function checkACWRSafety(
 interface WorkoutWithMetric {
   workout: Workout;
   metric: PerformanceMetric;
+  stravaWorkoutType?: number | null; // 0=default, 1=race, 2=long run, 3=workout
+}
+
+/**
+ * Extracts effective workout pace from Strava splits.
+ * For tempo/threshold: uses median of "work" splits (excludes first and last mile as warmup/cooldown)
+ * For intervals: uses laps data, taking faster half as "work" laps
+ * For races: uses overall pace directly (most accurate for VDOT lookup)
+ * Returns seconds per mile, or null if splits unavailable.
+ */
+export function extractEffectivePace(
+  metric: PerformanceMetric,
+  stravaDetail: any | null,
+  workoutType: WorkoutType,
+): number | null {
+  if (!stravaDetail) return metric.avg_pace_per_mile || null;
+
+  // Race: use overall finish pace
+  const stravaWorkoutType = stravaDetail.strava_workout_type;
+  if (stravaWorkoutType === 1) {
+    return metric.avg_pace_per_mile || null;
+  }
+
+  // Tempo/Threshold/Marathon Pace: extract work splits (skip warmup/cooldown miles)
+  if ((workoutType === 'tempo' || workoutType === 'marathon_pace') && stravaDetail.splits_json) {
+    try {
+      const splits = typeof stravaDetail.splits_json === 'string'
+        ? JSON.parse(stravaDetail.splits_json)
+        : stravaDetail.splits_json;
+      if (splits.length >= 3) {
+        const workSplits = splits.slice(1, -1);
+        const paces = workSplits.map((s: any) => {
+          const miles = s.distance / 1609.34;
+          return miles > 0 ? s.movingTime / miles : null;
+        }).filter((p: number | null) => p !== null) as number[];
+
+        if (paces.length > 0) {
+          paces.sort((a, b) => a - b);
+          return Math.round(paces[Math.floor(paces.length / 2)]);
+        }
+      }
+    } catch { /* fall through */ }
+  }
+
+  // Intervals: use laps, take faster half as "work" laps
+  if (workoutType === 'interval' && stravaDetail.laps_json) {
+    try {
+      const laps = typeof stravaDetail.laps_json === 'string'
+        ? JSON.parse(stravaDetail.laps_json)
+        : stravaDetail.laps_json;
+      if (laps.length >= 2) {
+        const lapPaces = laps.map((l: any) => {
+          const miles = l.distance / 1609.34;
+          return { pace: miles > 0 ? l.movingTime / miles : 9999, distance: l.distance };
+        });
+        lapPaces.sort((a: any, b: any) => a.pace - b.pace);
+        const workLaps = lapPaces.slice(0, Math.ceil(lapPaces.length / 2));
+        if (workLaps.length > 0) {
+          const avgWorkPace = workLaps.reduce((s: number, l: any) => s + l.pace, 0) / workLaps.length;
+          return Math.round(avgWorkPace);
+        }
+      }
+    } catch { /* fall through */ }
+  }
+
+  // Default: overall avg pace
+  return metric.avg_pace_per_mile || null;
 }
 
 /**
@@ -142,6 +225,11 @@ interface WorkoutWithMetric {
  *
  * With HR data (2+ weeks): +/- 1.0 VDOT, confidence "high"
  * Without HR (3+ weeks): +/- 0.5 VDOT, confidence "moderate"
+ *
+ * RPE improvements:
+ * - Low RPE (≤ 5) on a fast effort = athlete is coasting → counts as HR evidence
+ * - High RPE (≥ 8) on a fast effort = max effort, not adaptation → excluded
+ * - Race-tagged workouts (stravaWorkoutType === 1) count immediately as high confidence
  */
 export function evaluateVDOTUpdate(
   completedQualityWorkouts: WorkoutWithMetric[],
@@ -149,12 +237,37 @@ export function evaluateVDOTUpdate(
   paceZones: PaceZones,
   hrZones: HRZones,
   recoveryStatus?: RecoveryStatus | null,
+  stravaDetails?: Record<string, any>,
 ): VDOTUpdateResult | null {
   if (completedQualityWorkouts.length < 2) return null;
 
   // Recovery guard: skip VDOT update if poorly recovered (distorted performance)
   if (recoveryStatus && recoveryStatus.signalCount >= 2 && recoveryStatus.score < 40) {
     return null;
+  }
+
+  // Race check: a Strava-tagged race (stravaWorkoutType === 1) is a max-effort
+  // timed performance — the strongest possible VDOT signal. One race is enough.
+  for (const wm of completedQualityWorkouts) {
+    if (wm.stravaWorkoutType === 1 && wm.metric.avg_pace_per_mile > 0) {
+      const zone = wm.workout.target_pace_zone;
+      const targetPace = paceZones[zone];
+      if (targetPace) {
+        const raceStravaDetail = stravaDetails?.[wm.metric.id] || null;
+        const racePace = extractEffectivePace(wm.metric, raceStravaDetail, wm.workout.workout_type)
+          || wm.metric.avg_pace_per_mile;
+        const paceGap = targetPace.max - racePace;
+        if (paceGap >= 10) {
+          return {
+            previousVDOT: currentVDOT,
+            newVDOT: Math.round((currentVDOT + 1.0) * 10) / 10,
+            reason: 'Race-effort run exceeded target pace — strong fitness signal',
+            evidenceWorkouts: [wm.workout.id],
+            confidenceLevel: 'high',
+          };
+        }
+      }
+    }
   }
 
   // Split into workouts with and without HR data
@@ -170,30 +283,41 @@ export function evaluateVDOTUpdate(
     const targetPace = paceZones[zone];
     if (!targetPace) continue;
 
-    const actualPace = wm.metric.avg_pace_per_mile;
+    const stravaDetail = stravaDetails?.[wm.metric.id] || null;
+    const actualPace = extractEffectivePace(wm.metric, stravaDetail, wm.workout.workout_type)
+      || wm.metric.avg_pace_per_mile;
     // targetPace.max = fastest expected pace (lowest seconds)
     // If actual is 10+ sec/mi faster than the fastest expected pace → overperforming
     const paceGap = targetPace.max - actualPace;
 
+    const rpe: number | null = wm.metric.rpe_score ?? null;
+
     if (paceGap >= 10) {
-      // Check HR if available
+      // High RPE (≥ 8) means athlete is maxing out — not an adaptation signal
+      if (rpe != null && rpe >= 8) continue;
+
       if (wm.metric.avg_hr != null) {
-        // HR should be in Zone 3-4 (not spiking to Zone 5)
+        // HR in Zone 3-4 (not spiking to Zone 5) → confirmed adaptation
         if (wm.metric.avg_hr <= hrZones.zone4.max) {
           overperforming.push(wm);
         }
-        // If HR is in Zone 5 despite fast pace, it's a max effort — not adaptation
+      } else if (rpe != null && rpe <= 5) {
+        // No HR but RPE is low → athlete found it easy despite fast pace
+        // Treat as equivalent to HR evidence
+        overperforming.push({ ...wm, metric: { ...wm.metric, avg_hr: -1 } }); // sentinel to signal "has evidence"
       } else {
-        // No HR — still count it, but will require more evidence
+        // No HR or RPE — still count but needs more evidence
         overperforming.push(wm);
       }
     } else if (paceGap <= -10) {
       // 10+ sec/mi SLOWER than slowest expected pace
       if (wm.metric.avg_hr != null) {
-        // HR elevated above Zone 4 → struggling
         if (wm.metric.avg_hr > hrZones.zone4.max) {
           underperforming.push(wm);
         }
+      } else if (rpe != null && rpe >= 8) {
+        // High RPE on an already slow workout = struggling
+        underperforming.push(wm);
       } else {
         underperforming.push(wm);
       }
@@ -201,13 +325,17 @@ export function evaluateVDOTUpdate(
   }
 
   // Determine if we have enough evidence
-  const hasHREvidence = withHR.length >= 2;
+  // Low RPE counts as equivalent to HR for evidence quality
+  const withQualityEvidence = completedQualityWorkouts.filter(
+    wm => wm.metric.avg_hr != null || (wm.metric.rpe_score != null && wm.metric.rpe_score <= 5)
+  );
+  const hasStrongEvidence = withQualityEvidence.length >= 2 || withHR.length >= 2;
 
-  // With HR: need 2+ consistent workouts over 2+ weeks
-  // Without HR: need 3+ consistent workouts over 3+ weeks
-  const requiredCount = hasHREvidence ? 2 : 3;
-  const vdotDelta = hasHREvidence ? 1.0 : 0.5;
-  const confidence = hasHREvidence ? 'high' as const : 'moderate' as const;
+  // With HR/RPE evidence: need 2+ consistent workouts over 2+ weeks
+  // Without: need 3+ consistent workouts over 3+ weeks
+  const requiredCount = hasStrongEvidence ? 2 : 3;
+  const vdotDelta = hasStrongEvidence ? 1.0 : 0.5;
+  const confidence = hasStrongEvidence ? 'high' as const : 'moderate' as const;
 
   // Check span covers enough weeks
   function spansEnoughWeeks(workouts: WorkoutWithMetric[], minWeeks: number): boolean {
@@ -217,13 +345,13 @@ export function evaluateVDOTUpdate(
     return spanDays >= (minWeeks - 1) * 7;
   }
 
-  const requiredWeeks = hasHREvidence ? 2 : 3;
+  const requiredWeeks = hasStrongEvidence ? 2 : 3;
 
   if (overperforming.length >= requiredCount && spansEnoughWeeks(overperforming, requiredWeeks)) {
     return {
       previousVDOT: currentVDOT,
       newVDOT: Math.round((currentVDOT + vdotDelta) * 10) / 10,
-      reason: hasHREvidence
+      reason: hasStrongEvidence
         ? 'Consistent threshold overperformance with controlled heart rate'
         : 'Consistent threshold overperformance (pace data only)',
       evidenceWorkouts: overperforming.map(wm => wm.workout.id),
@@ -235,7 +363,7 @@ export function evaluateVDOTUpdate(
     return {
       previousVDOT: currentVDOT,
       newVDOT: Math.round((currentVDOT - vdotDelta) * 10) / 10,
-      reason: hasHREvidence
+      reason: hasStrongEvidence
         ? 'Sustained underperformance with elevated heart rate'
         : 'Sustained underperformance (pace data only)',
       evidenceWorkouts: underperforming.map(wm => wm.workout.id),
@@ -425,4 +553,43 @@ export function triageMissedWorkout(
   }
 
   return adjustments;
+}
+
+// ─── RPE Trend Analysis ──────────────────────────────────────
+
+export interface RPETrend {
+  trend: 'fatigued' | 'normal' | 'fresh';
+  avgRPE: number;
+  sampleSize: number;
+}
+
+/**
+ * Assess subjective fatigue from recent Strava RPE scores.
+ *
+ * Uses the last 4-7 runs with RPE data. Strava RPE scale:
+ *   1-3 = easy/light  4-6 = moderate  7-8 = hard  9-10 = max
+ *
+ * Returns 'fatigued' if avg ≥ 7 over 3+ runs (athlete is consistently
+ * reporting high effort — a signal ACWR misses entirely since it's volume-only).
+ */
+export function assessRPETrend(metrics: PerformanceMetric[]): RPETrend {
+  const withRPE = metrics
+    .filter(m => m.rpe_score != null && m.rpe_score > 0)
+    .slice(0, 7); // last 7 runs max
+
+  if (withRPE.length === 0) {
+    return { trend: 'normal', avgRPE: 0, sampleSize: 0 };
+  }
+
+  const avgRPE = withRPE.reduce((sum, m) => sum + (m.rpe_score ?? 0), 0) / withRPE.length;
+  const rounded = Math.round(avgRPE * 10) / 10;
+
+  let trend: RPETrend['trend'] = 'normal';
+  if (withRPE.length >= 3 && avgRPE >= 7) {
+    trend = 'fatigued';
+  } else if (withRPE.length >= 3 && avgRPE <= 4) {
+    trend = 'fresh';
+  }
+
+  return { trend, avgRPE: rounded, sampleSize: withRPE.length };
 }

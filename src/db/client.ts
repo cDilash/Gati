@@ -1,7 +1,8 @@
 import * as SQLite from 'expo-sqlite';
 import * as Crypto from 'expo-crypto';
-import { ALL_TABLES, MIGRATE_WORKOUT_ADAPTIVE } from './schema';
+import { ALL_TABLES, MIGRATE_WORKOUT_ADAPTIVE, MIGRATE_STRAVA_DETAIL_9A, MIGRATE_STRAVA_DETAIL_10A } from './schema';
 import { UserProfile, TrainingPlan, TrainingWeek, Workout, PerformanceMetric, CoachMessage, GeneratedPlan, AdaptiveLog, HealthSnapshot } from '../types';
+import { getToday } from '../utils/dateUtils';
 
 const DB_NAME = 'marathon_coach.db';
 
@@ -27,7 +28,7 @@ export function initializeDatabase(): void {
   });
 
   // Run adaptive migrations (ALTER TABLE — safe to re-run, will fail silently if columns exist)
-  for (const migration of MIGRATE_WORKOUT_ADAPTIVE) {
+  for (const migration of [...MIGRATE_WORKOUT_ADAPTIVE, ...MIGRATE_STRAVA_DETAIL_9A, ...MIGRATE_STRAVA_DETAIL_10A]) {
     try {
       database.execSync(migration);
     } catch {
@@ -82,6 +83,27 @@ export function savePlan(generated: GeneratedPlan): void {
         workout.id, workout.week_id, workout.date, workout.day_of_week, workout.workout_type, workout.distance_miles, workout.target_pace_zone, workout.intervals_json || null, workout.status, workout.notes, workout.created_at, workout.updated_at
       );
     }
+  });
+}
+
+export function deleteActivePlan(): void {
+  const database = getDatabase();
+  database.withTransactionSync(() => {
+    // Unlink performance metrics from workouts (preserves Strava/HealthKit data;
+    // rematchOrphanedMetrics() will re-link them to the new plan after regeneration)
+    database.execSync(
+      `UPDATE performance_metric SET workout_id = NULL
+       WHERE workout_id IN (
+         SELECT w.id FROM workout w
+         JOIN training_week tw ON w.week_id = tw.id
+         JOIN training_plan tp ON tw.plan_id = tp.id
+       )`
+    );
+    database.execSync('DELETE FROM workout WHERE week_id IN (SELECT id FROM training_week WHERE plan_id IN (SELECT id FROM training_plan))');
+    database.execSync('DELETE FROM training_week WHERE plan_id IN (SELECT id FROM training_plan)');
+    database.execSync('DELETE FROM training_plan');
+    database.execSync('DELETE FROM adaptive_log');
+    database.execSync('DELETE FROM ai_briefing_cache');
   });
 }
 
@@ -185,6 +207,14 @@ export function getMetricsForWorkout(workoutId: string): PerformanceMetric[] {
   );
 }
 
+export function getMetricById(metricId: string): PerformanceMetric | null {
+  const database = getDatabase();
+  return database.getFirstSync<PerformanceMetric>(
+    'SELECT * FROM performance_metric WHERE id = ?',
+    metricId
+  );
+}
+
 // Coach Messages
 export function saveCoachMessage(message: CoachMessage): void {
   const database = getDatabase();
@@ -212,7 +242,7 @@ export function getLatestConversationId(): string | null {
 // Utility
 export function getCurrentWeek(planId: string): TrainingWeek | null {
   const database = getDatabase();
-  const today = new Date().toISOString().split('T')[0];
+  const today = getToday();
   return database.getFirstSync<any>(
     'SELECT * FROM training_week WHERE plan_id = ? AND start_date <= ? AND end_date >= ?',
     planId, today, today
@@ -221,7 +251,7 @@ export function getCurrentWeek(planId: string): TrainingWeek | null {
 
 export function getWeeklyVolumeTrend(planId: string, numWeeks: number = 4): { week: number; target: number; actual: number }[] {
   const database = getDatabase();
-  const today = new Date().toISOString().split('T')[0];
+  const today = getToday();
   const rows = database.getAllSync<any>(
     `SELECT week_number, target_volume_miles, actual_volume_miles
      FROM training_week
@@ -284,6 +314,19 @@ export function getMetricsForDateRange(startDate: string, endDate: string): Perf
   );
 }
 
+export function getStravaDetailsForMetrics(metricIds: string[]): Record<string, any> {
+  const db = getDatabase();
+  const details: Record<string, any> = {};
+  for (const id of metricIds) {
+    const row = db.getFirstSync<any>(
+      'SELECT * FROM strava_activity_detail WHERE performance_metric_id = ?',
+      id
+    );
+    if (row) details[id] = row;
+  }
+  return details;
+}
+
 export function getCompletedWorkoutsForDateRange(startDate: string, endDate: string): Workout[] {
   const database = getDatabase();
   const rows = database.getAllSync<any>(
@@ -306,6 +349,45 @@ export function getFutureWorkouts(fromDate: string): Workout[] {
     ...r,
     intervals: r.intervals_json ? JSON.parse(r.intervals_json) : undefined,
   }));
+}
+
+// ─── Strava Detail ──────────────────────────────────────────
+
+export function getStravaDetailForMetric(metricId: string): any | null {
+  const database = getDatabase();
+  const row = database.getFirstSync<any>(
+    'SELECT * FROM strava_activity_detail WHERE performance_metric_id = ?',
+    metricId
+  );
+  if (!row) return null;
+  return parseStravaDetailRow(row);
+}
+
+export function getStravaDetailForWorkout(workoutId: string): any | null {
+  const database = getDatabase();
+  // Join through performance_metric to find the Strava detail for a workout
+  const row = database.getFirstSync<any>(
+    `SELECT sad.* FROM strava_activity_detail sad
+     INNER JOIN performance_metric pm ON pm.id = sad.performance_metric_id
+     WHERE pm.workout_id = ?`,
+    workoutId
+  );
+  if (!row) return null;
+  return parseStravaDetailRow(row);
+}
+
+function parseStravaDetailRow(row: any): any {
+  return {
+    ...row,
+    splits: row.splits_json ? JSON.parse(row.splits_json) : [],
+    laps: row.laps_json ? JSON.parse(row.laps_json) : [],
+    hrStream: row.hr_stream_json ? JSON.parse(row.hr_stream_json) : null,
+    paceStream: row.pace_stream_json ? JSON.parse(row.pace_stream_json) : null,
+    distanceStream: row.distance_stream_json ? JSON.parse(row.distance_stream_json) : null,
+    elevationStream: row.elevation_stream_json ? JSON.parse(row.elevation_stream_json) : null,
+    polylineEncoded: row.polyline_encoded ?? null,
+    summaryPolylineEncoded: row.summary_polyline_encoded ?? null,
+  };
 }
 
 // ─── Health Snapshot ─────────────────────────────────────────
