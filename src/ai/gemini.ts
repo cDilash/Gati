@@ -1,8 +1,10 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import Constants from 'expo-constants';
 import { CoachMessage, TrainingContext, PlanMutation } from '../types';
-import { buildCoachSystemPrompt } from './coachPrompt';
+import { buildCoachSystemPrompt, CoachPromptOptions } from './coachPrompt';
 import { UnitSystem } from '../utils/units';
+import { getStravaDetailForWorkout } from '../db/client';
+import { canMakeAPICall, incrementAPICallCount } from './rateLimiter';
 
 const API_KEY = Constants.expoConfig?.extra?.geminiApiKey || '';
 const genAI = new GoogleGenerativeAI(API_KEY);
@@ -10,7 +12,7 @@ const genAI = new GoogleGenerativeAI(API_KEY);
 const MAX_RETRIES = 3;
 const BASE_DELAY = 1000;
 
-async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
+export async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     try {
       return await fn();
@@ -29,9 +31,39 @@ async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
 export async function sendCoachMessage(
   conversationHistory: CoachMessage[],
   context: TrainingContext,
-  units: UnitSystem = 'imperial'
+  units: UnitSystem = 'imperial',
+  shoesSummary?: string,
 ): Promise<{ response: string; mutation?: PlanMutation }> {
-  const systemPrompt = buildCoachSystemPrompt(context, units);
+  if (!canMakeAPICall()) {
+    return { response: "I've reached my daily limit for coaching responses. Please try again tomorrow, or check the pre-workout briefing card for today's guidance." };
+  }
+
+  incrementAPICallCount();
+
+  // Gather Strava split data for recent completed workouts
+  const stravaDetails: CoachPromptOptions['stravaDetails'] = [];
+  const recentCompleted = (context.thisWeekWorkouts || [])
+    .filter(w => w.status === 'completed' && w.workout_type !== 'rest')
+    .slice(0, 5);
+  for (const w of recentCompleted) {
+    try {
+      const detail = getStravaDetailForWorkout(w.id);
+      if (detail?.splits?.length) {
+        stravaDetails.push({
+          workoutDate: w.date,
+          workoutType: w.workout_type,
+          splits: detail.splits,
+          elevationGainFt: detail.elevation_gain_ft,
+          cadenceAvg: detail.cadence_avg,
+          sufferScore: detail.suffer_score,
+        });
+      }
+    } catch {
+      // Strava detail not available for this workout
+    }
+  }
+
+  const systemPrompt = buildCoachSystemPrompt(context, { units, stravaDetails, shoesSummary });
 
   const model = genAI.getGenerativeModel({
     model: 'gemini-2.5-flash',

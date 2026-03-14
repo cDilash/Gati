@@ -267,6 +267,62 @@ export interface DailyTRIMP {
   source: 'hr' | 'pace' | 'rpe' | 'estimated';
 }
 
+// ─── Adaptive AI Decision Types ─────────────────────────────
+
+export interface AdaptiveAIDecision {
+  workoutId: string;
+  action: 'approve' | 'modify' | 'reject';
+  adjustedValues?: {
+    distance_miles?: number;
+    workout_type?: WorkoutType;
+    target_pace_zone?: PaceZoneName;
+  };
+  reasoning: string;
+}
+
+export interface AdaptiveAIAddition {
+  workoutId: string;
+  adjustmentType: AdaptiveAdjustmentType;
+  newDistance: number;
+  newType: WorkoutType;
+  reasoning: string;
+}
+
+export interface AdaptiveAIResponse {
+  decisions: AdaptiveAIDecision[];
+  additions: AdaptiveAIAddition[];
+  summary: string;
+  replanNeeded: boolean;
+  replanReason?: string;
+  vdotUpdate: {
+    newVdot: number;
+    confidence: 'high' | 'moderate';
+    reasoning: string;
+  } | null;
+}
+
+export type AdaptiveEventType = 'workout_completed' | 'workout_skipped';
+
+export interface AdaptiveEventContext {
+  eventType: AdaptiveEventType;
+  workout: Workout;
+  metric: PerformanceMetric | null;
+  stravaDetail: any | null;
+  profile: UserProfile;
+  acwr: number;
+  banisterState: BanisterState;
+  recoveryStatus: RecoveryStatus | null;
+  rpeTrend: { trend: 'fatigued' | 'normal' | 'fresh'; avgRPE: number; sampleSize: number } | null;
+  currentVDOT: number;
+  paceZones: PaceZones;
+  daysUntilRace: number;
+  currentPhase: Phase;
+  weekNumber: number;
+  proposedAdjustments: WorkoutAdjustment[];
+  proposedVDOTUpdate: VDOTUpdateResult | null;
+  recentAdaptiveLogs: AdaptiveLog[];
+}
+
 // ─── AI Briefing Types ──────────────────────────────────────
 
 export interface WeatherData {
