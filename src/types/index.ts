@@ -200,6 +200,7 @@ export interface TrainingContext {
   lastReconciliation?: PlanReconciliation;
   recoveryStatus?: RecoveryStatus;
   rpeTrend?: { trend: 'fatigued' | 'normal' | 'fresh'; avgRPE: number; sampleSize: number } | null;
+  banisterState?: BanisterState;
 }
 
 export interface PlanGeneratorConfig {

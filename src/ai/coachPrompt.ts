@@ -3,7 +3,24 @@ import { formatPace } from '../engine/vdot';
 import { formatPaceRange, ZONE_DESCRIPTIONS } from '../engine/paceZones';
 import { UnitSystem, formatPaceRangeWithUnit, paceLabel, formatWeight, formatDistance, distanceLabel } from '../utils/units';
 
-export function buildCoachSystemPrompt(context: TrainingContext, units: UnitSystem = 'imperial'): string {
+export interface CoachPromptOptions {
+  units?: UnitSystem;
+  shoesSummary?: string;
+  stravaDetails?: Array<{
+    workoutDate: string;
+    workoutType: string;
+    splits: Array<{ split: number; movingTime: number; distance: number; averageHeartrate: number | null }>;
+    elevationGainFt: number | null;
+    cadenceAvg: number | null;
+    sufferScore: number | null;
+  }>;
+}
+
+export function buildCoachSystemPrompt(context: TrainingContext, unitsOrOptions: UnitSystem | CoachPromptOptions = 'imperial'): string {
+  const options: CoachPromptOptions = typeof unitsOrOptions === 'string'
+    ? { units: unitsOrOptions }
+    : unitsOrOptions;
+  const units = options.units || 'imperial';
   const { profile, paceZones, hrZones, currentWeekNumber, totalWeeks, currentPhase, daysUntilRace, thisWeekWorkouts, recentMetrics, weeklyVolumeTrend, adherenceRate, todaysWorkout } = context;
 
   const sections: string[] = [];
@@ -98,6 +115,76 @@ export function buildCoachSystemPrompt(context: TrainingContext, units: UnitSyst
       }
     });
     sections.push(`RECOVERY STATUS:\n- Score: ${rs.score}/100 (${rs.signalCount}/4 signals)\n${signalLines.join('\n')}\n- Recommendation: ${rs.recommendation.toUpperCase().replace('_', ' ')}`);
+  }
+
+  // Race week mode
+  if (daysUntilRace <= 7) {
+    sections.push(`RACE PREPARATION MODE (${daysUntilRace} days until race):
+You are now in race preparation mode. Focus advice on:
+- Taper execution — trust the training, reduced volume is by design
+- Race logistics and preparation
+- Pacing strategy based on the athlete's marathon pace zone
+- Nutrition and hydration planning
+- Mental preparation and confidence building
+- Sleep and recovery optimization
+
+FIRMLY DISCOURAGE:
+- Any extra training, volume additions, or "one more hard workout"
+- Trying anything new (gear, food, supplements, pacing strategy)
+- Overthinking or last-minute plan changes
+- Comparing to other runners or doubting fitness`);
+  }
+
+  // Banister readiness model
+  if (context.banisterState) {
+    const b = context.banisterState;
+    sections.push(`### Banister Readiness Model
+- Readiness Score: ${b.readiness}/100 (${b.recommendation})
+- Fitness Load: ${b.fitness} | Fatigue Load: ${b.fatigue}
+- Net Performance: ${b.performance}
+- Interpretation: ${b.recommendation === 'push' ? 'Runner is fresh — quality sessions will be productive' :
+    b.recommendation === 'normal' ? 'Normal training state — proceed as planned' :
+    b.recommendation === 'easy' ? 'Fatigue is accumulating — favor easy runs' :
+    'Overreached — needs rest or very easy running only'}`);
+  }
+
+  // RPE trend (subjective fatigue from Strava)
+  if (context.rpeTrend && context.rpeTrend.sampleSize >= 3) {
+    const rpe = context.rpeTrend;
+    const trendLabel = rpe.trend === 'fatigued'
+      ? 'FATIGUED — athlete consistently reporting high effort'
+      : rpe.trend === 'fresh'
+      ? 'FRESH — athlete finding workouts easy'
+      : 'NORMAL';
+    sections.push(`SUBJECTIVE EFFORT TREND (Strava RPE, last ${rpe.sampleSize} runs):\n- Avg RPE: ${rpe.avgRPE}/10 — ${trendLabel}\n${rpe.trend === 'fatigued' ? '⚠ High RPE trend suggests accumulating fatigue. Prioritize recovery advice.' : ''}`);
+  }
+
+  // Shoe mileage
+  if (options.shoesSummary) {
+    sections.push(`GEAR (SHOES):\n${options.shoesSummary}`);
+  }
+
+  // Strava detailed run data (per-mile splits, HR, elevation)
+  if (options.stravaDetails && options.stravaDetails.length > 0) {
+    const runLines: string[] = [];
+    for (const run of options.stravaDetails.slice(0, 5)) {
+      const splitStr = run.splits.map(s => {
+        const paceSec = s.movingTime > 0 && s.distance > 0
+          ? Math.round((s.movingTime / s.distance) * 1609.344)
+          : 0;
+        const paceMin = Math.floor(paceSec / 60);
+        const paceSs = paceSec % 60;
+        return `Mile ${s.split}: ${paceMin}:${paceSs.toString().padStart(2, '0')}${s.averageHeartrate ? ` @${Math.round(s.averageHeartrate)}bpm` : ''}`;
+      }).join(', ');
+
+      const extras: string[] = [];
+      if (run.elevationGainFt) extras.push(`${Math.round(run.elevationGainFt)}ft gain`);
+      if (run.cadenceAvg) extras.push(`${Math.round(run.cadenceAvg * 2)}spm`);
+      if (run.sufferScore) extras.push(`effort:${run.sufferScore}`);
+
+      runLines.push(`  ${run.workoutDate} (${run.workoutType}): ${splitStr}${extras.length ? ` [${extras.join(', ')}]` : ''}`);
+    }
+    sections.push(`STRAVA RUN DATA (per-mile splits from GPS watch):\n${runLines.join('\n')}\nUse this data to analyze pacing consistency, cardiac drift, and effort levels. Flag positive splits (slowing) on easy runs as a sign of going out too fast.`);
   }
 
   sections.push(`COACHING PRINCIPLES:

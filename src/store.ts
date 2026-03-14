@@ -1622,6 +1622,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       lastReconciliation: lastReconciliation || undefined,
       recoveryStatus: recoveryStatus || undefined,
       rpeTrend: rpeTrend || undefined,
+      banisterState: get().banisterState || undefined,
     };
   },
 }));
