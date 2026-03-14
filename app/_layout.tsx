@@ -5,12 +5,14 @@ import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { initializeDatabase } from '../src/db/client';
 import { useAppStore } from '../src/store';
 import { COLORS } from '../src/utils/constants';
+import { ReplanModal } from '../src/components/common/ReplanModal';
 
 export default function RootLayout() {
   const [dbReady, setDbReady] = useState(false);
   const router = useRouter();
   const segments = useSegments();
   const { initializeApp, isInitialized, userProfile, isLoading } = useAppStore();
+  const replanModal = useAppStore(s => s.replanModal);
 
   useEffect(() => {
     try {
@@ -29,10 +31,11 @@ export default function RootLayout() {
 
   useEffect(() => {
     if (isInitialized) {
-      // Fire-and-forget: sync health data + workout data in background
+      // Fire-and-forget: sync data in background
       const store = useAppStore.getState();
-      store.syncHealthData();
-      store.syncWorkoutFromHealthKit();
+      store.syncHealthData();        // Recovery signals from HealthKit
+      store.syncStravaData();         // Workout data from Strava (primary)
+      store.syncWorkoutFromHealthKit(); // Workout data from HealthKit (fallback)
     }
   }, [isInitialized]);
 
@@ -72,6 +75,18 @@ export default function RootLayout() {
         <Stack.Screen name="setup" options={{ headerShown: false, presentation: 'fullScreenModal' }} />
         <Stack.Screen name="workout/[id]" options={{ title: 'Workout Details', presentation: 'modal' }} />
       </Stack>
+      {replanModal?.visible && (
+        <ReplanModal
+          visible={replanModal.visible}
+          reason={replanModal.reason}
+          summary={replanModal.summary}
+          onViewPlan={() => {
+            useAppStore.setState({ replanModal: null });
+            router.push('/(tabs)/calendar');
+          }}
+          onDismiss={() => useAppStore.setState({ replanModal: null })}
+        />
+      )}
     </>
   );
 }
