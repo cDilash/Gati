@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
-import { View, Text, ScrollView, Pressable, StyleSheet } from 'react-native';
+import { View, Text, ScrollView, Pressable, StyleSheet, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
+import { Lightning, Sparkle, X } from 'phosphor-react-native';
 import { useAppStore } from '../../src/store';
 import { useSettingsStore } from '../../src/stores/settingsStore';
 import { COLORS, PHASE_COLORS, WORKOUT_TYPE_LABELS, DAY_NAMES } from '../../src/utils/constants';
@@ -8,7 +9,7 @@ import { formatDate, isToday, isPast } from '../../src/utils/dateUtils';
 import { displayDistance, distanceLabel } from '../../src/utils/units';
 
 export default function CalendarScreen() {
-  const { activePlan, weeks, allWorkouts, currentWeek } = useAppStore();
+  const { activePlan, weeks, allWorkouts, currentWeek, weeklyDigest, hasUnreadDigest, dismissWeeklyDigest } = useAppStore();
   const units = useSettingsStore(s => s.units);
   const [expandedWeeks, setExpandedWeeks] = useState<Set<string>>(new Set(currentWeek ? [currentWeek.id] : []));
   const router = useRouter();
@@ -54,6 +55,63 @@ export default function CalendarScreen() {
           <Text style={styles.statLabel}>Adherence</Text>
         </View>
       </View>
+
+      {hasUnreadDigest && weeklyDigest && (
+        <View style={styles.digestCard}>
+          <View style={styles.digestHeader}>
+            <View style={styles.digestHeaderLeft}>
+              <Sparkle size={16} color={COLORS.accent} weight="fill" />
+              <Text style={styles.digestLabel}>WEEKLY DIGEST</Text>
+            </View>
+            <Pressable onPress={dismissWeeklyDigest} hitSlop={12}>
+              <X size={18} color={COLORS.textTertiary} />
+            </Pressable>
+          </View>
+          <Text style={styles.digestHeadline}>{weeklyDigest.headline}</Text>
+          <Text style={styles.digestVolume}>{weeklyDigest.volumeSummary}</Text>
+
+          {weeklyDigest.highlights.length > 0 && (
+            <View style={styles.digestSection}>
+              {weeklyDigest.highlights.map((h, i) => (
+                <View key={i} style={styles.digestBulletRow}>
+                  <View style={[styles.digestDot, { backgroundColor: COLORS.success }]} />
+                  <Text style={styles.digestBulletText}>{h}</Text>
+                </View>
+              ))}
+            </View>
+          )}
+
+          {weeklyDigest.concerns.length > 0 && (
+            <View style={styles.digestSection}>
+              {weeklyDigest.concerns.map((c, i) => (
+                <View key={i} style={styles.digestBulletRow}>
+                  <View style={[styles.digestDot, { backgroundColor: COLORS.warning }]} />
+                  <Text style={styles.digestBulletText}>{c}</Text>
+                </View>
+              ))}
+            </View>
+          )}
+
+          {weeklyDigest.recoveryTrend ? (
+            <Text style={styles.digestRecovery}>{weeklyDigest.recoveryTrend}</Text>
+          ) : null}
+
+          {weeklyDigest.nextWeekPreview ? (
+            <View style={styles.digestNextWeek}>
+              <Text style={styles.digestNextWeekLabel}>NEXT WEEK</Text>
+              <Text style={styles.digestNextWeekText}>{weeklyDigest.nextWeekPreview}</Text>
+            </View>
+          ) : null}
+
+          {weeklyDigest.coachNote ? (
+            <Text style={styles.digestCoachNote}>{weeklyDigest.coachNote}</Text>
+          ) : null}
+
+          <Pressable style={styles.digestDiscussButton} onPress={() => router.push('/(tabs)/coach')}>
+            <Text style={styles.digestDiscussText}>Discuss with Coach</Text>
+          </Pressable>
+        </View>
+      )}
 
       {weeks.map(week => {
         const isCurrentWeek = currentWeek?.id === week.id;
@@ -103,7 +161,15 @@ export default function CalendarScreen() {
                         <Text style={styles.workoutDist}>{displayDistance(workout.distance_miles, units).toFixed(1)}{dl}</Text>
                       )}
                       {workout.adjustment_reason && (
-                        <Text style={styles.adaptedIcon}>~</Text>
+                        <Pressable
+                          onPress={() => Alert.alert(
+                            'AI Adjustment',
+                            `Original: ${workout.original_distance_miles?.toFixed(1) || '?'}mi → Now: ${workout.distance_miles.toFixed(1)}mi\n\n${workout.adjustment_reason}`
+                          )}
+                          style={{ marginLeft: 4, padding: 4 }}
+                        >
+                          <Lightning size={14} color="#FF9500" weight="fill" />
+                        </Pressable>
                       )}
                       <Text style={styles.statusIcon}>
                         {workout.status === 'completed' ? '✓' : workout.status === 'skipped' ? '✕' : workout.workout_type === 'rest' ? '' : '–'}
@@ -144,4 +210,21 @@ const styles = StyleSheet.create({
   adaptedIcon: { color: COLORS.warning, fontSize: 12, fontWeight: '700', width: 14, textAlign: 'center' },
   statusIcon: { color: COLORS.textSecondary, fontSize: 14, width: 20, textAlign: 'center' },
   emptyText: { color: COLORS.textSecondary, fontSize: 16, textAlign: 'center', marginTop: 60 },
+  digestCard: { backgroundColor: COLORS.surface, borderRadius: 16, padding: 20, marginBottom: 16, borderWidth: 1, borderColor: 'rgba(0, 122, 255, 0.25)' },
+  digestHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  digestHeaderLeft: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  digestLabel: { color: COLORS.accent, fontSize: 11, fontWeight: '700', letterSpacing: 1 },
+  digestHeadline: { color: COLORS.text, fontSize: 17, fontWeight: '700', lineHeight: 24, marginBottom: 4 },
+  digestVolume: { color: COLORS.textSecondary, fontSize: 14, fontFamily: 'Courier', marginBottom: 12 },
+  digestSection: { marginBottom: 8 },
+  digestBulletRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, paddingVertical: 3 },
+  digestDot: { width: 7, height: 7, borderRadius: 3.5, marginTop: 5 },
+  digestBulletText: { color: COLORS.text, fontSize: 13, lineHeight: 19, flex: 1 },
+  digestRecovery: { color: COLORS.textSecondary, fontSize: 13, lineHeight: 18, marginBottom: 8 },
+  digestNextWeek: { backgroundColor: COLORS.background, borderRadius: 10, padding: 12, marginBottom: 8 },
+  digestNextWeekLabel: { color: COLORS.textTertiary, fontSize: 10, fontWeight: '700', letterSpacing: 1, marginBottom: 4 },
+  digestNextWeekText: { color: COLORS.text, fontSize: 13, lineHeight: 19 },
+  digestCoachNote: { color: COLORS.accent, fontSize: 13, fontWeight: '600', lineHeight: 18, fontStyle: 'italic', marginBottom: 12 },
+  digestDiscussButton: { alignSelf: 'flex-start', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8, backgroundColor: 'rgba(0, 122, 255, 0.12)' },
+  digestDiscussText: { color: COLORS.accent, fontSize: 13, fontWeight: '600' },
 });
