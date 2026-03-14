@@ -105,7 +105,7 @@ export interface PerformanceMetric {
   id: string;
   workout_id?: string;
   date: string;
-  source: 'healthkit' | 'manual';
+  source: 'healthkit' | 'manual' | 'strava';
   distance_miles: number;
   duration_seconds: number;
   avg_pace_per_mile: number;
@@ -113,6 +113,7 @@ export interface PerformanceMetric {
   max_hr?: number;
   calories?: number;
   route_json?: string;
+  rpe_score?: number | null;  // 1-10 perceived exertion from Strava
   synced_at: string;
 }
 
@@ -198,6 +199,7 @@ export interface TrainingContext {
   lastVDOTUpdate?: VDOTUpdateResult;
   lastReconciliation?: PlanReconciliation;
   recoveryStatus?: RecoveryStatus;
+  rpeTrend?: { trend: 'fatigued' | 'normal' | 'fresh'; avgRPE: number; sampleSize: number } | null;
 }
 
 export interface PlanGeneratorConfig {
@@ -246,4 +248,179 @@ export interface RecoverySignal {
   value: number;
   score: number;
   status: 'good' | 'fair' | 'poor';
+}
+
+// ─── Banister Impulse-Response Types ────────────────────────
+
+export interface BanisterState {
+  fitness: number;          // accumulated fitness (slow decay)
+  fatigue: number;          // accumulated fatigue (fast decay)
+  performance: number;      // fitness - fatigue
+  readiness: number;        // 0-100 normalized score
+  recommendation: 'push' | 'normal' | 'easy' | 'rest';
+  trimpHistory: { date: string; trimp: number }[];  // last 28 days
+}
+
+export interface DailyTRIMP {
+  date: string;
+  trimp: number;            // training impulse score
+  source: 'hr' | 'pace' | 'rpe' | 'estimated';
+}
+
+// ─── AI Briefing Types ──────────────────────────────────────
+
+export interface WeatherData {
+  temp: number;        // fahrenheit
+  humidity: number;    // percentage
+  condition: string;   // "clear", "cloudy", "rain", etc.
+}
+
+// ─── Strava Types ─────────────────────────────────────────
+
+export interface StravaTokens {
+  accessToken: string;
+  refreshToken: string;
+  expiresAt: number;    // unix timestamp (seconds)
+  athleteId: number;
+  athleteName: string | null;
+}
+
+export interface StravaActivity {
+  id: number;
+  name: string;
+  type: string;                   // "Run", "Ride", etc.
+  startDate: string;              // ISO
+  distance: number;               // meters
+  movingTime: number;             // seconds
+  elapsedTime: number;            // seconds
+  totalElevationGain: number;     // meters
+  averageSpeed: number;           // m/s
+  maxSpeed: number;               // m/s
+  averageHeartrate: number | null;
+  maxHeartrate: number | null;
+  hasHeartrate: boolean;
+  sufferScore: number | null;     // Strava's relative effort
+}
+
+export interface StravaActivityDetail extends StravaActivity {
+  calories: number;
+  description: string | null;
+  splitsStandard: StravaSplit[];   // per-mile splits
+  laps: StravaLap[];
+  averageCadence: number | null;
+  deviceName: string | null;      // "Garmin Forerunner 265"
+  bestEfforts: StravaBestEffort[];
+  gearId: string | null;
+  gearName: string | null;
+  perceivedExertion: number | null;  // 1-10 RPE entered in Strava
+  stravaWorkoutType: number | null;  // 0=default, 1=race, 2=long run, 3=workout
+  polylineEncoded: string | null;    // full precision route (for detail view)
+  summaryPolylineEncoded: string | null; // simplified route (for thumbnails)
+}
+
+export interface StravaBestEffort {
+  name: string;         // "400m", "1/2 mile", "1 mile", "5K", "10K", etc.
+  distance: number;     // meters
+  movingTime: number;   // seconds
+  elapsedTime: number;  // seconds
+  startDate: string;    // ISO timestamp
+  prRank: number | null; // 1=all-time PR, 2=second best, null=not a PR
+}
+
+export interface StravaSplit {
+  distance: number;               // meters
+  elapsedTime: number;            // seconds
+  movingTime: number;             // seconds
+  averageSpeed: number;           // m/s
+  averageHeartrate: number | null;
+  paceZone: number;               // Strava's zone 0-4
+  split: number;                  // mile number
+}
+
+export interface StravaLap {
+  name: string;
+  distance: number;
+  elapsedTime: number;
+  movingTime: number;
+  averageSpeed: number;
+  averageHeartrate: number | null;
+  maxHeartrate: number | null;
+  lapIndex: number;
+}
+
+export interface StravaStreams {
+  heartrate?: { data: number[] };
+  velocity_smooth?: { data: number[] };  // m/s
+  distance?: { data: number[] };         // cumulative meters
+  altitude?: { data: number[] };         // meters
+  cadence?: { data: number[] };          // spm
+  time?: { data: number[] };             // seconds from start
+}
+
+export type BriefingType = 'pre_workout' | 'post_run' | 'weekly_digest' | 'suggestion' | 'race_week';
+
+export interface BriefingCache {
+  id: string;
+  type: BriefingType;
+  date: string;
+  context_hash: string;
+  content: string;
+  created_at: string;
+}
+
+// ─── Cloud Backup Types ─────────────────────────────────────
+
+export interface BackupData {
+  version: number;             // schema version for future compatibility
+  createdAt: string;           // ISO timestamp
+  deviceName: string;
+  appVersion: string;
+  userProfile: any;            // full user_profile row
+  trainingPlan: any;           // active plan
+  trainingWeeks: any[];        // all weeks
+  workouts: any[];             // all workouts
+  performanceMetrics: any[];   // all metrics
+  coachMessages: any[];        // chat history
+  adaptiveLogs: any[];         // adaptive engine history
+  healthSnapshots: any[];      // last 30 days of health data
+  stravaReference: {           // Strava connection info (legacy, tokens excluded)
+    athleteId: number | null;
+    athleteName: string | null;
+  } | null;
+  stravaTokens?: {             // Full Strava OAuth tokens for seamless restore
+    access_token: string;
+    refresh_token: string;
+    expires_at: number;
+    athlete_id: number;
+    athlete_name: string | null;
+  } | null;
+  appSettings: any;            // any settings
+  briefingCache: any[];        // AI briefing cache
+  stravaDetails: any[];        // Strava activity details (splits, etc.)
+}
+
+export interface BackupInfo {
+  exists: boolean;
+  createdAt: string | null;
+  deviceName: string | null;
+  appVersion: string | null;
+}
+
+export interface Shoe {
+  id: string;
+  stravaGearId: string | null;
+  name: string;
+  brand: string | null;
+  totalMiles: number;
+  maxMiles: number;
+  retired: boolean;
+}
+
+export interface ShoeAlert {
+  shoeId: string;
+  name: string;
+  currentMiles: number;
+  maxMiles: number;
+  severity: 'info' | 'warning' | 'critical';
+  message: string;
 }
