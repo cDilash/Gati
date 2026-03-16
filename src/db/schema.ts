@@ -64,7 +64,7 @@ CREATE TABLE IF NOT EXISTS workout (
   target_distance_miles REAL,
   target_pace_zone TEXT,
   intervals_json TEXT,
-  status TEXT NOT NULL DEFAULT 'upcoming' CHECK (status IN ('upcoming', 'completed', 'skipped', 'modified')),
+  status TEXT NOT NULL DEFAULT 'upcoming' CHECK (status IN ('upcoming', 'completed', 'skipped', 'modified', 'partial')),
   original_distance_miles REAL,
   modification_reason TEXT,
   strava_activity_id INTEGER,

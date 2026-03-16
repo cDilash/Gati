@@ -116,6 +116,7 @@ export function initializeDatabase(): void {
     { table: 'user_profile', column: 'vdot_updated_at', type: 'TEXT' },
     { table: 'user_profile', column: 'vdot_source', type: "TEXT DEFAULT 'manual'" },
     { table: 'user_profile', column: 'vdot_confidence', type: "TEXT DEFAULT 'moderate'" },
+    { table: 'workout', column: 'execution_quality', type: "TEXT DEFAULT 'on_target'" },
   ];
   for (const { table, column, type } of newColumns) {
     try { database.execSync(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`); } catch {}
@@ -642,6 +643,100 @@ export function getShoes(): Shoe[] {
     maxMiles: r.max_miles,
     retired: !!r.retired,
   }));
+}
+
+// ─── Sweep & Volume ─────────────────────────────────────────
+
+export function sweepPastWorkouts(): { skipped: number; lateMatched: number } {
+  const database = getDatabase();
+  const today = getToday();
+  let skipped = 0;
+  let lateMatched = 0;
+
+  // Find all past workouts still marked 'upcoming'
+  const pastUpcoming = database.getAllSync<any>(
+    `SELECT w.id, w.scheduled_date, w.workout_type
+     FROM workout w
+     JOIN training_plan tp ON w.plan_id = tp.id
+     WHERE tp.status = 'active'
+     AND w.status = 'upcoming'
+     AND w.scheduled_date < ?
+     AND w.workout_type != 'rest'`,
+    [today]
+  );
+
+  for (const workout of pastUpcoming) {
+    // Check if a metric exists for that date (maybe Strava synced late)
+    const metric = database.getFirstSync<any>(
+      `SELECT id FROM performance_metric WHERE date = ? AND workout_id IS NULL`,
+      [workout.scheduled_date]
+    );
+
+    if (metric) {
+      // Late match — link the metric and mark completed
+      database.runSync('UPDATE performance_metric SET workout_id = ? WHERE id = ?', [workout.id, metric.id]);
+      database.runSync("UPDATE workout SET status = 'completed' WHERE id = ?", [workout.id]);
+      lateMatched++;
+    } else {
+      // No activity — mark as skipped
+      database.runSync("UPDATE workout SET status = 'skipped' WHERE id = ?", [workout.id]);
+      skipped++;
+    }
+  }
+
+  // Also auto-skip rest days that are past (keep plan view clean)
+  database.runSync(
+    `UPDATE workout SET status = 'completed'
+     WHERE status = 'upcoming' AND workout_type = 'rest' AND scheduled_date < ?
+     AND plan_id IN (SELECT id FROM training_plan WHERE status = 'active')`,
+    [today]
+  );
+
+  if (skipped > 0 || lateMatched > 0) {
+    console.log(`[DB] Sweep: ${skipped} skipped, ${lateMatched} late-matched`);
+  }
+
+  return { skipped, lateMatched };
+}
+
+export function recalculateWeeklyVolumes(): void {
+  const database = getDatabase();
+
+  // Get all training weeks for the active plan
+  const weeks = database.getAllSync<any>(
+    `SELECT tw.id, tw.week_number, w_start.scheduled_date as week_start
+     FROM training_week tw
+     JOIN training_plan tp ON tw.plan_id = tp.id
+     LEFT JOIN (
+       SELECT plan_id, week_number, MIN(scheduled_date) as scheduled_date
+       FROM workout GROUP BY plan_id, week_number
+     ) w_start ON w_start.plan_id = tw.plan_id AND w_start.week_number = tw.week_number
+     WHERE tp.status = 'active'`
+  );
+
+  for (const week of weeks) {
+    if (!week.week_start) continue;
+
+    // Calculate week end (6 days after start)
+    const start = new Date(week.week_start + 'T00:00:00');
+    const end = new Date(start);
+    end.setDate(end.getDate() + 6);
+    const endStr = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}-${String(end.getDate()).padStart(2, '0')}`;
+
+    // Sum ALL performance metrics in that date range (matched + unmatched + manual)
+    const volumeRow = database.getFirstSync<any>(
+      `SELECT COALESCE(SUM(distance_miles), 0) as total
+       FROM performance_metric
+       WHERE date >= ? AND date <= ?`,
+      [week.week_start, endStr]
+    );
+
+    const actualVolume = Math.round((volumeRow?.total ?? 0) * 10) / 10;
+    database.runSync(
+      'UPDATE training_week SET actual_volume = ? WHERE id = ?',
+      [actualVolume, week.id]
+    );
+  }
 }
 
 // ─── Utilities ──────────────────────────────────────────────

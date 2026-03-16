@@ -120,7 +120,11 @@ Keep responses to 2-4 paragraphs max unless the athlete asks for detailed analys
 
     const scheduled = weekWorkouts.filter(w => w.workout_type !== 'rest');
     for (const w of scheduled) {
-      const status = w.status === 'completed' ? 'DONE' : w.status === 'skipped' ? 'SKIP' : 'TODO';
+      let status = w.status === 'completed' ? 'DONE' : w.status === 'skipped' ? 'SKIP' : w.status === 'partial' ? 'PARTIAL' : 'TODO';
+      if (w.execution_quality && w.execution_quality !== 'on_target' && (w.status === 'completed' || w.status === 'partial')) {
+        const qualityLabel = w.execution_quality === 'missed_pace' ? ' ⚠️ pace missed' : w.execution_quality === 'exceeded_pace' ? ' ⚠️ too fast' : w.execution_quality === 'wrong_type' ? ' ⚠️ wrong workout' : '';
+        status += qualityLabel;
+      }
       parts.push(`  [${status}] ${w.scheduled_date}: ${w.title} — ${w.target_distance_miles}mi`);
     }
     parts.push('');
@@ -221,6 +225,27 @@ Keep responses to 2-4 paragraphs max unless the athlete asks for detailed analys
         parts.push(`  ${prs.join(' | ')}`);
         parts.push('');
       }
+    }
+  } catch {}
+
+  // Flag runs on rest days
+  try {
+    const { getDatabase: getDb } = require('../db/database');
+    const restDayRuns = getDb().getAllSync(
+      `SELECT pm.date, pm.distance_miles
+       FROM performance_metric pm
+       JOIN workout w ON w.scheduled_date = pm.date AND w.workout_type = 'rest'
+       JOIN training_plan tp ON w.plan_id = tp.id
+       WHERE tp.status = 'active'
+       AND pm.date >= date('now', '-14 days')
+       AND pm.workout_id IS NULL`
+    );
+    if (restDayRuns.length > 0) {
+      parts.push('REST DAY ACTIVITY:');
+      for (const r of restDayRuns) {
+        parts.push(`  ⚠️ ${(r as any).date}: ran ${((r as any).distance_miles as number).toFixed(1)}mi on a scheduled rest day`);
+      }
+      parts.push('');
     }
   } catch {}
 

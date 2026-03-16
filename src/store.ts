@@ -668,7 +668,17 @@ export const useAppStore = create<AppState>((set, get) => ({
     const matchable = workouts.filter(
       w => w.scheduled_date === date && w.workout_type !== 'rest' && w.status === 'upcoming'
     );
-    const matchedId = matchable.length === 1 ? matchable[0].id : null;
+    let matchedId: string | null = null;
+    if (matchable.length === 1) {
+      matchedId = matchable[0].id;
+    } else if (matchable.length > 1) {
+      // Multiple workouts: match by closest distance
+      let bestDiff = Infinity;
+      for (const w of matchable) {
+        const diff = Math.abs((w.target_distance_miles ?? 0) - distanceMiles);
+        if (diff < bestDiff) { bestDiff = diff; matchedId = w.id; }
+      }
+    }
 
     const metric: Omit<PerformanceMetric, 'created_at'> = {
       id: Crypto.randomUUID(),
@@ -772,19 +782,22 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (state.isSyncing) return; // prevent double-sync
     set({ isSyncing: true });
 
+    // Step 1: Sweep past workouts (always, before anything else)
+    if (state.activePlan) {
+      try {
+        const { sweepPastWorkouts } = require('./db/database');
+        sweepPastWorkouts();
+      } catch {}
+    }
+
     const results: { strava: string | null; health: string | null } = { strava: null, health: null };
 
+    // Step 2: Parallel syncs
     const stravaPromise = state.isStravaConnected
       ? (async () => {
           try {
             const r = await state.syncStrava();
             results.strava = `${r.newActivities} new, ${r.matched} matched`;
-            // Refresh state after Strava sync brings new data
-            if (r.newActivities > 0 || r.matched > 0) {
-              get().refreshState();
-              // Refresh briefing if new data might affect it
-              get().fetchBriefing();
-            }
           } catch (e) {
             console.log('[SyncAll] Strava failed:', e);
           }
@@ -807,6 +820,18 @@ export const useAppStore = create<AppState>((set, get) => ({
       : Promise.resolve();
 
     await Promise.allSettled([stravaPromise, healthPromise, reviewPromise]);
+
+    // Step 3: Recalculate volumes after all syncs complete
+    if (state.activePlan) {
+      try {
+        const { recalculateWeeklyVolumes } = require('./db/database');
+        recalculateWeeklyVolumes();
+      } catch {}
+    }
+
+    // Refresh state
+    get().refreshState();
+    get().fetchBriefing();
 
     set({ isSyncing: false, lastSyncResult: results });
     console.log(`[SyncAll] Done — Strava: ${results.strava ?? 'skipped'}, Health: ${results.health ?? 'skipped'}`);

@@ -12,6 +12,7 @@ import { metersToMiles, mpsToSecondsPerMile, metersToFeet } from './convert';
 import {
   PerformanceMetric,
   Workout,
+  WorkoutStatus,
   StravaActivityDetail,
   StravaStreams,
 } from '../types';
@@ -205,6 +206,62 @@ function markWorkoutCompleted(workoutId: string, stravaActivityId: number): void
   }
 }
 
+// ─── Execution Quality Assessment ────────────────────────
+
+function assessExecutionQuality(
+  workout: Workout,
+  metric: Omit<PerformanceMetric, 'created_at'>,
+): { status: WorkoutStatus; quality: string } {
+  const targetDist = workout.target_distance_miles ?? 0;
+  const actualDist = metric.distance_miles;
+  const distRatio = targetDist > 0 ? actualDist / targetDist : 1;
+
+  // Determine status based on distance completion
+  let status: WorkoutStatus = 'completed';
+  if (distRatio >= 0.5 && distRatio < 0.8) {
+    status = 'partial';
+  }
+
+  // Determine execution quality based on pace
+  let quality = 'on_target';
+  const qualityTypes = ['threshold', 'interval', 'tempo', 'marathon_pace'];
+  const easyTypes = ['easy', 'recovery'];
+
+  if (metric.avg_pace_sec_per_mile && workout.target_pace_zone) {
+    try {
+      const { calculatePaceZones } = require('../engine/paceZones');
+      const { getUserProfile } = require('../db/database');
+      const profile = getUserProfile();
+      if (profile) {
+        const zones = calculatePaceZones(profile.vdot_score);
+        const targetZone = zones[workout.target_pace_zone as keyof typeof zones];
+        if (targetZone) {
+          const actualPace = metric.avg_pace_sec_per_mile;
+          // For quality workouts: check if too slow
+          if (qualityTypes.includes(workout.workout_type)) {
+            if (actualPace > targetZone.max + 30) {
+              quality = 'missed_pace';
+            }
+          }
+          // For easy workouts: check if too fast
+          if (easyTypes.includes(workout.workout_type)) {
+            if (actualPace < targetZone.min - 15) {
+              quality = 'exceeded_pace';
+            }
+          }
+        }
+      }
+    } catch {}
+  }
+
+  // Distance way off = wrong type
+  if (distRatio < 0.5) {
+    quality = 'wrong_type';
+  }
+
+  return { status, quality };
+}
+
 // ─── Activity → PerformanceMetric Conversion ───────────────
 
 function stravaActivityToMetric(
@@ -312,12 +369,29 @@ export async function syncStravaActivities(options?: {
 
     // Save metric + detail
     const metric = stravaActivityToMetric(detail, matchedWorkoutId);
+
+    // Assess execution quality
+    let workoutStatus: WorkoutStatus = 'completed';
+    let executionQuality = 'on_target';
+    if (matchedWorkoutId) {
+      const matchedWorkout = scheduledWorkouts.find(w => w.id === matchedWorkoutId);
+      if (matchedWorkout) {
+        const assessment = assessExecutionQuality(matchedWorkout, metric);
+        workoutStatus = assessment.status;
+        executionQuality = assessment.quality;
+      }
+    }
+
     saveMetric(metric);
     saveStravaDetail(metric.id, detail, streams);
 
-    // Auto-mark matched workout as completed
+    // Auto-mark matched workout with quality assessment
     if (matchedWorkoutId) {
-      markWorkoutCompleted(matchedWorkoutId, detail.id);
+      const db = getDb();
+      db.runSync(
+        "UPDATE workout SET status = ?, strava_activity_id = ?, execution_quality = ? WHERE id = ?",
+        [workoutStatus, detail.id, executionQuality, matchedWorkoutId]
+      );
       result.matched++;
     } else {
       result.unmatched++;

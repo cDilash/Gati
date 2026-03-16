@@ -3,7 +3,7 @@
 export type Phase = 'base' | 'build' | 'peak' | 'taper';
 export type PaceZoneName = 'E' | 'M' | 'T' | 'I' | 'R';
 export type Level = 'beginner' | 'intermediate' | 'advanced';
-export type WorkoutStatus = 'upcoming' | 'completed' | 'skipped' | 'modified';
+export type WorkoutStatus = 'upcoming' | 'completed' | 'skipped' | 'modified' | 'partial';
 
 // ─── User Profile ────────────────────────────────────────────
 
@@ -160,6 +160,7 @@ export interface Workout {
   status: WorkoutStatus;
   original_distance_miles: number | null;
   modification_reason: string | null;
+  execution_quality: 'on_target' | 'missed_pace' | 'exceeded_pace' | 'wrong_type' | null;
   strava_activity_id: number | null;
   created_at: string;
 }
