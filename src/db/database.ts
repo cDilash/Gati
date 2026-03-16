@@ -103,6 +103,15 @@ export function initializeDatabase(): void {
     { table: 'strava_activity_detail', column: 'segment_efforts_json', type: 'TEXT' },
     { table: 'strava_activity_detail', column: 'timezone', type: 'TEXT' },
     { table: 'strava_activity_detail', column: 'utc_offset', type: 'INTEGER' },
+    { table: 'user_profile', column: 'weight_source', type: "TEXT DEFAULT 'manual'" },
+    { table: 'user_profile', column: 'weight_updated_at', type: 'TEXT' },
+    { table: 'health_snapshot', column: 'weight_kg', type: 'REAL' },
+    { table: 'health_snapshot', column: 'vo2max', type: 'REAL' },
+    { table: 'health_snapshot', column: 'respiratory_rate', type: 'REAL' },
+    { table: 'health_snapshot', column: 'respiratory_rate_trend_json', type: 'TEXT' },
+    { table: 'health_snapshot', column: 'spo2', type: 'REAL' },
+    { table: 'health_snapshot', column: 'spo2_trend_json', type: 'TEXT' },
+    { table: 'health_snapshot', column: 'steps', type: 'INTEGER' },
   ];
   for (const { table, column, type } of newColumns) {
     try { database.execSync(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`); } catch {}
@@ -146,8 +155,8 @@ export function saveUserProfile(profile: Omit<UserProfile, 'id' | 'updated_at'>)
       current_weekly_miles, longest_recent_run, experience_level,
       race_date, race_name, race_course_profile, race_goal_type,
       target_finish_time_sec, injury_history, known_weaknesses,
-      scheduling_notes, available_days, long_run_day, updated_at)
-     VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+      scheduling_notes, available_days, long_run_day, weight_source, weight_updated_at, updated_at)
+     VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
     profile.name ?? null,
     profile.age,
     profile.gender,
@@ -169,6 +178,8 @@ export function saveUserProfile(profile: Omit<UserProfile, 'id' | 'updated_at'>)
     profile.scheduling_notes ?? null,
     JSON.stringify(profile.available_days),
     profile.long_run_day,
+    profile.weight_source ?? 'manual',
+    profile.weight_updated_at ?? null,
   );
 }
 

@@ -129,9 +129,12 @@ function HealthDataSection() {
         <SettingsRow label="Sync Now" onPress={async () => {
           try {
             const { getDatabase } = require('../../src/db/database');
-            getDatabase().runSync('DELETE FROM health_snapshot');
+            getDatabase().execSync('DROP TABLE IF EXISTS health_snapshot');
+            const { CREATE_HEALTH_SNAPSHOT, CREATE_HEALTH_DATE_INDEX } = require('../../src/db/schema');
+            getDatabase().execSync(CREATE_HEALTH_SNAPSHOT);
+            getDatabase().execSync(CREATE_HEALTH_DATE_INDEX);
           } catch {}
-          await syncHealth();
+          try { await syncHealth(); } catch {}
         }} />
       </YStack>
     </>

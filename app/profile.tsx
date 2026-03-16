@@ -115,6 +115,8 @@ export default function ProfileScreen() {
       scheduling_notes: schedulingNotes.trim() || null,
       available_days: availableDays,
       long_run_day: longRunDay,
+      weight_source: 'manual',
+      weight_updated_at: new Date().toISOString().split('T')[0],
     });
 
     setEditing(false);
@@ -238,34 +240,34 @@ export default function ProfileScreen() {
         <H fontSize={28} color={COLORS.text} marginBottom={20} letterSpacing={1}>Edit Profile</H>
 
         <Label text="Name" />
-        <Input size="$5" backgroundColor="$surface" borderColor="$border" color="$color" fontSize={16} fontFamily="$body" placeholderTextColor="$textTertiary" value={name} onChangeText={setName} />
+        <Input size="$8" backgroundColor="$surface" borderColor="$border" color="$color" fontSize={16} fontFamily="$body" placeholderTextColor="$textTertiary" value={name} onChangeText={setName} />
 
         <Label text="Age" />
-        <Input size="$5" backgroundColor="$surface" borderColor="$border" color="$color" fontSize={16} fontFamily="$body" placeholderTextColor="$textTertiary" keyboardType="number-pad" value={age} onChangeText={setAge} />
+        <Input size="$8" backgroundColor="$surface" borderColor="$border" color="$color" fontSize={16} fontFamily="$body" placeholderTextColor="$textTertiary" keyboardType="number-pad" value={age} onChangeText={setAge} />
 
         <Label text="Height (cm)" />
-        <Input size="$5" backgroundColor="$surface" borderColor="$border" color="$color" fontSize={16} fontFamily="$body" placeholder="e.g. 175" placeholderTextColor="$textTertiary" keyboardType="number-pad" value={heightCm} onChangeText={setHeightCm} />
+        <Input size="$8" backgroundColor="$surface" borderColor="$border" color="$color" fontSize={16} fontFamily="$body" placeholder="e.g. 175" placeholderTextColor="$textTertiary" keyboardType="number-pad" value={heightCm} onChangeText={setHeightCm} />
 
         <Label text="Weight (kg)" />
-        <Input size="$5" backgroundColor="$surface" borderColor="$border" color="$color" fontSize={16} fontFamily="$body" placeholder="Optional" placeholderTextColor="$textTertiary" keyboardType="decimal-pad" value={weightKg} onChangeText={setWeightKg} />
+        <Input size="$8" backgroundColor="$surface" borderColor="$border" color="$color" fontSize={16} fontFamily="$body" placeholder="Optional" placeholderTextColor="$textTertiary" keyboardType="decimal-pad" value={weightKg} onChangeText={setWeightKg} />
 
         <Label text="Weekly Mileage" />
-        <Input size="$5" backgroundColor="$surface" borderColor="$border" color="$color" fontSize={16} fontFamily="$body" placeholderTextColor="$textTertiary" keyboardType="decimal-pad" value={weeklyMiles} onChangeText={setWeeklyMiles} />
+        <Input size="$8" backgroundColor="$surface" borderColor="$border" color="$color" fontSize={16} fontFamily="$body" placeholderTextColor="$textTertiary" keyboardType="decimal-pad" value={weeklyMiles} onChangeText={setWeeklyMiles} />
 
         <Label text="Longest Recent Run (mi)" />
-        <Input size="$5" backgroundColor="$surface" borderColor="$border" color="$color" fontSize={16} fontFamily="$body" placeholderTextColor="$textTertiary" keyboardType="decimal-pad" value={longestRun} onChangeText={setLongestRun} />
+        <Input size="$8" backgroundColor="$surface" borderColor="$border" color="$color" fontSize={16} fontFamily="$body" placeholderTextColor="$textTertiary" keyboardType="decimal-pad" value={longestRun} onChangeText={setLongestRun} />
 
         <Label text="Race Name" />
-        <Input size="$5" backgroundColor="$surface" borderColor="$border" color="$color" fontSize={16} fontFamily="$body" placeholder="Optional" placeholderTextColor="$textTertiary" value={raceName} onChangeText={setRaceName} />
+        <Input size="$8" backgroundColor="$surface" borderColor="$border" color="$color" fontSize={16} fontFamily="$body" placeholder="Optional" placeholderTextColor="$textTertiary" value={raceName} onChangeText={setRaceName} />
 
         <Label text="Race Date (YYYY-MM-DD)" />
-        <Input size="$5" backgroundColor="$surface" borderColor="$border" color="$color" fontSize={16} fontFamily="$body" placeholderTextColor="$textTertiary" value={raceDate} onChangeText={setRaceDate} />
+        <Input size="$8" backgroundColor="$surface" borderColor="$border" color="$color" fontSize={16} fontFamily="$body" placeholderTextColor="$textTertiary" value={raceDate} onChangeText={setRaceDate} />
 
         <Label text="Target Finish Time (H:MM:SS)" />
-        <Input size="$5" backgroundColor="$surface" borderColor="$border" color="$color" fontSize={16} fontFamily="$body" placeholder="Optional" placeholderTextColor="$textTertiary" value={targetTime} onChangeText={setTargetTime} />
+        <Input size="$8" backgroundColor="$surface" borderColor="$border" color="$color" fontSize={16} fontFamily="$body" placeholder="Optional" placeholderTextColor="$textTertiary" value={targetTime} onChangeText={setTargetTime} />
 
         <Label text="Scheduling Notes" />
-        <Input size="$5" backgroundColor="$surface" borderColor="$border" color="$color" fontSize={16} fontFamily="$body" placeholder="Optional" placeholderTextColor="$textTertiary" multiline numberOfLines={3} minHeight={60} value={schedulingNotes} onChangeText={setSchedulingNotes} />
+        <Input size="$8" backgroundColor="$surface" borderColor="$border" color="$color" fontSize={16} fontFamily="$body" placeholder="Optional" placeholderTextColor="$textTertiary" multiline numberOfLines={3} minHeight={60} value={schedulingNotes} onChangeText={setSchedulingNotes} />
 
         {/* Save / Cancel */}
         <YStack marginTop={24} gap={10}>

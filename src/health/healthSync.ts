@@ -4,6 +4,11 @@ import { requestHealthKitPermissions } from "./permissions";
 import { getRestingHeartRate } from "./restingHR";
 import { getHRVSamples } from "./hrv";
 import { getSleepData } from "./sleep";
+import { getWeight } from "./weight";
+import { getVO2Max } from "./vo2max";
+import { getRespiratoryRate } from "./respiratory";
+import { getBloodOxygen } from "./spo2";
+import { getStepCount } from "./steps";
 import { getDatabase } from "../db/database";
 import { HealthSnapshot } from "../types";
 
@@ -30,26 +35,48 @@ export async function syncHealthData(): Promise<HealthSnapshot | null> {
     return cached;
   }
 
-  // Fetch all three in parallel — each one independent
-  const [restingHR, hrv, sleep] = await Promise.allSettled([
+  // Fetch all health data in parallel — each one independent
+  const [restingHR, hrv, sleep, weight, vo2max, resp, spo2, steps] = await Promise.allSettled([
     getRestingHeartRate(14),
     getHRVSamples(14),
     getSleepData(14),
+    getWeight(),
+    getVO2Max(),
+    getRespiratoryRate(14),
+    getBloodOxygen(14),
+    getStepCount(new Date()),
   ]);
 
   const restingHRData = restingHR.status === "fulfilled" ? restingHR.value : [];
   const hrvData = hrv.status === "fulfilled" ? hrv.value : [];
   const sleepData = sleep.status === "fulfilled" ? sleep.value : [];
+  const weightData = weight.status === "fulfilled" ? weight.value : null;
+  const vo2maxData = vo2max.status === "fulfilled" ? vo2max.value : null;
+  const respData = resp.status === "fulfilled" ? resp.value : [];
+  const spo2Data = spo2.status === "fulfilled" ? spo2.value : [];
+  const stepsData = steps.status === "fulfilled" ? steps.value : null;
+
+  // Log any rejected promises
+  const results = [
+    { name: 'weight', r: weight }, { name: 'vo2max', r: vo2max },
+    { name: 'resp', r: resp }, { name: 'spo2', r: spo2 },
+  ];
+  for (const { name, r } of results) {
+    if (r.status === 'rejected') console.log(`[HealthKit] ${name} REJECTED:`, r.reason?.message || r.reason);
+  }
 
   // Today's values (most recent)
   const todayRHR = restingHRData.length > 0 ? restingHRData[0].value : null;
   const todayHRV = hrvData.length > 0 ? hrvData[0].value : null;
   const todaySleep = sleepData.length > 0 ? sleepData[0].totalMinutes / 60 : null;
+  const todayResp = respData.length > 0 ? respData[0].value : null;
 
+  // Recovery signal count (RHR, HRV, sleep, respiratory rate)
   let signalCount = 0;
   if (todayRHR !== null) signalCount++;
   if (todayHRV !== null) signalCount++;
   if (todaySleep !== null) signalCount++;
+  if (todayResp !== null) signalCount++;
 
   const snapshot: HealthSnapshot = {
     date: new Date().toISOString().split("T")[0],
@@ -59,12 +86,19 @@ export async function syncHealthData(): Promise<HealthSnapshot | null> {
     restingHRTrend: restingHRData,
     hrvTrend: hrvData,
     sleepTrend: sleepData,
+    weight: weightData,
+    vo2max: vo2maxData,
+    respiratoryRate: todayResp,
+    respiratoryRateTrend: respData,
+    spo2: spo2Data.length > 0 ? spo2Data[0].value : null,
+    spo2Trend: spo2Data,
+    steps: stepsData,
     signalCount,
     cachedAt: new Date().toISOString(),
   };
 
   saveSnapshotToCache(snapshot);
-  console.log(`[HealthKit] Synced — ${signalCount} signals, RHR=${todayRHR}, HRV=${todayHRV}, Sleep=${snapshot.sleepHours}h`);
+  console.log(`[HealthKit] Synced — ${signalCount} signals, RHR=${todayRHR}, HRV=${todayHRV}, Sleep=${snapshot.sleepHours}h, Resp=${todayResp}, Weight=${weightData?.value ?? 'N/A'}, VO2=${vo2maxData?.value ?? 'N/A'}, SpO2=${snapshot.spo2}, Steps=${stepsData}`);
 
   return snapshot;
 }
@@ -91,6 +125,13 @@ function getCachedSnapshot(): HealthSnapshot | null {
       restingHRTrend: JSON.parse(row.resting_hr_trend_json || '[]'),
       hrvTrend: JSON.parse(row.hrv_trend_json || '[]'),
       sleepTrend: JSON.parse(row.sleep_trend_json || '[]'),
+      weight: row.weight_kg != null ? { value: row.weight_kg, date: row.date } : null,
+      vo2max: row.vo2max != null ? { value: row.vo2max, date: row.date } : null,
+      respiratoryRate: row.respiratory_rate ?? null,
+      respiratoryRateTrend: JSON.parse(row.respiratory_rate_trend_json || '[]'),
+      spo2: row.spo2 ?? null,
+      spo2Trend: JSON.parse(row.spo2_trend_json || '[]'),
+      steps: row.steps ?? null,
       signalCount: row.signal_count,
       cachedAt: row.cached_at,
     };
@@ -106,10 +147,10 @@ function saveSnapshotToCache(snapshot: HealthSnapshot): void {
     const id = Crypto.randomUUID();
     db.runSync(
       `INSERT OR REPLACE INTO health_snapshot
-       (id, date, resting_hr, hrv_rmssd, sleep_hours, resting_hr_trend_json, hrv_trend_json, sleep_trend_json, signal_count, cached_at)
+       (id, date, resting_hr, hrv_rmssd, sleep_hours, resting_hr_trend_json, hrv_trend_json, sleep_trend_json, weight_kg, vo2max, respiratory_rate, respiratory_rate_trend_json, spo2, spo2_trend_json, steps, signal_count, cached_at)
        VALUES (
          COALESCE((SELECT id FROM health_snapshot WHERE date = ?), ?),
-         ?, ?, ?, ?, ?, ?, ?, ?, ?
+         ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
        )`,
       [
         snapshot.date, id,
@@ -120,6 +161,13 @@ function saveSnapshotToCache(snapshot: HealthSnapshot): void {
         JSON.stringify(snapshot.restingHRTrend),
         JSON.stringify(snapshot.hrvTrend),
         JSON.stringify(snapshot.sleepTrend),
+        snapshot.weight?.value ?? null,
+        snapshot.vo2max?.value ?? null,
+        snapshot.respiratoryRate,
+        JSON.stringify(snapshot.respiratoryRateTrend),
+        snapshot.spo2,
+        JSON.stringify(snapshot.spo2Trend),
+        snapshot.steps,
         snapshot.signalCount,
         snapshot.cachedAt,
       ]

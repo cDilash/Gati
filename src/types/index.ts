@@ -30,6 +30,8 @@ export interface UserProfile {
   scheduling_notes: string | null;
   available_days: number[];       // parsed from JSON
   long_run_day: number;
+  weight_source: 'manual' | 'healthkit' | 'strava' | null;
+  weight_updated_at: string | null;
   updated_at: string;
 }
 
@@ -379,6 +381,26 @@ export interface SleepResult {
   stages: SleepStages | null;
 }
 
+export interface WeightResult {
+  value: number;
+  date: string;
+}
+
+export interface VO2MaxResult {
+  value: number;
+  date: string;
+}
+
+export interface RespiratoryRateResult {
+  value: number;
+  date: string;
+}
+
+export interface SpO2Result {
+  value: number;
+  date: string;
+}
+
 export interface HealthSnapshot {
   date: string;
   restingHR: number | null;
@@ -387,12 +409,19 @@ export interface HealthSnapshot {
   restingHRTrend: RestingHRResult[];
   hrvTrend: HRVResult[];
   sleepTrend: SleepResult[];
+  weight: WeightResult | null;
+  vo2max: VO2MaxResult | null;
+  respiratoryRate: number | null;
+  respiratoryRateTrend: RespiratoryRateResult[];
+  spo2: number | null;
+  spo2Trend: SpO2Result[];
+  steps: number | null;
   signalCount: number;
   cachedAt: string;
 }
 
 export interface RecoverySignal {
-  type: 'resting_hr' | 'hrv' | 'sleep';
+  type: 'resting_hr' | 'hrv' | 'sleep' | 'respiratory_rate';
   value: number | null;
   baseline: number | null;
   status: 'good' | 'fair' | 'poor';

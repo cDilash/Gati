@@ -4,8 +4,8 @@ import { HealthSnapshot, RecoveryStatus, RecoverySignal } from "../types";
  * Pure function: computes a 0-100 recovery score from health data.
  * No HealthKit calls, no SQLite, no side effects.
  *
- * Scoring: 3 signals × 33 points each, normalized if fewer than 3 have data.
- * Minimum 2 signals required for a meaningful score.
+ * Scoring: 3 core signals × 33 pts each + optional respiratory rate × 25 pts.
+ * Normalized to 0-100 based on available signals. Minimum 2 signals required.
  */
 export function calculateRecoveryScore(
   snapshot: HealthSnapshot,
@@ -104,6 +104,32 @@ export function calculateRecoveryScore(
     signals.push({ type: 'sleep', value: snapshot.sleepHours, baseline: null, status, score, detail });
   }
 
+  // ── Respiratory Rate (optional 4th signal) ──
+  if (snapshot.respiratoryRate !== null && snapshot.respiratoryRateTrend.length >= 3) {
+    const baseline = average(snapshot.respiratoryRateTrend.map(r => r.value));
+    const diff = snapshot.respiratoryRate - baseline;
+
+    let score: number;
+    let status: RecoverySignal['status'];
+    let detail: string;
+
+    if (diff <= 1) {
+      score = 25;
+      status = 'good';
+      detail = `${snapshot.respiratoryRate} br/min (within range of ${baseline.toFixed(1)})`;
+    } else if (diff <= 2) {
+      score = 15;
+      status = 'fair';
+      detail = `${snapshot.respiratoryRate} br/min (${diff.toFixed(1)} above baseline ${baseline.toFixed(1)})`;
+    } else {
+      score = 5;
+      status = 'poor';
+      detail = `${snapshot.respiratoryRate} br/min (${diff.toFixed(1)} above baseline — possible illness)`;
+    }
+
+    signals.push({ type: 'respiratory_rate', value: snapshot.respiratoryRate, baseline: Math.round(baseline * 10) / 10, status, score, detail });
+  }
+
   // ── Aggregate ──
   const signalCount = signals.length;
 
@@ -121,7 +147,9 @@ export function calculateRecoveryScore(
   }
 
   const rawScore = signals.reduce((sum, s) => sum + s.score, 0);
-  const maxPossible = signalCount * 33;
+  const maxPossible = signals.reduce((sum, s) => {
+    return sum + (s.type === 'respiratory_rate' ? 25 : 33);
+  }, 0);
   const normalized = Math.round((rawScore / maxPossible) * 100);
 
   const level = normalized >= 80 ? 'ready'

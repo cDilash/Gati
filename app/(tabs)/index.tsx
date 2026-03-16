@@ -109,8 +109,17 @@ export default function TodayScreen() {
 
     try {
       const { getSetting } = require('../../src/db/database');
-      const lastCheckin = getSetting('last_weight_checkin_date');
       const today = getToday();
+
+      // Skip popup if HealthKit is keeping weight current
+      const weightSource = userProfile?.weight_source;
+      const weightUpdated = userProfile?.weight_updated_at;
+      if (weightSource === 'healthkit' && weightUpdated) {
+        const daysSinceHK = Math.floor((new Date(today + 'T00:00:00').getTime() - new Date(weightUpdated + 'T00:00:00').getTime()) / 86400000);
+        if (daysSinceHK < 7) return; // HealthKit keeping it current
+      }
+
+      const lastCheckin = getSetting('last_weight_checkin_date');
       if (lastCheckin) {
         const daysSince = Math.floor((new Date(today + 'T00:00:00').getTime() - new Date(lastCheckin + 'T00:00:00').getTime()) / 86400000);
         if (daysSince < 7) return;

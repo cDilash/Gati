@@ -376,8 +376,8 @@ function SignalCard({ signal, trendData }: {
 }
 
 function SignalNotAvailable({ type }: { type: string }) {
-  const labels: Record<string, string> = { resting_hr: 'Resting Heart Rate', hrv: 'Heart Rate Variability', sleep: 'Sleep' };
-  const icons: Record<string, string> = { resting_hr: 'heart-pulse', hrv: 'wave', sleep: 'sleep' };
+  const labels: Record<string, string> = { resting_hr: 'Resting Heart Rate', hrv: 'Heart Rate Variability', sleep: 'Sleep', respiratory_rate: 'Respiratory Rate' };
+  const icons: Record<string, string> = { resting_hr: 'heart-pulse', hrv: 'wave', sleep: 'sleep', respiratory_rate: 'lungs' };
   return (
     <YStack backgroundColor="$surface" borderRadius="$6" padding="$4" borderLeftWidth={3} borderLeftColor="$border" opacity={0.6}>
       <XStack alignItems="center" gap="$2">
@@ -722,9 +722,10 @@ export default function RecoveryScreen() {
   const hasRHR = recoveryStatus?.signals.some(s => s.type === 'resting_hr') ?? false;
   const hasHRV = recoveryStatus?.signals.some(s => s.type === 'hrv') ?? false;
   const hasSleep = recoveryStatus?.signals.some(s => s.type === 'sleep') ?? false;
+  const hasResp = recoveryStatus?.signals.some(s => s.type === 'respiratory_rate') ?? false;
 
   // Build trend arrays
-  const rhrTrendFull = healthSnapshot?.restingHRTrend ?? []; // newest first from HealthKit
+  const rhrTrendFull = healthSnapshot?.restingHRTrend ?? [];
   const hrvTrend = healthSnapshot?.hrvTrend?.map(r => r.value).reverse() ?? [];
 
   return (
@@ -736,23 +737,62 @@ export default function RecoveryScreen() {
       {/* SECTION 2: Recovery Signals */}
       {recoveryStatus && recoveryStatus.level !== 'unknown' && (
         <YStack marginTop="$4" gap="$3">
-          {hasRHR ? (
+          {hasRHR && (
             <RestingHRCard signal={recoveryStatus.signals.find(s => s.type === 'resting_hr')!} trendData={rhrTrendFull} />
-          ) : (
-            <SignalNotAvailable type="resting_hr" />
           )}
-          {hasHRV ? (
+          {hasHRV && (
             <SignalCard signal={recoveryStatus.signals.find(s => s.type === 'hrv')!} trendData={hrvTrend} />
-          ) : (
-            <SignalNotAvailable type="hrv" />
           )}
-          {hasSleep ? (
+          {hasSleep && (
             <SleepCard
               signal={recoveryStatus.signals.find(s => s.type === 'sleep')!}
               sleepTrend={healthSnapshot?.sleepTrend ?? []}
             />
-          ) : (
-            <SignalNotAvailable type="sleep" />
+          )}
+          {hasResp && (
+            <YStack backgroundColor="$surface" borderRadius="$6" padding="$4" borderLeftWidth={3}
+              borderLeftColor={recoveryStatus.signals.find(s => s.type === 'respiratory_rate')!.status === 'good' ? '#34C759' : recoveryStatus.signals.find(s => s.type === 'respiratory_rate')!.status === 'fair' ? '#FF9500' : '#FF3B30'}>
+              <XStack alignItems="center" justifyContent="space-between">
+                <XStack alignItems="center" gap="$2">
+                  <MaterialCommunityIcons name="lungs" size={18} color={recoveryStatus.signals.find(s => s.type === 'respiratory_rate')!.status === 'good' ? '#34C759' : '#FF9500'} />
+                  <B color="$color" fontSize={14} fontWeight="600">Respiratory Rate</B>
+                </XStack>
+                <XStack alignItems="center" gap="$2">
+                  <M color="$color" fontSize={18} fontWeight="800">{healthSnapshot?.respiratoryRate}</M>
+                  <B color="$textTertiary" fontSize={12}>br/min</B>
+                </XStack>
+              </XStack>
+              <XStack marginTop="$2" justifyContent="space-between" alignItems="center">
+                <B color="$textTertiary" fontSize={12}>{recoveryStatus.signals.find(s => s.type === 'respiratory_rate')!.detail}</B>
+                <M color={recoveryStatus.signals.find(s => s.type === 'respiratory_rate')!.status === 'good' ? '#34C759' : '#FF9500'} fontSize={12} fontWeight="700">
+                  {recoveryStatus.signals.find(s => s.type === 'respiratory_rate')!.score}/25
+                </M>
+              </XStack>
+            </YStack>
+          )}
+        </YStack>
+      )}
+
+      {/* Additional Health Context (non-scoring) */}
+      {healthSnapshot && (healthSnapshot.spo2 !== null || healthSnapshot.steps !== null) && (
+        <YStack backgroundColor="$surface" borderRadius="$6" padding="$4" marginTop="$3" gap="$2">
+          {healthSnapshot.spo2 !== null && (
+            <XStack alignItems="center" justifyContent="space-between">
+              <XStack alignItems="center" gap="$2">
+                <MaterialCommunityIcons name="water-percent" size={16} color={healthSnapshot.spo2 < 94 ? '#FF3B30' : '#A0A0A0'} />
+                <B color="$textSecondary" fontSize={13}>Blood Oxygen (SpO2)</B>
+              </XStack>
+              <M color={healthSnapshot.spo2 < 94 ? '$danger' : '$color'} fontSize={15} fontWeight="700">{healthSnapshot.spo2}%</M>
+            </XStack>
+          )}
+          {healthSnapshot.steps !== null && (
+            <XStack alignItems="center" justifyContent="space-between">
+              <XStack alignItems="center" gap="$2">
+                <MaterialCommunityIcons name="shoe-print" size={16} color="#A0A0A0" />
+                <B color="$textSecondary" fontSize={13}>Steps Today</B>
+              </XStack>
+              <M color="$color" fontSize={15} fontWeight="700">{healthSnapshot.steps.toLocaleString()}</M>
+            </XStack>
           )}
         </YStack>
       )}
@@ -794,11 +834,18 @@ export default function RecoveryScreen() {
       {/* SECTION 6: Fitness Profile (collapsible) */}
       <CollapsibleSection title="Fitness Profile">
         <YStack backgroundColor="$surface" borderRadius="$6" overflow="hidden">
-          <XStack justifyContent="center" alignItems="center" paddingVertical="$4" borderBottomWidth={0.5} borderBottomColor="$border">
+          <XStack justifyContent="center" alignItems="center" paddingVertical="$4" borderBottomWidth={0.5} borderBottomColor="$border" gap="$8">
             <YStack alignItems="center">
               <H color="$textSecondary" fontSize={12} textTransform="uppercase" letterSpacing={1}>VDOT</H>
               <M color="$accent" fontSize={42} fontWeight="800" lineHeight={48}>{vdot.toFixed(1)}</M>
             </YStack>
+            {healthSnapshot?.vo2max && (
+              <YStack alignItems="center">
+                <H color="$textSecondary" fontSize={12} textTransform="uppercase" letterSpacing={1}>VO2max</H>
+                <M color="$primary" fontSize={42} fontWeight="800" lineHeight={48}>{healthSnapshot.vo2max.value}</M>
+                <B color="$textTertiary" fontSize={10}>{healthSnapshot.vo2max.date}</B>
+              </YStack>
+            )}
           </XStack>
           {[
             { label: '5K', time: formatTime(predict5KTime(vdot)) },

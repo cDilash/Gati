@@ -33,6 +33,8 @@ CREATE TABLE IF NOT EXISTS user_profile (
   scheduling_notes TEXT,
   available_days TEXT NOT NULL DEFAULT '[1,2,3,4,5,6]',
   long_run_day INTEGER NOT NULL DEFAULT 0,
+  weight_source TEXT DEFAULT 'manual',
+  weight_updated_at TEXT,
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );`;
 
@@ -202,6 +204,13 @@ CREATE TABLE IF NOT EXISTS health_snapshot (
   resting_hr_trend_json TEXT,
   hrv_trend_json TEXT,
   sleep_trend_json TEXT,
+  weight_kg REAL,
+  vo2max REAL,
+  respiratory_rate REAL,
+  respiratory_rate_trend_json TEXT,
+  spo2 REAL,
+  spo2_trend_json TEXT,
+  steps INTEGER,
   signal_count INTEGER NOT NULL DEFAULT 0,
   cached_at TEXT NOT NULL
 );`;

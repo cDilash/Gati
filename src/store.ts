@@ -412,7 +412,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       const systemPrompt = buildCoachSystemPrompt(
         userProfile, paceZones, currentWeek, weekWorkouts,
         todaysWorkout, recentMetrics, weeks, workouts, shoes,
-        daysUntilRace, isRaceWeek, recoveryStatus,
+        daysUntilRace, isRaceWeek, recoveryStatus, get().healthSnapshot,
       );
 
       const response = await aiSendCoachMessage(message, systemPrompt, coachMessages);
@@ -703,6 +703,29 @@ export const useAppStore = create<AppState>((set, get) => ({
           maxHr: profile?.max_hr ?? null,
         });
         set({ healthSnapshot: snapshot, recoveryStatus: recovery });
+
+        // Auto-update weight from HealthKit if newer
+        if (snapshot.weight) {
+          const profile = get().userProfile;
+          if (profile) {
+            const hkDate = snapshot.weight.date;
+            const profileDate = profile.weight_updated_at || '';
+            if (hkDate > profileDate || !profileDate) {
+              // HealthKit weight is newer — update profile
+              try {
+                const db = require('./db/database').getDatabase();
+                db.runSync(
+                  'UPDATE user_profile SET weight_kg = ?, weight_source = ?, weight_updated_at = ? WHERE id = 1',
+                  [snapshot.weight.value, 'healthkit', hkDate]
+                );
+                console.log(`[Store] Weight auto-updated from HealthKit: ${snapshot.weight.value}kg (${hkDate})`);
+                get().refreshState();
+              } catch (e) {
+                console.log('[Store] Weight auto-update failed:', e);
+              }
+            }
+          }
+        }
       }
     } catch (e) {
       console.log('[Store] Health sync error:', e);

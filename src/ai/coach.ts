@@ -15,6 +15,7 @@ import {
   CoachMessage,
   Shoe,
   RecoveryStatus,
+  HealthSnapshot,
 } from '../types';
 import { formatPace, formatTime, predictMarathonTime } from '../engine/vdot';
 import { formatPaceRange } from '../engine/paceZones';
@@ -49,6 +50,7 @@ export function buildCoachSystemPrompt(
   daysUntilRace: number,
   isRaceWeek: boolean,
   recoveryStatus?: RecoveryStatus | null,
+  healthSnapshot?: HealthSnapshot | null,
 ): string {
   const parts: string[] = [];
 
@@ -168,6 +170,32 @@ Keep responses to 2-4 paragraphs max unless the athlete asks for detailed analys
   } else {
     parts.push('Recovery data: not available (HealthKit not connected)');
     parts.push('');
+  }
+
+  // Additional health signals
+  if (healthSnapshot) {
+    const extras: string[] = [];
+    if (healthSnapshot.weight) {
+      extras.push(`Weight: ${healthSnapshot.weight.value} kg (from Apple Health, ${healthSnapshot.weight.date})`);
+    }
+    if (healthSnapshot.vo2max) {
+      extras.push(`Garmin VO2max: ${healthSnapshot.vo2max.value} mL/kg/min (${healthSnapshot.vo2max.date})`);
+    }
+    if (healthSnapshot.respiratoryRate !== null) {
+      extras.push(`Respiratory rate: ${healthSnapshot.respiratoryRate} breaths/min`);
+    }
+    if (healthSnapshot.spo2 !== null) {
+      const spo2Warning = healthSnapshot.spo2 < 94 ? ' ⚠️ LOW' : '';
+      extras.push(`SpO2: ${healthSnapshot.spo2}%${spo2Warning}`);
+    }
+    if (healthSnapshot.steps !== null) {
+      extras.push(`Steps today: ${healthSnapshot.steps.toLocaleString()}`);
+    }
+    if (extras.length > 0) {
+      parts.push('ADDITIONAL HEALTH DATA:');
+      extras.forEach(e => parts.push(`  ${e}`));
+      parts.push('');
+    }
   }
 
   // Race week mode
