@@ -17,6 +17,7 @@ export default function CalendarScreen() {
   const router = useRouter();
   const isLoading = useAppStore(s => s.isLoading);
   const activePlan = useAppStore(s => s.activePlan);
+  const userProfile = useAppStore(s => s.userProfile);
   const weeks = useAppStore(s => s.weeks);
   const workouts = useAppStore(s => s.workouts);
   const currentWeekNumber = useAppStore(s => s.currentWeekNumber);
@@ -81,6 +82,32 @@ export default function CalendarScreen() {
           <H color="$textTertiary" fontSize={11} textTransform="uppercase" letterSpacing={1} marginTop={2}>Adherence</H>
         </YStack>
       </XStack>
+
+      {/* Plan Info */}
+      {activePlan && (
+        <YStack backgroundColor="$surface" borderRadius="$6" padding="$3" marginBottom="$4">
+          <XStack justifyContent="space-between" alignItems="center">
+            <XStack alignItems="center" gap="$2">
+              <MaterialCommunityIcons name="calendar-check" size={14} color="#A0A0A0" />
+              <B color="$textTertiary" fontSize={12}>
+                Generated {(() => {
+                  const d = new Date(activePlan.created_at);
+                  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                })()}
+              </B>
+            </XStack>
+            <XStack alignItems="center" gap="$1">
+              <B color="$textTertiary" fontSize={12}>VDOT</B>
+              <M color={userProfile && Math.abs(userProfile.vdot_score - activePlan.vdot_at_generation) >= 1 ? '$warning' : '$textSecondary'} fontSize={12} fontWeight="700">
+                {activePlan.vdot_at_generation}
+              </M>
+              {userProfile && Math.abs(userProfile.vdot_score - activePlan.vdot_at_generation) >= 1 && (
+                <B color="$warning" fontSize={11}> → now {userProfile.vdot_score}</B>
+              )}
+            </XStack>
+          </XStack>
+        </YStack>
+      )}
 
       {/* Weekly Digest */}
       {weeklyDigest && !digestDismissed && (
