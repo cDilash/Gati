@@ -62,7 +62,16 @@ Keep responses to 2-4 paragraphs max unless the athlete asks for detailed analys
 
   // Profile
   parts.push('ATHLETE PROFILE:');
-  parts.push(`- Age: ${profile.age}, Gender: ${profile.gender}, VDOT: ${profile.vdot_score}`);
+  // VDOT with confidence context
+  const vdotAge = profile.vdot_updated_at ? Math.floor((Date.now() - new Date(profile.vdot_updated_at + 'T00:00:00').getTime()) / 86400000) : null;
+  const vdotStale = vdotAge !== null && vdotAge > 56; // 8 weeks
+  const vdotConf = vdotStale ? 'low' : (profile.vdot_confidence ?? 'moderate');
+  const vdotSourceLabel = profile.vdot_source === 'strava_race' ? 'from Strava race'
+    : profile.vdot_source === 'strava_best_effort' ? 'from Strava best effort'
+    : 'manual entry';
+  const vdotAgeLabel = vdotAge !== null ? `${vdotAge} days ago` : 'unknown date';
+  parts.push(`- Age: ${profile.age}, Gender: ${profile.gender}`);
+  parts.push(`- VDOT: ${profile.vdot_score} (${vdotConf} confidence, ${vdotSourceLabel}, ${vdotAgeLabel})${vdotStale ? ' ⚠️ STALE — may be outdated' : ''}`);
   if (profile.height_cm && profile.weight_kg) {
     const heightM = profile.height_cm / 100;
     const bmi = Math.round((profile.weight_kg / (heightM * heightM)) * 10) / 10;

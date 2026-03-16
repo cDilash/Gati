@@ -32,6 +32,9 @@ export interface UserProfile {
   long_run_day: number;
   weight_source: 'manual' | 'healthkit' | 'strava' | null;
   weight_updated_at: string | null;
+  vdot_updated_at: string | null;
+  vdot_source: 'manual' | 'strava_race' | 'strava_best_effort' | 'ai_adaptation' | null;
+  vdot_confidence: 'high' | 'moderate' | 'low' | null;
   updated_at: string;
 }
 

@@ -113,6 +113,9 @@ export function initializeDatabase(): void {
     { table: 'health_snapshot', column: 'spo2_trend_json', type: 'TEXT' },
     { table: 'health_snapshot', column: 'steps', type: 'INTEGER' },
     { table: 'user_profile', column: 'max_hr_source', type: "TEXT DEFAULT 'formula'" },
+    { table: 'user_profile', column: 'vdot_updated_at', type: 'TEXT' },
+    { table: 'user_profile', column: 'vdot_source', type: "TEXT DEFAULT 'manual'" },
+    { table: 'user_profile', column: 'vdot_confidence', type: "TEXT DEFAULT 'moderate'" },
   ];
   for (const { table, column, type } of newColumns) {
     try { database.execSync(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`); } catch {}
@@ -166,8 +169,9 @@ export function saveUserProfile(profile: Omit<UserProfile, 'id' | 'updated_at'>)
       current_weekly_miles, longest_recent_run, experience_level,
       race_date, race_name, race_course_profile, race_goal_type,
       target_finish_time_sec, injury_history, known_weaknesses,
-      scheduling_notes, available_days, long_run_day, weight_source, weight_updated_at, updated_at)
-     VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+      scheduling_notes, available_days, long_run_day, weight_source, weight_updated_at,
+      vdot_updated_at, vdot_source, vdot_confidence, updated_at)
+     VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
     profile.name ?? null,
     profile.age,
     profile.gender,
@@ -191,6 +195,9 @@ export function saveUserProfile(profile: Omit<UserProfile, 'id' | 'updated_at'>)
     profile.long_run_day,
     profile.weight_source ?? 'manual',
     profile.weight_updated_at ?? null,
+    profile.vdot_updated_at ?? null,
+    profile.vdot_source ?? 'manual',
+    profile.vdot_confidence ?? 'moderate',
   );
 }
 

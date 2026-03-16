@@ -91,21 +91,25 @@ export function updateProfileFromStrava(): ProfileUpdateResult {
     }
   }
 
-  // ── 3. Check for VDOT changes from best efforts ──
+  // ── 3. Check for VDOT changes from best efforts + races ──
   try {
     const detailRows = db.getAllSync<any>(
-      `SELECT best_efforts_json FROM strava_activity_detail
-       WHERE best_efforts_json IS NOT NULL
-       ORDER BY rowid DESC LIMIT 20`
+      `SELECT d.best_efforts_json, d.strava_workout_type, p.date
+       FROM strava_activity_detail d
+       JOIN performance_metric p ON p.strava_activity_id = d.strava_activity_id
+       WHERE d.best_efforts_json IS NOT NULL
+       ORDER BY p.date DESC LIMIT 20`
     );
 
     let bestVDOT = 0;
+    let vdotSource: 'strava_race' | 'strava_best_effort' = 'strava_best_effort';
     for (const row of detailRows) {
       try {
         const efforts = JSON.parse(row.best_efforts_json);
         if (!Array.isArray(efforts)) continue;
+        const isRace = row.strava_workout_type === 1;
         for (const e of efforts) {
-          if (e.prRank !== 1) continue; // Only PRs
+          if (e.prRank > 3) continue; // Top 3 efforts
           let vdot = 0;
           if ((e.name === '5K' || (e.distance >= 4900 && e.distance <= 5200)) && e.movingTime > 0) {
             vdot = calculateVDOTFrom5K(e.movingTime);
@@ -114,7 +118,10 @@ export function updateProfileFromStrava(): ProfileUpdateResult {
           } else if ((e.name === 'Half-Marathon' || (e.distance >= 21000 && e.distance <= 21300)) && e.movingTime > 0) {
             vdot = calculateVDOTFromHalf(e.movingTime);
           }
-          if (vdot > bestVDOT) bestVDOT = vdot;
+          if (vdot > bestVDOT) {
+            bestVDOT = vdot;
+            vdotSource = isRace ? 'strava_race' : 'strava_best_effort';
+          }
         }
       } catch {}
     }
@@ -122,7 +129,11 @@ export function updateProfileFromStrava(): ProfileUpdateResult {
     if (bestVDOT > 0 && Math.abs(bestVDOT - profile.vdot_score) >= 1) {
       result.vdotChanged = true;
       result.newVDOT = bestVDOT;
-      changes.push(`VDOT: ${profile.vdot_score} → ${bestVDOT}`);
+      const confidence = vdotSource === 'strava_race' ? 'high' : 'moderate';
+      changes.push(`VDOT: ${profile.vdot_score} → ${bestVDOT} (${vdotSource === 'strava_race' ? 'race' : 'best effort'})`);
+      // Store VDOT metadata alongside the value update
+      (result as any)._vdotSource = vdotSource;
+      (result as any)._vdotConfidence = confidence;
     }
   } catch {}
 
@@ -160,6 +171,12 @@ export function updateProfileFromStrava(): ProfileUpdateResult {
     if (result.vdotChanged) {
       updates.push('vdot_score = ?');
       values.push(result.newVDOT);
+      updates.push('vdot_updated_at = ?');
+      values.push(getToday());
+      updates.push('vdot_source = ?');
+      values.push((result as any)._vdotSource ?? 'strava_best_effort');
+      updates.push('vdot_confidence = ?');
+      values.push((result as any)._vdotConfidence ?? 'moderate');
     }
     updates.push("updated_at = datetime('now')");
 

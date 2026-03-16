@@ -117,6 +117,9 @@ export default function ProfileScreen() {
       long_run_day: longRunDay,
       weight_source: 'manual',
       weight_updated_at: new Date().toISOString().split('T')[0],
+      vdot_updated_at: userProfile.vdot_updated_at ?? null,
+      vdot_source: userProfile.vdot_source ?? null,
+      vdot_confidence: userProfile.vdot_confidence ?? null,
     });
 
     setEditing(false);

@@ -87,6 +87,9 @@ interface AppState {
   isSyncing: boolean;
   lastSyncResult: { strava: string | null; health: string | null } | null;
 
+  // Notifications
+  vdotNotification: { oldVDOT: number; newVDOT: number; source: string } | null;
+
   // Derived
   currentWeekNumber: number;
   currentPhase: string;
@@ -147,6 +150,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   recoveryStatus: null,
   isSyncing: false,
   lastSyncResult: null,
+  vdotNotification: null,
   currentWeekNumber: 0,
   currentPhase: 'base',
   daysUntilRace: 0,
@@ -613,7 +617,12 @@ export const useAppStore = create<AppState>((set, get) => ({
             const updated = getUserProfile();
             if (updated) {
               const newZones = calculatePaceZones(updated.vdot_score);
-              set({ userProfile: updated, paceZones: newZones });
+              const src = updated.vdot_source === 'strava_race' ? 'race' : 'Strava best effort';
+              set({
+                userProfile: updated,
+                paceZones: newZones,
+                vdotNotification: { oldVDOT: profileUpdate.oldVDOT, newVDOT: profileUpdate.newVDOT, source: src },
+              });
             }
           }
         }

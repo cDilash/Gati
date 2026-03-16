@@ -58,6 +58,7 @@ export default function TodayScreen() {
   const recoveryStatus = useAppStore(s => s.recoveryStatus);
 
   const isSyncing = useAppStore(s => s.isSyncing);
+  const vdotNotification = useAppStore(s => s.vdotNotification);
   const fetchBriefing = useAppStore(s => s.fetchBriefing);
   const fetchPostRunAnalysis = useAppStore(s => s.fetchPostRunAnalysis);
   const fetchRaceStrategy = useAppStore(s => s.fetchRaceStrategy);
@@ -211,6 +212,31 @@ export default function TodayScreen() {
           <MaterialCommunityIcons name="check-circle-outline" size={14} color="#34C759" />
           <B color="$textTertiary" fontSize={12}>Updated</B>
         </XStack>
+      )}
+
+      {/* VDOT Change Notification */}
+      {vdotNotification && (
+        <YStack backgroundColor="$surface" borderRadius="$6" padding="$4" marginBottom="$4" borderLeftWidth={3}
+          borderLeftColor={vdotNotification.newVDOT > vdotNotification.oldVDOT ? '$success' : '$warning'}>
+          <XStack justifyContent="space-between" alignItems="flex-start">
+            <YStack flex={1}>
+              <H color={vdotNotification.newVDOT > vdotNotification.oldVDOT ? '$success' : '$warning'} fontSize={13} letterSpacing={1} textTransform="uppercase" marginBottom="$1">
+                {vdotNotification.newVDOT > vdotNotification.oldVDOT ? 'Fitness Improved!' : 'VDOT Updated'}
+              </H>
+              <B color="$color" fontSize={14} lineHeight={20}>
+                VDOT updated from <M color="$color" fontSize={14} fontWeight="700">{vdotNotification.oldVDOT}</M> → <M color="$color" fontSize={14} fontWeight="700">{vdotNotification.newVDOT}</M> based on your {vdotNotification.source}. Pace zones recalculated.
+              </B>
+              {Math.abs(vdotNotification.newVDOT - vdotNotification.oldVDOT) >= 2 && (
+                <YStack backgroundColor="$accent" borderRadius="$4" paddingVertical="$2" paddingHorizontal="$4" marginTop="$3" alignSelf="flex-start"
+                  pressStyle={{ opacity: 0.8 }} onPress={() => router.push('/(tabs)/settings')}>
+                  <B color="white" fontSize={13} fontWeight="700">Regenerate Plan</B>
+                </YStack>
+              )}
+            </YStack>
+            <B color="$textTertiary" fontSize={18} marginLeft="$2"
+              onPress={() => useAppStore.setState({ vdotNotification: null })}>✕</B>
+          </XStack>
+        </YStack>
       )}
 
       {/* Header */}

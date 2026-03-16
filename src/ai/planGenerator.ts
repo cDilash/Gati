@@ -146,7 +146,8 @@ function buildUserMessage(
     if (profile.weight_kg) parts.push(`- Weight: ${profile.weight_kg} kg`);
     if (profile.height_cm) parts.push(`- Height: ${profile.height_cm}cm`);
   }
-  parts.push(`- VDOT: ${profile.vdot_score}`);
+  const vSource = profile.vdot_source === 'strava_race' ? ' (from race)' : profile.vdot_source === 'strava_best_effort' ? ' (from Strava best effort)' : ' (manual entry)';
+  parts.push(`- VDOT: ${profile.vdot_score}${vSource}`);
   if (profile.max_hr) {
     const hrSource = (profile as any).max_hr_source === 'strava' ? ' (observed from Strava)' : ' (formula estimate)';
     parts.push(`- Max HR: ${profile.max_hr}bpm${hrSource}`);
