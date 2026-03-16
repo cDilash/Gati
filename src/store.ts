@@ -728,17 +728,18 @@ export const useAppStore = create<AppState>((set, get) => ({
           }
         }
 
-        // Auto-update resting HR from HealthKit
-        if (snapshot.restingHR !== null) {
+        // Auto-update resting HR from HealthKit (14-day average, requires 3+ readings)
+        if (snapshot.restingHRTrend.length >= 3) {
+          const avgRHR = Math.round(snapshot.restingHRTrend.reduce((s: number, r: any) => s + r.value, 0) / snapshot.restingHRTrend.length);
           const currentProfile = get().userProfile;
-          if (currentProfile && currentProfile.rest_hr !== snapshot.restingHR) {
+          if (currentProfile && currentProfile.rest_hr !== avgRHR) {
             try {
               const db = require('./db/database').getDatabase();
               db.runSync(
                 'UPDATE user_profile SET rest_hr = ? WHERE id = 1',
-                [snapshot.restingHR]
+                [avgRHR]
               );
-              console.log(`[Store] Resting HR auto-updated from HealthKit: ${snapshot.restingHR}bpm`);
+              console.log(`[Store] Resting HR auto-updated from HealthKit: ${avgRHR}bpm (${snapshot.restingHRTrend.length}-day avg)`);
               needsRefresh = true;
             } catch (e) {
               console.log('[Store] Resting HR auto-update failed:', e);

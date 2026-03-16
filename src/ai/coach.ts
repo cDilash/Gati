@@ -101,12 +101,12 @@ Keep responses to 2-4 paragraphs max unless the athlete asks for detailed analys
 
   // Pace zones
   parts.push('PACE ZONES (min/mile):');
-  parts.push(`  E: ${formatPaceRange(paceZones.E)} | M: ${formatPaceRange(paceZones.M)} | T: ${formatPaceRange(paceZones.T)} | I: ${formatPaceRange(paceZones.I)}`);
+  parts.push(`  E: ${formatPaceRange(paceZones.E)} | M: ${formatPaceRange(paceZones.M)} | T: ${formatPaceRange(paceZones.T)} | I: ${formatPaceRange(paceZones.I)} | R: ${formatPaceRange(paceZones.R)}`);
   parts.push('');
 
   // Current week
   if (currentWeek) {
-    parts.push(`CURRENT WEEK: ${currentWeek.week_number} — ${currentWeek.phase} phase${currentWeek.is_cutback ? ' (cutback)' : ''}`);
+    parts.push(`CURRENT WEEK: ${currentWeek.week_number} of ${weeks.length} — ${currentWeek.phase} phase${currentWeek.is_cutback ? ' (cutback)' : ''}`);
     parts.push(`Volume: ${currentWeek.actual_volume.toFixed(1)} of ${currentWeek.target_volume}mi completed`);
 
     const scheduled = weekWorkouts.filter(w => w.workout_type !== 'rest');
@@ -203,7 +203,8 @@ Keep responses to 2-4 paragraphs max unless the athlete asks for detailed analys
           const best = matching[0];
           const mins = Math.floor(best.elapsed_time / 60);
           const secs = best.elapsed_time % 60;
-          return `${dist}: ${mins}:${String(secs).padStart(2, '0')}`;
+          const prDate = best.start_date?.split('T')[0] || '';
+          return `${dist}: ${mins}:${String(secs).padStart(2, '0')}${prDate ? ` (${prDate})` : ''}`;
         })
         .filter(Boolean);
       if (prs.length > 0) {

@@ -148,7 +148,8 @@ function buildUserMessage(
   }
   parts.push(`- VDOT: ${profile.vdot_score}`);
   if (profile.max_hr) {
-    parts.push(`- Max HR: ${profile.max_hr}bpm`);
+    const hrSource = (profile as any).max_hr_source === 'strava' ? ' (observed from Strava)' : ' (formula estimate)';
+    parts.push(`- Max HR: ${profile.max_hr}bpm${hrSource}`);
     if (profile.rest_hr) {
       parts.push(`- Resting HR: ${profile.rest_hr}bpm`);
       // Include HR zones for the plan generator
@@ -268,7 +269,8 @@ function buildUserMessage(
         const best = matching[0];
         const mins = Math.floor(best.elapsed_time / 60);
         const secs = best.elapsed_time % 60;
-        return `${dist} PR: ${mins}:${String(secs).padStart(2, '0')}`;
+        const prDate = best.start_date?.split('T')[0] || '';
+        return `${dist} PR: ${mins}:${String(secs).padStart(2, '0')}${prDate ? ` (${prDate})` : ''}`;
       })
       .filter(Boolean);
     if (prs.length > 0) {
