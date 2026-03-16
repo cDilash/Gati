@@ -119,6 +119,7 @@ export function initializeDatabase(): void {
     { table: 'workout', column: 'execution_quality', type: "TEXT DEFAULT 'on_target'" },
     { table: 'user_profile', column: 'does_strength_training', type: 'INTEGER DEFAULT 0' },
     { table: 'user_profile', column: 'leg_day_weekday', type: 'INTEGER' },
+    { table: 'ai_cache', column: 'model_used', type: 'TEXT' },
   ];
   for (const { table, column, type } of newColumns) {
     try { database.execSync(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`); } catch {}

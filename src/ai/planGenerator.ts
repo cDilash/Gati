@@ -110,7 +110,7 @@ export async function generateTrainingPlan(
   const userMessage = buildUserMessage(profile, paceZones, stravaHistory);
   console.log('[PlanGen] Sending plan generation request to Gemini...');
 
-  const responseText = await sendStructuredMessage(SYSTEM_INSTRUCTION, userMessage);
+  const responseText = await sendStructuredMessage(SYSTEM_INSTRUCTION, userMessage, 'heavy');
   console.log('[PlanGen] Received response, parsing JSON...');
 
   const raw = extractJSON(responseText);

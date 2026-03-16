@@ -81,7 +81,7 @@ export async function adaptPlan(
   );
 
   console.log(`[Adapt] Requesting adaptation: "${reason}" from week ${currentWeekNumber}`);
-  const responseText = await sendStructuredMessage(ADAPTATION_SYSTEM_INSTRUCTION, userMessage);
+  const responseText = await sendStructuredMessage(ADAPTATION_SYSTEM_INSTRUCTION, userMessage, 'heavy');
   const raw = extractJSON(responseText);
 
   // Validate the adapted plan

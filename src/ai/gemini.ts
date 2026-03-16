@@ -1,11 +1,12 @@
 /**
- * Gemini API client — centralized Gemini access with retry and error handling.
+ * Gemini API client — dual-model routing with retry and fallback.
  *
- * All AI modules import from here. Handles:
- * - Model initialization
- * - Exponential backoff on 429/5xx
- * - JSON extraction from markdown-fenced responses
- * - Rate limit awareness
+ * Two models routed by task complexity:
+ * - heavy (gemini-3.1-pro-preview): plan generation, adaptation, weekly digest
+ * - fast (gemini-3-flash-preview): chat, briefings, analysis
+ *
+ * Retry with exponential backoff on 429/5xx.
+ * Heavy model falls back to fast on failure.
  */
 
 import { GoogleGenerativeAI } from '@google/generative-ai';
@@ -13,7 +14,13 @@ import Constants from 'expo-constants';
 
 const API_KEY = Constants.expoConfig?.extra?.geminiApiKey || '';
 const genAI = new GoogleGenerativeAI(API_KEY);
-const MODEL_NAME = 'gemini-2.5-flash';
+
+export type ModelTier = 'heavy' | 'fast';
+
+const MODELS: Record<ModelTier, string> = {
+  heavy: 'gemini-3.1-pro-preview',
+  fast: 'gemini-3-flash-preview',
+};
 
 const MAX_RETRIES = 3;
 const BASE_DELAY_MS = 1500;
@@ -26,19 +33,38 @@ const BASE_DELAY_MS = 1500;
 export async function sendStructuredMessage(
   systemInstruction: string,
   userMessage: string,
+  tier: ModelTier = 'fast',
 ): Promise<string> {
   if (!API_KEY) throw new Error('Gemini API key not configured');
 
+  const modelName = MODELS[tier];
+  console.log(`[Gemini:${tier}] Structured message → ${modelName}`);
+
   const model = genAI.getGenerativeModel({
-    model: MODEL_NAME,
+    model: modelName,
     systemInstruction,
   });
 
-  const result = await withRetry(() =>
-    model.generateContent(userMessage)
-  );
-
-  return result.response.text();
+  try {
+    const result = await withRetry(() =>
+      model.generateContent(userMessage)
+    );
+    return result.response.text();
+  } catch (error: any) {
+    // Fallback: if heavy model fails, try fast
+    if (tier === 'heavy') {
+      console.log(`[Gemini:heavy] Failed (${error.message}), falling back to fast model`);
+      const fallbackModel = genAI.getGenerativeModel({
+        model: MODELS.fast,
+        systemInstruction,
+      });
+      const result = await withRetry(() =>
+        fallbackModel.generateContent(userMessage)
+      );
+      return result.response.text();
+    }
+    throw error;
+  }
 }
 
 /**
@@ -48,11 +74,15 @@ export async function sendChatMessage(
   systemInstruction: string,
   history: Array<{ role: 'user' | 'assistant'; content: string }>,
   userMessage: string,
+  tier: ModelTier = 'fast',
 ): Promise<string> {
   if (!API_KEY) throw new Error('Gemini API key not configured');
 
+  const modelName = MODELS[tier];
+  console.log(`[Gemini:${tier}] Chat message → ${modelName}`);
+
   const model = genAI.getGenerativeModel({
-    model: MODEL_NAME,
+    model: modelName,
     systemInstruction,
   });
 
@@ -64,11 +94,26 @@ export async function sendChatMessage(
 
   const chat = model.startChat({ history: geminiHistory });
 
-  const result = await withRetry(() =>
-    chat.sendMessage(userMessage)
-  );
-
-  return result.response.text();
+  try {
+    const result = await withRetry(() =>
+      chat.sendMessage(userMessage)
+    );
+    return result.response.text();
+  } catch (error: any) {
+    if (tier === 'heavy') {
+      console.log(`[Gemini:heavy] Chat failed (${error.message}), falling back to fast model`);
+      const fallbackModel = genAI.getGenerativeModel({
+        model: MODELS.fast,
+        systemInstruction,
+      });
+      const fallbackChat = fallbackModel.startChat({ history: geminiHistory });
+      const result = await withRetry(() =>
+        fallbackChat.sendMessage(userMessage)
+      );
+      return result.response.text();
+    }
+    throw error;
+  }
 }
 
 // ─── JSON Extraction ────────────────────────────────────────
@@ -91,7 +136,6 @@ export function extractJSON(text: string): any {
   }
 
   // Strategy 3: Try parsing the whole response as JSON
-  // Trim any leading/trailing whitespace or BOM
   const trimmed = text.trim().replace(/^\uFEFF/, '');
   return JSON.parse(trimmed);
 }

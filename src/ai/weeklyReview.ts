@@ -80,7 +80,7 @@ export async function generateWeeklyReview(
       upcomingWeek, upcomingWorkouts, profile, paceZones,
     );
 
-    const responseText = await sendStructuredMessage(REVIEW_SYSTEM_INSTRUCTION, userMessage);
+    const responseText = await sendStructuredMessage(REVIEW_SYSTEM_INSTRUCTION, userMessage, 'heavy');
     const raw = extractJSON(responseText);
     return validateReview(raw, completedWeek, weekMetrics);
   } catch (error) {
