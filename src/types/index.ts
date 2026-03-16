@@ -352,6 +352,62 @@ export interface BackupInfo {
   appVersion: string | null;
 }
 
+// ─── Health / Recovery ───────────────────────────────────────
+
+export interface RestingHRResult {
+  value: number;
+  date: string;
+}
+
+export interface HRVResult {
+  value: number;
+  date: string;
+}
+
+export interface SleepStages {
+  deepMinutes: number;
+  lightMinutes: number;
+  remMinutes: number;
+  awakeMinutes: number;
+}
+
+export interface SleepResult {
+  totalMinutes: number;
+  date: string;
+  bedStart: string;
+  bedEnd: string;
+  stages: SleepStages | null;
+}
+
+export interface HealthSnapshot {
+  date: string;
+  restingHR: number | null;
+  hrvRMSSD: number | null;
+  sleepHours: number | null;
+  restingHRTrend: RestingHRResult[];
+  hrvTrend: HRVResult[];
+  sleepTrend: SleepResult[];
+  signalCount: number;
+  cachedAt: string;
+}
+
+export interface RecoverySignal {
+  type: 'resting_hr' | 'hrv' | 'sleep';
+  value: number | null;
+  baseline: number | null;
+  status: 'good' | 'fair' | 'poor';
+  score: number;
+  detail: string;
+}
+
+export interface RecoveryStatus {
+  score: number;
+  signalCount: number;
+  level: 'ready' | 'moderate' | 'fatigued' | 'rest' | 'unknown';
+  signals: RecoverySignal[];
+  recommendation: string;
+}
+
 // ─── Weekly Digest ──────────────────────────────────────────
 
 export interface WeeklyDigest {

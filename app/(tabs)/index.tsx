@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useState } from 'react';
+import React, { useEffect, useCallback, useState } from 'react';
 import { RefreshControl } from 'react-native';
 import { ScrollView, YStack, XStack, Text, View, Spinner, Button } from 'tamagui';
 import { useRouter } from 'expo-router';
@@ -10,10 +10,34 @@ import { IntervalStep } from '../../src/types';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { getWorkoutIcon } from '../../src/utils/workoutIcons';
 import { WeightCheckin } from '../../src/components/WeightCheckin';
+import { RecoveryStatus } from '../../src/types';
 
 const H = (props: any) => <Text fontFamily="$heading" {...props} />;
 const B = (props: any) => <Text fontFamily="$body" {...props} />;
 const M = (props: any) => <Text fontFamily="$mono" {...props} />;
+
+function RecoveryBadge({ recovery }: { recovery: RecoveryStatus }) {
+  const router = useRouter();
+  const color = recovery.score >= 80 ? '#34C759'
+    : recovery.score >= 60 ? '#FF9500'
+    : recovery.score >= 40 ? '#FF9500'
+    : '#FF3B30';
+  const label = recovery.level.charAt(0).toUpperCase() + recovery.level.slice(1);
+
+  return (
+    <XStack backgroundColor="$surface" borderRadius="$6" padding="$3" marginBottom="$4" alignItems="center"
+      pressStyle={{ opacity: 0.8 }} onPress={() => router.push('/(tabs)/zones')}>
+      <View width={40} height={40} borderRadius={20} backgroundColor={color + '22'} alignItems="center" justifyContent="center" marginRight="$3">
+        <M color={color} fontSize={16} fontWeight="800">{recovery.score}</M>
+      </View>
+      <YStack flex={1}>
+        <H color={color} fontSize={13} letterSpacing={1} textTransform="uppercase">{label}</H>
+        <B color="$textSecondary" fontSize={12}>{recovery.recommendation}</B>
+      </YStack>
+      <MaterialCommunityIcons name="chevron-right" size={18} color="#666666" />
+    </XStack>
+  );
+}
 
 export default function TodayScreen() {
   const router = useRouter();
@@ -31,13 +55,15 @@ export default function TodayScreen() {
   const preWorkoutBriefing = useAppStore(s => s.preWorkoutBriefing);
   const postRunAnalysis = useAppStore(s => s.postRunAnalysis);
   const raceStrategy = useAppStore(s => s.raceStrategy);
+  const recoveryStatus = useAppStore(s => s.recoveryStatus);
 
+  const isSyncing = useAppStore(s => s.isSyncing);
   const fetchBriefing = useAppStore(s => s.fetchBriefing);
   const fetchPostRunAnalysis = useAppStore(s => s.fetchPostRunAnalysis);
   const fetchRaceStrategy = useAppStore(s => s.fetchRaceStrategy);
   const markWorkoutComplete = useAppStore(s => s.markWorkoutComplete);
   const markWorkoutSkipped = useAppStore(s => s.markWorkoutSkipped);
-  const refreshState = useAppStore(s => s.refreshState);
+  const syncAll = useAppStore(s => s.syncAll);
 
   const totalWeeks = weeks.length;
 
@@ -58,9 +84,20 @@ export default function TodayScreen() {
   }, [todaysWorkout?.id]);
 
   const onRefresh = useCallback(() => {
-    refreshState();
-    if (todaysWorkout) fetchBriefing();
-  }, [todaysWorkout?.id]);
+    syncAll();
+  }, []);
+
+  // ─── Sync complete flash ─────────────────────────────────
+  const [showSyncDone, setShowSyncDone] = useState(false);
+  const prevSyncing = React.useRef(isSyncing);
+  useEffect(() => {
+    if (prevSyncing.current && !isSyncing) {
+      setShowSyncDone(true);
+      const t = setTimeout(() => setShowSyncDone(false), 2000);
+      return () => clearTimeout(t);
+    }
+    prevSyncing.current = isSyncing;
+  }, [isSyncing]);
 
   // ─── Weight check-in + Height prompt ─────────────────────
   const [showWeightCheckin, setShowWeightCheckin] = useState(false);
@@ -151,8 +188,22 @@ export default function TodayScreen() {
     <ScrollView
       flex={1} backgroundColor="$background"
       contentContainerStyle={{ padding: 16, paddingBottom: 40 }}
-      refreshControl={<RefreshControl refreshing={false} onRefresh={onRefresh} tintColor="#FF6B35" />}
+      refreshControl={<RefreshControl refreshing={isSyncing} onRefresh={onRefresh} tintColor="#FF6B35" />}
     >
+      {/* Sync Indicator */}
+      {isSyncing && (
+        <XStack alignItems="center" justifyContent="center" gap="$2" marginBottom="$2">
+          <Spinner size="small" color="$textTertiary" />
+          <B color="$textTertiary" fontSize={12}>Syncing...</B>
+        </XStack>
+      )}
+      {!isSyncing && showSyncDone && (
+        <XStack alignItems="center" justifyContent="center" gap="$2" marginBottom="$2">
+          <MaterialCommunityIcons name="check-circle-outline" size={14} color="#34C759" />
+          <B color="$textTertiary" fontSize={12}>Updated</B>
+        </XStack>
+      )}
+
       {/* Header */}
       <YStack marginBottom="$5">
         <H color="$color" fontSize={24} letterSpacing={1} textTransform="uppercase">
@@ -163,6 +214,11 @@ export default function TodayScreen() {
             : daysUntilRace === 0 ? 'Race day!' : 'Post-race'}
         </M>
       </YStack>
+
+      {/* Recovery Badge */}
+      {recoveryStatus && recoveryStatus.level !== 'unknown' && recoveryStatus.signalCount >= 2 && (
+        <RecoveryBadge recovery={recoveryStatus} />
+      )}
 
       {/* Race Week Strategy */}
       {isRaceWeek && raceStrategy && (

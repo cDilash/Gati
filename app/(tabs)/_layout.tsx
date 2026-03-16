@@ -80,12 +80,12 @@ export default function TabLayout() {
         }}
       />
 
-      {/* 5. Zones — reference, least used daily */}
+      {/* 5. Recovery — health + zones reference */}
       <Tabs.Screen
         name="zones"
         options={{
-          title: 'Zones',
-          tabBarIcon: ({ color }) => <MaterialCommunityIcons name="speedometer-medium" size={ICON_SIZE} color={color} />,
+          title: 'Recovery',
+          tabBarIcon: ({ color }) => <MaterialCommunityIcons name="heart-pulse" size={ICON_SIZE} color={color} />,
         }}
       />
 

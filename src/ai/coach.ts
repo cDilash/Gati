@@ -14,6 +14,7 @@ import {
   PerformanceMetric,
   CoachMessage,
   Shoe,
+  RecoveryStatus,
 } from '../types';
 import { formatPace, formatTime, predictMarathonTime } from '../engine/vdot';
 import { formatPaceRange } from '../engine/paceZones';
@@ -47,6 +48,7 @@ export function buildCoachSystemPrompt(
   shoes: Shoe[],
   daysUntilRace: number,
   isRaceWeek: boolean,
+  recoveryStatus?: RecoveryStatus | null,
 ): string {
   const parts: string[] = [];
 
@@ -150,6 +152,21 @@ Keep responses to 2-4 paragraphs max unless the athlete asks for detailed analys
     for (const s of wornShoes) {
       parts.push(`  ${s.name}: ${s.totalMiles.toFixed(0)}/${s.maxMiles}mi (${Math.round(s.totalMiles / s.maxMiles * 100)}%)`);
     }
+    parts.push('');
+  }
+
+  // Recovery status
+  if (recoveryStatus && recoveryStatus.level !== 'unknown') {
+    parts.push('RECOVERY STATUS:');
+    parts.push(`Score: ${recoveryStatus.score}/100 (${recoveryStatus.level}) — ${recoveryStatus.signalCount}/3 signals`);
+    for (const s of recoveryStatus.signals) {
+      const icon = s.status === 'good' ? '✓' : s.status === 'fair' ? '~' : '✗';
+      parts.push(`  ${icon} ${s.type}: ${s.detail}`);
+    }
+    parts.push(`Recommendation: ${recoveryStatus.recommendation}`);
+    parts.push('');
+  } else {
+    parts.push('Recovery data: not available (HealthKit not connected)');
     parts.push('');
   }
 

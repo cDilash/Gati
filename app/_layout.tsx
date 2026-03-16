@@ -26,7 +26,7 @@ const COLORS = {
 export default function RootLayout() {
   const router = useRouter();
   const segments = useSegments();
-  const { initializeApp, isLoading, userProfile, activePlan, isStravaConnected } = useAppStore();
+  const { initializeApp, isLoading, userProfile } = useAppStore();
 
   const [fontsLoaded] = useFonts({
     BebasNeue_400Regular,
@@ -40,27 +40,11 @@ export default function RootLayout() {
     if (fontsLoaded) initializeApp();
   }, [fontsLoaded]);
 
-  // Background tasks after app loaded
+  // Unified sync on app load — Strava + Health + weekly review in parallel
   useEffect(() => {
     if (isLoading || !userProfile) return;
-    const store = useAppStore.getState();
-
-    if (isStravaConnected) {
-      (async () => {
-        try {
-          console.log('[Layout] Starting Strava sync...');
-          const result = await store.syncStrava();
-          console.log(`[Layout] Strava sync done: ${result.newActivities} new, ${result.matched} matched`);
-        } catch (e) {
-          console.warn('[Layout] Strava sync failed:', e);
-        }
-      })();
-    }
-
-    if (activePlan) {
-      (async () => { try { await store.checkWeeklyReview(); } catch {} })();
-    }
-  }, [isLoading, userProfile?.id, activePlan?.id, isStravaConnected]);
+    useAppStore.getState().syncAll();
+  }, [isLoading, userProfile?.id]);
 
   // Navigation guard
   useEffect(() => {

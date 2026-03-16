@@ -57,6 +57,87 @@ function UnitsToggle() {
   );
 }
 
+const M = (props: any) => <Text fontFamily="$mono" {...props} />;
+
+function HealthDataSection() {
+  const healthSnapshot = useAppStore(s => s.healthSnapshot);
+  const recoveryStatus = useAppStore(s => s.recoveryStatus);
+  const syncHealth = useAppStore(s => s.syncHealth);
+  const [isConnecting, setIsConnecting] = useState(false);
+
+  // Check if HealthKit is available (only on real device)
+  let hkAvailable = false;
+  try {
+    const { isHealthKitAvailable } = require('../../src/health/availability');
+    hkAvailable = isHealthKitAvailable();
+  } catch {}
+
+  // Don't show section at all on simulator / no HealthKit
+  if (!hkAvailable && !healthSnapshot) return null;
+
+  const handleConnect = async () => {
+    setIsConnecting(true);
+    try {
+      const { requestHealthKitPermissions } = require('../../src/health/permissions');
+      const granted = await requestHealthKitPermissions();
+      if (granted) {
+        await syncHealth();
+        Alert.alert('Connected', 'Apple Health data synced.');
+      } else {
+        Alert.alert('Denied', 'HealthKit permissions were denied. Enable in Settings → Privacy → Health.');
+      }
+    } catch (e: any) {
+      Alert.alert('Error', e.message ?? 'Failed to connect.');
+    }
+    setIsConnecting(false);
+  };
+
+  if (!healthSnapshot) {
+    return (
+      <>
+        <SectionHeader title="Apple Health" />
+        <YStack backgroundColor="$surface" borderRadius="$6" overflow="hidden">
+          <SettingsRow label="Connect Apple Health" subtitle="Sync resting HR, HRV, and sleep for recovery scoring" onPress={handleConnect} loading={isConnecting} />
+        </YStack>
+      </>
+    );
+  }
+
+  const lastSync = healthSnapshot.cachedAt ? new Date(healthSnapshot.cachedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Unknown';
+
+  return (
+    <>
+      <SectionHeader title="Apple Health" />
+      <YStack backgroundColor="$surface" borderRadius="$6" overflow="hidden">
+        <SettingsRow label="Status" subtitle={`Connected · Last sync: ${lastSync}`} rightElement={<StatusDot connected />} />
+        {healthSnapshot.restingHR !== null && (
+          <SettingsRow label="Resting Heart Rate" rightElement={<M color="$color" fontSize={15} fontWeight="700">{healthSnapshot.restingHR} bpm</M>} />
+        )}
+        {healthSnapshot.hrvRMSSD !== null && (
+          <SettingsRow label="Heart Rate Variability" rightElement={<M color="$color" fontSize={15} fontWeight="700">{healthSnapshot.hrvRMSSD} ms</M>} />
+        )}
+        {healthSnapshot.sleepHours !== null && (
+          <SettingsRow label="Last Night's Sleep" rightElement={<M color="$color" fontSize={15} fontWeight="700">{healthSnapshot.sleepHours} hrs</M>} />
+        )}
+        {recoveryStatus && recoveryStatus.level !== 'unknown' && (
+          <SettingsRow label="Recovery Score" rightElement={
+            <M color={recoveryStatus.score >= 80 ? '$success' : recoveryStatus.score >= 60 ? '$warning' : '$danger'} fontSize={15} fontWeight="700">
+              {recoveryStatus.score}/100
+            </M>
+          } />
+        )}
+        <SettingsRow label="Sync Now" onPress={async () => {
+          try {
+            const { getDatabase } = require('../../src/db/database');
+            getDatabase().runSync('DELETE FROM health_snapshot');
+          } catch {}
+          await syncHealth();
+        }} />
+      </YStack>
+    </>
+  );
+}
+
 export default function SettingsScreen() {
   const router = useRouter();
   const generatePlan = useAppStore(s => s.generatePlan);
@@ -193,6 +274,9 @@ export default function SettingsScreen() {
           destructive={!!activePlan} disabled={!userProfile}
         />
       </YStack>
+
+      {/* Health Data */}
+      <HealthDataSection />
 
       {/* About */}
       <SectionHeader title="About" />

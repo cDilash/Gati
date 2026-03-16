@@ -17,6 +17,8 @@ import {
   AIGeneratedPlan,
   Shoe,
   WeeklyDigest,
+  HealthSnapshot,
+  RecoveryStatus,
 } from './types';
 import {
   getUserProfile,
@@ -77,6 +79,14 @@ interface AppState {
   coachMessages: CoachMessage[];
   isCoachThinking: boolean;
 
+  // Health / Recovery
+  healthSnapshot: HealthSnapshot | null;
+  recoveryStatus: RecoveryStatus | null;
+
+  // Sync state
+  isSyncing: boolean;
+  lastSyncResult: { strava: string | null; health: string | null } | null;
+
   // Derived
   currentWeekNumber: number;
   currentPhase: string;
@@ -108,6 +118,8 @@ interface AppState {
   syncStravaConnection: () => void;
   refreshShoes: () => void;
   addManualRun: (date: string, distanceMiles: number, durationMinutes: number, rpe?: number) => void;
+  syncHealth: () => Promise<void>;
+  syncAll: () => Promise<void>;
 }
 
 // ─── Store ──────────────────────────────────────────────────
@@ -131,6 +143,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   coachMessages: [],
   isCoachThinking: false,
   raceStrategy: null,
+  healthSnapshot: null,
+  recoveryStatus: null,
+  isSyncing: false,
+  lastSyncResult: null,
   currentWeekNumber: 0,
   currentPhase: 'base',
   daysUntilRace: 0,
@@ -379,7 +395,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   sendToCoach: async (message) => {
     const Crypto = require('expo-crypto');
     const state = get();
-    const { userProfile, paceZones, currentWeek, workouts, todaysWorkout, shoes, weeks, daysUntilRace, isRaceWeek, coachMessages } = state;
+    const { userProfile, paceZones, currentWeek, workouts, todaysWorkout, shoes, weeks, daysUntilRace, isRaceWeek, coachMessages, recoveryStatus } = state;
 
     if (!userProfile || !paceZones) return;
 
@@ -396,7 +412,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       const systemPrompt = buildCoachSystemPrompt(
         userProfile, paceZones, currentWeek, weekWorkouts,
         todaysWorkout, recentMetrics, weeks, workouts, shoes,
-        daysUntilRace, isRaceWeek,
+        daysUntilRace, isRaceWeek, recoveryStatus,
       );
 
       const response = await aiSendCoachMessage(message, systemPrompt, coachMessages);
@@ -430,15 +446,20 @@ export const useAppStore = create<AppState>((set, get) => ({
   // ─── AI Briefings ─────────────────────────────────────────
 
   fetchBriefing: async () => {
-    const { todaysWorkout, paceZones, userProfile, currentWeek, daysUntilRace } = get();
+    const { todaysWorkout, paceZones, userProfile, currentWeek, daysUntilRace, recoveryStatus } = get();
     if (!todaysWorkout || !paceZones || !userProfile) return;
     if (todaysWorkout.workout_type === 'rest') return;
 
     try {
       const recentMetrics = getRecentMetrics(7);
+      let recoveryInfo: string | null = null;
+      if (recoveryStatus && recoveryStatus.level !== 'unknown') {
+        const signals = recoveryStatus.signals.map(s => `${s.type}: ${s.detail}`).join(', ');
+        recoveryInfo = `RECOVERY: ${recoveryStatus.score}/100 (${recoveryStatus.level}). ${signals}`;
+      }
       const briefing = await generateBriefing(
         todaysWorkout, recentMetrics, paceZones,
-        userProfile, currentWeek, daysUntilRace,
+        userProfile, currentWeek, daysUntilRace, recoveryInfo,
       );
       if (briefing) set({ preWorkoutBriefing: briefing });
     } catch (error) {
@@ -666,5 +687,72 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
 
     get().refreshState();
+  },
+
+  // ─── Health Sync ──────────────────────────────────────────
+
+  syncHealth: async () => {
+    try {
+      const { syncHealthData } = require('./health/healthSync');
+      const { calculateRecoveryScore } = require('./health/recoveryScore');
+      const snapshot = await syncHealthData();
+      if (snapshot) {
+        const profile = get().userProfile;
+        const recovery = calculateRecoveryScore(snapshot, {
+          restHr: profile?.rest_hr ?? null,
+          maxHr: profile?.max_hr ?? null,
+        });
+        set({ healthSnapshot: snapshot, recoveryStatus: recovery });
+      }
+    } catch (e) {
+      console.log('[Store] Health sync error:', e);
+    }
+  },
+
+  // ─── Unified Sync (Strava + Health in parallel) ───────────
+
+  syncAll: async () => {
+    const state = get();
+    if (state.isSyncing) return; // prevent double-sync
+    set({ isSyncing: true });
+
+    const results: { strava: string | null; health: string | null } = { strava: null, health: null };
+
+    const stravaPromise = state.isStravaConnected
+      ? (async () => {
+          try {
+            const r = await state.syncStrava();
+            results.strava = `${r.newActivities} new, ${r.matched} matched`;
+            // Refresh state after Strava sync brings new data
+            if (r.newActivities > 0 || r.matched > 0) {
+              get().refreshState();
+              // Refresh briefing if new data might affect it
+              get().fetchBriefing();
+            }
+          } catch (e) {
+            console.log('[SyncAll] Strava failed:', e);
+          }
+        })()
+      : Promise.resolve();
+
+    const healthPromise = (async () => {
+      try {
+        await state.syncHealth();
+        const snap = get().healthSnapshot;
+        if (snap) results.health = `${snap.signalCount} signals`;
+      } catch (e) {
+        console.log('[SyncAll] Health failed:', e);
+      }
+    })();
+
+    // Also check weekly review
+    const reviewPromise = state.activePlan
+      ? (async () => { try { await state.checkWeeklyReview(); } catch {} })()
+      : Promise.resolve();
+
+    await Promise.allSettled([stravaPromise, healthPromise, reviewPromise]);
+
+    set({ isSyncing: false, lastSyncResult: results });
+    console.log(`[SyncAll] Done — Strava: ${results.strava ?? 'skipped'}, Health: ${results.health ?? 'skipped'}`);
   },
 }));

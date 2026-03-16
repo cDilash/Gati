@@ -41,6 +41,7 @@ export async function generateBriefing(
   profile: UserProfile,
   currentWeek: TrainingWeek | null,
   daysUntilRace: number,
+  recoveryInfo?: string | null,
 ): Promise<string | null> {
   if (!isGeminiAvailable()) return null;
   if (workout.workout_type === 'rest') return null;
@@ -64,6 +65,8 @@ Week ${currentWeek?.week_number || '?'}, ${currentWeek?.phase || '?'} phase. ${d
 ${recentRuns.length > 0 ? `LAST RUN: ${recentRuns[0].date} — ${recentRuns[0].distance_miles.toFixed(1)}mi @ ${recentRuns[0].avg_pace_sec_per_mile ? formatPace(recentRuns[0].avg_pace_sec_per_mile) : '?'}/mi${recentRuns[0].avg_hr ? ` HR:${recentRuns[0].avg_hr}` : ''}` : 'No recent data.'}
 
 PACE ZONES: E ${formatPaceRange(paceZones.E)}, M ${formatPaceRange(paceZones.M)}, T ${formatPaceRange(paceZones.T)}
+
+${recoveryInfo || 'Recovery data: not available'}
 
 Respond with ONLY the briefing text. No JSON, no formatting.`;
 

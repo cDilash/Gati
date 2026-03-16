@@ -15,11 +15,11 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     bundleIdentifier: 'com.personal.marathoncoach',
     entitlements: {
       'com.apple.developer.healthkit': true,
-      'com.apple.developer.healthkit.access': ['health-records'],
+      'com.apple.developer.healthkit.access': [],
     },
     infoPlist: {
-      NSHealthShareUsageDescription: 'Marathon Coach reads your running workouts from Apple Health to track training progress and provide coaching insights.',
-      NSHealthUpdateUsageDescription: 'Marathon Coach does not write any health data.',
+      NSHealthShareUsageDescription: 'Marathon Coach reads your resting heart rate, heart rate variability, and sleep data from Apple Health to calculate your recovery score and personalize your training plan.',
+      NSHealthUpdateUsageDescription: 'Marathon Coach does not write any data to Apple Health.',
       NSLocationWhenInUseUsageDescription: 'Marathon Coach uses your location to fetch local weather for workout briefings.',
       UIBackgroundModes: ['health-sharing'],
     },
@@ -30,6 +30,15 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     'expo-location',
     'react-native-maps',
     'expo-font',
+    'react-native-health',
+    [
+      'expo-build-properties',
+      {
+        ios: {
+          useFrameworks: 'static',
+        },
+      },
+    ],
   ],
   extra: {
     geminiApiKey: process.env.GEMINI_API_KEY || '',

@@ -190,6 +190,25 @@ CREATE TABLE IF NOT EXISTS strava_activity_detail (
   FOREIGN KEY (performance_metric_id) REFERENCES performance_metric(id)
 );`;
 
+// ─── Health Data ──────────────────────────────────────────────
+
+export const CREATE_HEALTH_SNAPSHOT = `
+CREATE TABLE IF NOT EXISTS health_snapshot (
+  id TEXT PRIMARY KEY,
+  date TEXT NOT NULL,
+  resting_hr INTEGER,
+  hrv_rmssd REAL,
+  sleep_hours REAL,
+  resting_hr_trend_json TEXT,
+  hrv_trend_json TEXT,
+  sleep_trend_json TEXT,
+  signal_count INTEGER NOT NULL DEFAULT 0,
+  cached_at TEXT NOT NULL
+);`;
+
+export const CREATE_HEALTH_DATE_INDEX = `
+CREATE UNIQUE INDEX IF NOT EXISTS idx_health_date ON health_snapshot(date);`;
+
 // ─── Indexes ────────────────────────────────────────────────
 
 export const CREATE_WORKOUT_DATE_INDEX = `
@@ -215,7 +234,9 @@ export const ALL_TABLES = [
   CREATE_SHOES,
   CREATE_STRAVA_TOKENS,
   CREATE_STRAVA_ACTIVITY_DETAIL,
+  CREATE_HEALTH_SNAPSHOT,
   CREATE_WORKOUT_DATE_INDEX,
   CREATE_METRIC_DATE_INDEX,
   CREATE_COACH_MESSAGE_INDEX,
+  CREATE_HEALTH_DATE_INDEX,
 ];
