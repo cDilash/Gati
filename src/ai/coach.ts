@@ -18,7 +18,7 @@ import {
   HealthSnapshot,
 } from '../types';
 import { formatPace, formatTime, predictMarathonTime } from '../engine/vdot';
-import { formatPaceRange } from '../engine/paceZones';
+import { formatPaceRange, calculateHRZones } from '../engine/paceZones';
 
 // ─── Types ──────────────────────────────────────────────────
 
@@ -72,7 +72,13 @@ Keep responses to 2-4 paragraphs max unless the athlete asks for detailed analys
     parts.push(`- Weight: ${profile.weight_kg}kg`);
   }
   if (profile.max_hr) {
-    parts.push(`- Max HR: ${profile.max_hr}bpm${profile.rest_hr ? `, Resting HR: ${profile.rest_hr}bpm` : ''}`);
+    const source = (profile as any).max_hr_source === 'strava' ? 'observed from Strava' : 'formula estimate';
+    parts.push(`- Max HR: ${profile.max_hr}bpm (${source})${profile.rest_hr ? `, Resting HR: ${profile.rest_hr}bpm` : ''}`);
+  }
+  // HR zones (Karvonen) — if both max and resting HR available
+  if (profile.max_hr && profile.rest_hr) {
+    const hrz = calculateHRZones(profile.max_hr, profile.rest_hr);
+    parts.push(`- HR Zones: Z1 ${hrz.zone1.min}-${hrz.zone1.max} | Z2 ${hrz.zone2.min}-${hrz.zone2.max} | Z3 ${hrz.zone3.min}-${hrz.zone3.max} | Z4 ${hrz.zone4.min}-${hrz.zone4.max} | Z5 ${hrz.zone5.min}-${hrz.zone5.max} bpm`);
   }
   parts.push(`- Experience: ${profile.experience_level}`);
   parts.push(`- Race: ${profile.race_name || 'Marathon'} on ${profile.race_date} (${daysUntilRace} days away)`);
@@ -122,30 +128,55 @@ Keep responses to 2-4 paragraphs max unless the athlete asks for detailed analys
     parts.push('');
   }
 
-  // Recent performance (last 7 days)
+  // Recent performance (last 7 days) — enriched with splits, elevation, cadence
   if (recentMetrics.length > 0) {
+    // Fetch strava detail for enrichment
+    let detailMap = new Map<number, any>();
+    try {
+      const { getDatabase } = require('../db/database');
+      const details = getDatabase().getAllSync(
+        `SELECT strava_activity_id, elevation_gain_ft, cadence_avg, suffer_score, splits_json
+         FROM strava_activity_detail WHERE strava_activity_id IN (${recentMetrics.filter(m => m.strava_activity_id).map(m => m.strava_activity_id).join(',') || '0'})`
+      );
+      for (const d of details) detailMap.set(d.strava_activity_id, d);
+    } catch {}
+
     parts.push('RECENT RUNS (last 7 days):');
-    for (const m of recentMetrics.slice(0, 7)) {
+    for (let mi = 0; mi < Math.min(recentMetrics.length, 5); mi++) {
+      const m = recentMetrics[mi];
       const pace = m.avg_pace_sec_per_mile ? formatPace(m.avg_pace_sec_per_mile) : '?';
       const hr = m.avg_hr ? ` HR:${m.avg_hr}` : '';
       const rpe = m.perceived_exertion ? ` RPE:${m.perceived_exertion}` : '';
       const gear = m.gear_name ? ` [${m.gear_name}]` : '';
-      let splitNote = '';
-      if (m.splits_json) {
-        try {
-          const splits = JSON.parse(m.splits_json);
-          if (splits.length >= 2) {
-            const firstHalf = splits.slice(0, Math.floor(splits.length / 2));
-            const secondHalf = splits.slice(Math.floor(splits.length / 2));
-            const avgFirst = firstHalf.reduce((s: number, sp: any) => s + (sp.average_speed || sp.averageSpeed || sp.moving_time / sp.distance || 0), 0) / firstHalf.length;
-            const avgSecond = secondHalf.reduce((s: number, sp: any) => s + (sp.average_speed || sp.averageSpeed || sp.moving_time / sp.distance || 0), 0) / secondHalf.length;
-            if (avgSecond > avgFirst * 1.02) splitNote = ' (negative split)';
-            else if (avgFirst > avgSecond * 1.02) splitNote = ' (positive split)';
-            else splitNote = ' (even split)';
-          }
-        } catch {}
+
+      // Enrichments from strava detail
+      const detail = m.strava_activity_id ? detailMap.get(m.strava_activity_id) : null;
+      const elev = detail?.elevation_gain_ft ? ` +${Math.round(detail.elevation_gain_ft)}ft` : '';
+      const cadence = detail?.cadence_avg ? ` ${Math.round(detail.cadence_avg)}spm` : '';
+      const suffer = detail?.suffer_score ? ` effort:${detail.suffer_score}` : '';
+
+      parts.push(`  ${m.date}: ${m.distance_miles.toFixed(1)}mi @ ${pace}/mi${hr}${rpe}${elev}${cadence}${suffer}${gear}`);
+
+      // Per-mile splits for the last 3 runs (most valuable coaching data)
+      if (mi < 3) {
+        const splitsSource = detail?.splits_json || m.splits_json;
+        if (splitsSource) {
+          try {
+            const splits = JSON.parse(splitsSource);
+            if (splits.length >= 2) {
+              const splitPaces = splits.map((sp: any) => {
+                if (sp.average_speed && sp.average_speed > 0) {
+                  return formatPace(1609.34 / sp.average_speed);
+                } else if (sp.moving_time && sp.distance) {
+                  return formatPace((sp.moving_time / sp.distance) * 1609.34);
+                }
+                return '?';
+              });
+              parts.push(`    Splits: ${splitPaces.join(' | ')}`);
+            }
+          } catch {}
+        }
       }
-      parts.push(`  ${m.date}: ${m.distance_miles.toFixed(1)}mi @ ${pace}/mi${hr}${rpe}${gear}${splitNote}`);
     }
     parts.push('');
   }
@@ -213,10 +244,14 @@ Keep responses to 2-4 paragraphs max unless the athlete asks for detailed analys
   // Recovery status
   if (recoveryStatus && recoveryStatus.level !== 'unknown') {
     parts.push('RECOVERY STATUS:');
-    parts.push(`Score: ${recoveryStatus.score}/100 (${recoveryStatus.level}) — ${recoveryStatus.signalCount}/3 signals`);
+    parts.push(`Score: ${recoveryStatus.score}/100 (${recoveryStatus.level}) — ${recoveryStatus.signalCount} signals`);
     for (const s of recoveryStatus.signals) {
       const icon = s.status === 'good' ? '✓' : s.status === 'fair' ? '~' : '✗';
       parts.push(`  ${icon} ${s.type}: ${s.detail}`);
+    }
+    // Include resting HR 14-day trend for context
+    if (healthSnapshot?.restingHRTrend && healthSnapshot.restingHRTrend.length >= 3) {
+      parts.push(`  Resting HR trend (14d): ${healthSnapshot.restingHRTrend.map(r => r.value).join(', ')}`);
     }
     parts.push(`Recommendation: ${recoveryStatus.recommendation}`);
     parts.push('');

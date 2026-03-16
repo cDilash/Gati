@@ -138,11 +138,25 @@ function buildUserMessage(
   // Athlete profile
   parts.push('ATHLETE PROFILE:');
   parts.push(`- Age: ${profile.age}, Gender: ${profile.gender}`);
-  if (profile.weight_kg) parts.push(`- Weight: ${profile.weight_kg} kg`);
-  if (profile.height_cm) parts.push(`- Height: ${profile.height_cm}cm`);
+  if (profile.height_cm && profile.weight_kg) {
+    const heightM = profile.height_cm / 100;
+    const bmi = Math.round((profile.weight_kg / (heightM * heightM)) * 10) / 10;
+    parts.push(`- Height: ${profile.height_cm}cm, Weight: ${profile.weight_kg}kg, BMI: ${bmi}`);
+  } else {
+    if (profile.weight_kg) parts.push(`- Weight: ${profile.weight_kg} kg`);
+    if (profile.height_cm) parts.push(`- Height: ${profile.height_cm}cm`);
+  }
   parts.push(`- VDOT: ${profile.vdot_score}`);
-  if (profile.max_hr) parts.push(`- Max HR: ${profile.max_hr}bpm`);
-  if (profile.rest_hr) parts.push(`- Resting HR: ${profile.rest_hr}bpm`);
+  if (profile.max_hr) {
+    parts.push(`- Max HR: ${profile.max_hr}bpm`);
+    if (profile.rest_hr) {
+      parts.push(`- Resting HR: ${profile.rest_hr}bpm`);
+      // Include HR zones for the plan generator
+      const { calculateHRZones } = require('../engine/paceZones');
+      const hrz = calculateHRZones(profile.max_hr, profile.rest_hr);
+      parts.push(`- HR Zones: Z1 ${hrz.zone1.min}-${hrz.zone1.max} | Z2 ${hrz.zone2.min}-${hrz.zone2.max} | Z3 ${hrz.zone3.min}-${hrz.zone3.max} | Z4 ${hrz.zone4.min}-${hrz.zone4.max} | Z5 ${hrz.zone5.min}-${hrz.zone5.max} bpm`);
+    }
+  }
   parts.push(`- Experience: ${profile.experience_level}`);
   parts.push(`- Current weekly mileage: ${profile.current_weekly_miles} miles/week`);
   parts.push(`- Longest recent run: ${profile.longest_recent_run} miles`);
@@ -212,6 +226,27 @@ function buildUserMessage(
     }
     parts.push('');
   }
+
+  // Recovery baseline (if HealthKit data available)
+  try {
+    const { useAppStore } = require('../store');
+    const snap = useAppStore.getState().healthSnapshot;
+    if (snap) {
+      const baselines: string[] = [];
+      if (snap.restingHRTrend.length >= 3) {
+        const avg = Math.round(snap.restingHRTrend.reduce((s: number, r: any) => s + r.value, 0) / snap.restingHRTrend.length);
+        baselines.push(`Avg resting HR: ${avg}bpm`);
+      }
+      if (snap.sleepTrend.length >= 3) {
+        const avgSleep = Math.round(snap.sleepTrend.reduce((s: number, n: any) => s + n.totalMinutes, 0) / snap.sleepTrend.length / 60 * 10) / 10;
+        baselines.push(`Avg sleep: ${avgSleep}hrs`);
+      }
+      if (baselines.length > 0) {
+        parts.push(`RECOVERY BASELINE: ${baselines.join(', ')}`);
+        parts.push('');
+      }
+    }
+  } catch {}
 
   // Best efforts from Strava for calibration
   try {
