@@ -59,6 +59,7 @@ export default function TodayScreen() {
 
   const isSyncing = useAppStore(s => s.isSyncing);
   const vdotNotification = useAppStore(s => s.vdotNotification);
+  const proactiveSuggestion = useAppStore(s => s.proactiveSuggestion);
   const fetchBriefing = useAppStore(s => s.fetchBriefing);
   const fetchPostRunAnalysis = useAppStore(s => s.fetchPostRunAnalysis);
   const fetchRaceStrategy = useAppStore(s => s.fetchRaceStrategy);
@@ -235,6 +236,42 @@ export default function TodayScreen() {
             </YStack>
             <B color="$textTertiary" fontSize={18} marginLeft="$2"
               onPress={() => useAppStore.setState({ vdotNotification: null })}>✕</B>
+          </XStack>
+        </YStack>
+      )}
+
+      {/* Proactive Coach Suggestion */}
+      {proactiveSuggestion && (
+        <YStack backgroundColor="$surface" borderRadius="$6" padding="$4" marginBottom="$4" borderLeftWidth={3} borderLeftColor="$warning">
+          <XStack justifyContent="space-between" alignItems="flex-start">
+            <XStack alignItems="center" gap="$2" marginBottom="$2">
+              <MaterialCommunityIcons name="lightbulb-outline" size={18} color="#FF9500" />
+              <H color="$warning" fontSize={13} letterSpacing={1} textTransform="uppercase">Coach Suggestion</H>
+            </XStack>
+            <B color="$textTertiary" fontSize={18} onPress={() => useAppStore.setState({ proactiveSuggestion: null })}>✕</B>
+          </XStack>
+          <B color="$color" fontSize={14} lineHeight={20} marginBottom="$3">{proactiveSuggestion.message}</B>
+          <XStack gap="$3">
+            <YStack flex={1} backgroundColor="$warning" paddingVertical="$2" borderRadius="$4" alignItems="center"
+              pressStyle={{ opacity: 0.8 }} onPress={() => {
+                try {
+                  const { getDatabase } = require('../../src/db/database');
+                  getDatabase().runSync(
+                    `UPDATE workout SET workout_type = 'easy', target_pace_zone = 'E',
+                     modification_reason = 'Swapped from ${proactiveSuggestion.workoutTitle} — ran on rest day',
+                     status = 'modified' WHERE id = ? AND status = 'upcoming'`,
+                    [proactiveSuggestion.workoutId]
+                  );
+                  useAppStore.setState({ proactiveSuggestion: null });
+                  useAppStore.getState().refreshState();
+                } catch {}
+              }}>
+              <B color="white" fontSize={13} fontWeight="700">Swap to Easy</B>
+            </YStack>
+            <YStack flex={1} backgroundColor="$surfaceLight" paddingVertical="$2" borderRadius="$4" alignItems="center"
+              pressStyle={{ opacity: 0.8 }} onPress={() => useAppStore.setState({ proactiveSuggestion: null })}>
+              <B color="$textSecondary" fontSize={13} fontWeight="600">Keep as Planned</B>
+            </YStack>
           </XStack>
         </YStack>
       )}

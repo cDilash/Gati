@@ -89,6 +89,12 @@ interface AppState {
 
   // Notifications
   vdotNotification: { oldVDOT: number; newVDOT: number; source: string } | null;
+  proactiveSuggestion: {
+    message: string;
+    workoutId: string;
+    action: 'swap_to_easy';
+    workoutTitle: string;
+  } | null;
 
   // Derived
   currentWeekNumber: number;
@@ -151,6 +157,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   isSyncing: false,
   lastSyncResult: null,
   vdotNotification: null,
+  proactiveSuggestion: null,
   currentWeekNumber: 0,
   currentPhase: 'base',
   daysUntilRace: 0,
@@ -845,6 +852,60 @@ export const useAppStore = create<AppState>((set, get) => ({
     // Refresh state
     get().refreshState();
     get().fetchBriefing();
+
+    // Step 4: Proactive rest day coaching check
+    try {
+      const db = require('./db/database').getDatabase();
+      const today = require('./utils/dateUtils').getToday();
+      const tomorrow = new Date(today + 'T00:00:00');
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const tomorrowStr = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(tomorrow.getDate()).padStart(2, '0')}`;
+
+      // Check if today is a rest day with an unmatched run
+      const restDayRun = db.getFirstSync(
+        `SELECT pm.distance_miles FROM performance_metric pm
+         JOIN workout w ON w.scheduled_date = pm.date AND w.workout_type = 'rest'
+         JOIN training_plan tp ON w.plan_id = tp.id
+         WHERE tp.status = 'active' AND pm.date = ? AND pm.workout_id IS NULL`,
+        [today]
+      ) as { distance_miles: number } | null;
+
+      if (restDayRun && restDayRun.distance_miles >= 4) {
+        // Check if tomorrow is a quality session
+        const tomorrowWorkout = db.getFirstSync(
+          `SELECT id, title, workout_type, target_distance_miles FROM workout
+           WHERE scheduled_date = ? AND status = 'upcoming'
+           AND workout_type IN ('threshold', 'interval', 'tempo', 'marathon_pace')
+           AND plan_id IN (SELECT id FROM training_plan WHERE status = 'active')`,
+          [tomorrowStr]
+        ) as { id: string; title: string; workout_type: string; target_distance_miles: number } | null;
+
+        if (tomorrowWorkout) {
+          const recovery = get().recoveryStatus;
+          const lowRecovery = recovery && recovery.score < 60;
+          const miles = restDayRun.distance_miles.toFixed(1);
+
+          let message: string;
+          if (lowRecovery) {
+            message = `You ran ${miles} miles on your rest day and your recovery score is ${recovery!.score}/100. I'd strongly recommend converting tomorrow's ${tomorrowWorkout.title} to an easy run to avoid overtraining.`;
+          } else {
+            message = `You ran ${miles} miles on your rest day. Tomorrow's ${tomorrowWorkout.title} may be harder than usual since you didn't fully recover. Would you like to swap it to an easy run?`;
+          }
+
+          set({
+            proactiveSuggestion: {
+              message,
+              workoutId: tomorrowWorkout.id,
+              action: 'swap_to_easy',
+              workoutTitle: tomorrowWorkout.title,
+            },
+          });
+          console.log(`[SyncAll] Proactive suggestion: rest day run + quality tomorrow`);
+        }
+      }
+    } catch (e) {
+      console.log('[SyncAll] Proactive check failed:', e);
+    }
 
     set({ isSyncing: false, lastSyncResult: results });
     console.log(`[SyncAll] Done — Strava: ${results.strava ?? 'skipped'}, Health: ${results.health ?? 'skipped'}`);
