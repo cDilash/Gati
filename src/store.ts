@@ -631,6 +631,19 @@ export const useAppStore = create<AppState>((set, get) => ({
       get().refreshState();
       get().syncStravaConnection();
       get().refreshShoes();
+
+      // Auto-trigger post-run analysis for today's completed workout (fire-and-forget)
+      if (result.matched > 0) {
+        (async () => {
+          try {
+            const todayW = get().todaysWorkout;
+            if (todayW && (todayW.status === 'completed' || todayW.status === 'partial')) {
+              await get().fetchPostRunAnalysis(todayW.id);
+            }
+          } catch {}
+        })();
+      }
+
       return result;
     } catch (e: any) {
       console.error('[Store] syncStrava error:', e.message);

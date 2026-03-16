@@ -39,9 +39,9 @@ export default function CalendarScreen() {
   }, [workouts]);
 
   const adherence = useMemo(() => {
-    const past = workouts.filter(w => w.workout_type !== 'rest' && (w.status === 'completed' || w.status === 'skipped'));
+    const past = workouts.filter(w => w.workout_type !== 'rest' && (w.status === 'completed' || w.status === 'skipped' || w.status === 'partial'));
     if (past.length === 0) return null;
-    return Math.round((past.filter(w => w.status === 'completed').length / past.length) * 100);
+    return Math.round((past.filter(w => w.status === 'completed' || w.status === 'partial').length / past.length) * 100);
   }, [workouts]);
 
   const toggleWeek = useCallback((n: number) => {
@@ -180,7 +180,7 @@ export default function CalendarScreen() {
             {isExpanded && (
               <YStack paddingHorizontal="$3" paddingBottom="$3" borderTopWidth={1} borderTopColor="$border">
                 {weekWorkouts.map(workout => {
-                  const statusColor = workout.status === 'completed' ? '#34C759' : workout.status === 'skipped' ? '#FF3B30' : '#666666';
+                  const statusColor = workout.status === 'completed' ? '#34C759' : workout.status === 'skipped' ? '#FF3B30' : workout.status === 'partial' ? '#F59E0B' : '#666666';
                   const isWToday = isToday(workout.scheduled_date);
 
                   return (
