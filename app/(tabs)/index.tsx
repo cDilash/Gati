@@ -6,7 +6,7 @@ import { useAppStore } from '../../src/store';
 import { WORKOUT_TYPE_LABELS } from '../../src/utils/constants';
 import { formatDateLong, getToday } from '../../src/utils/dateUtils';
 import { formatPace } from '../../src/engine/vdot';
-import { IntervalStep } from '../../src/types';
+import { IntervalStep, CrossTrainingType, CROSS_TRAINING_LABELS, CROSS_TRAINING_IMPACT } from '../../src/types';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { getWorkoutIcon } from '../../src/utils/workoutIcons';
 import { WeightCheckin } from '../../src/components/WeightCheckin';
@@ -60,6 +60,9 @@ export default function TodayScreen() {
   const isSyncing = useAppStore(s => s.isSyncing);
   const vdotNotification = useAppStore(s => s.vdotNotification);
   const proactiveSuggestion = useAppStore(s => s.proactiveSuggestion);
+  const todayCrossTraining = useAppStore(s => s.todayCrossTraining);
+  const logCrossTraining = useAppStore(s => s.logCrossTraining);
+  const deleteCrossTrainingEntry = useAppStore(s => s.deleteCrossTrainingEntry);
   const fetchBriefing = useAppStore(s => s.fetchBriefing);
   const fetchPostRunAnalysis = useAppStore(s => s.fetchPostRunAnalysis);
   const fetchRaceStrategy = useAppStore(s => s.fetchRaceStrategy);
@@ -88,6 +91,10 @@ export default function TodayScreen() {
   const onRefresh = useCallback(() => {
     syncAll();
   }, []);
+
+  // ─── Cross-training modal ────────────────────────────────
+  const [showCTModal, setShowCTModal] = useState(false);
+  const [ctNotes, setCTNotes] = useState('');
 
   // ─── Sync complete flash ─────────────────────────────────
   const [showSyncDone, setShowSyncDone] = useState(false);
@@ -242,37 +249,57 @@ export default function TodayScreen() {
 
       {/* Proactive Coach Suggestion */}
       {proactiveSuggestion && (
-        <YStack backgroundColor="$surface" borderRadius="$6" padding="$4" marginBottom="$4" borderLeftWidth={3} borderLeftColor="$warning">
+        <YStack backgroundColor="$surface" borderRadius="$6" padding="$4" marginBottom="$4" borderLeftWidth={3}
+          borderLeftColor={proactiveSuggestion.ctSuggestion?.severity === 'strong' ? '$danger' : '$warning'}>
           <XStack justifyContent="space-between" alignItems="flex-start">
             <XStack alignItems="center" gap="$2" marginBottom="$2">
-              <MaterialCommunityIcons name="lightbulb-outline" size={18} color="#FF9500" />
-              <H color="$warning" fontSize={13} letterSpacing={1} textTransform="uppercase">Coach Suggestion</H>
+              <MaterialCommunityIcons name="lightbulb-outline" size={18}
+                color={proactiveSuggestion.ctSuggestion?.severity === 'strong' ? '#FF3B30' : '#FF9500'} />
+              <H color={proactiveSuggestion.ctSuggestion?.severity === 'strong' ? '$danger' : '$warning'}
+                fontSize={13} letterSpacing={1} textTransform="uppercase">Coach Suggestion</H>
             </XStack>
             <B color="$textTertiary" fontSize={18} onPress={() => useAppStore.setState({ proactiveSuggestion: null })}>✕</B>
           </XStack>
           <B color="$color" fontSize={14} lineHeight={20} marginBottom="$3">{proactiveSuggestion.message}</B>
-          <XStack gap="$3">
-            <YStack flex={1} backgroundColor="$warning" paddingVertical="$2" borderRadius="$4" alignItems="center"
-              pressStyle={{ opacity: 0.8 }} onPress={() => {
-                try {
-                  const { getDatabase } = require('../../src/db/database');
-                  getDatabase().runSync(
-                    `UPDATE workout SET workout_type = 'easy', target_pace_zone = 'E',
-                     modification_reason = 'Swapped from ${proactiveSuggestion.workoutTitle} — ran on rest day',
-                     status = 'modified' WHERE id = ? AND status = 'upcoming'`,
-                    [proactiveSuggestion.workoutId]
-                  );
+          <YStack gap="$2">
+            {(proactiveSuggestion.ctSuggestion?.options ?? [
+              { label: 'Swap to Easy', action: 'swap_to_easy', description: '' },
+              { label: 'Keep as Planned', action: 'keep', description: '' },
+            ]).map((opt, i) => (
+              <YStack key={i}
+                backgroundColor={opt.action === 'keep' ? '$surfaceLight' : i === 0 ? '$warning' : '$surfaceLight'}
+                paddingVertical="$2" paddingHorizontal="$4" borderRadius="$4"
+                pressStyle={{ opacity: 0.8 }}
+                onPress={() => {
+                  try {
+                    const { getDatabase } = require('../../src/db/database');
+                    const db = getDatabase();
+                    const wId = proactiveSuggestion.workoutId;
+                    if (opt.action === 'swap_to_easy') {
+                      db.runSync(
+                        `UPDATE workout SET workout_type = 'easy', target_pace_zone = 'E',
+                         modification_reason = ?, status = 'modified' WHERE id = ? AND status = 'upcoming'`,
+                        [`Swapped from ${proactiveSuggestion.workoutTitle} — cross-training impact`, wId]
+                      );
+                    } else if (opt.action === 'reduce_distance') {
+                      db.runSync(
+                        `UPDATE workout SET target_distance_miles = target_distance_miles * 0.75,
+                         modification_reason = ?, status = 'modified' WHERE id = ? AND status = 'upcoming'`,
+                        [`Reduced 25% from ${proactiveSuggestion.workoutTitle} — cross-training impact`, wId]
+                      );
+                    }
+                    // 'keep' = no DB change
+                  } catch {}
                   useAppStore.setState({ proactiveSuggestion: null });
                   useAppStore.getState().refreshState();
-                } catch {}
-              }}>
-              <B color="white" fontSize={13} fontWeight="700">Swap to Easy</B>
-            </YStack>
-            <YStack flex={1} backgroundColor="$surfaceLight" paddingVertical="$2" borderRadius="$4" alignItems="center"
-              pressStyle={{ opacity: 0.8 }} onPress={() => useAppStore.setState({ proactiveSuggestion: null })}>
-              <B color="$textSecondary" fontSize={13} fontWeight="600">Keep as Planned</B>
-            </YStack>
-          </XStack>
+                }}>
+                <XStack alignItems="center" justifyContent="space-between">
+                  <B color={opt.action === 'keep' ? '$textSecondary' : 'white'} fontSize={13} fontWeight="700">{opt.label}</B>
+                  {opt.description ? <B color={opt.action === 'keep' ? '$textTertiary' : 'rgba(255,255,255,0.7)'} fontSize={11}>{opt.description}</B> : null}
+                </XStack>
+              </YStack>
+            ))}
+          </YStack>
         </YStack>
       )}
 
@@ -445,6 +472,77 @@ export default function TodayScreen() {
           <B color="$textSecondary" fontSize={14} lineHeight={21}>{postRunAnalysis}</B>
         </YStack>
       )}
+      {/* Cross-Training (hidden in race week) */}
+      {isRaceWeek ? null : todayCrossTraining ? (
+        <XStack backgroundColor="$surface" borderRadius="$6" padding="$3" marginBottom="$4" alignItems="center"
+          pressStyle={{ opacity: 0.8 }} onPress={() => {
+            const { Alert } = require('react-native');
+            Alert.alert('Cross-Training', `${CROSS_TRAINING_LABELS[todayCrossTraining.type]}${todayCrossTraining.notes ? `\n${todayCrossTraining.notes}` : ''}`, [
+              { text: 'Delete', style: 'destructive', onPress: () => deleteCrossTrainingEntry(todayCrossTraining.id) },
+              { text: 'OK' },
+            ]);
+          }}>
+          <View width={32} height={32} borderRadius={16} alignItems="center" justifyContent="center" marginRight="$3"
+            backgroundColor={todayCrossTraining.impact === 'high' ? '#FF3B3022' : todayCrossTraining.impact === 'moderate' ? '#FF950022' : todayCrossTraining.impact === 'positive' ? '#34C75922' : '#66666622'}>
+            <MaterialCommunityIcons name="dumbbell" size={16}
+              color={todayCrossTraining.impact === 'high' ? '#FF3B30' : todayCrossTraining.impact === 'moderate' ? '#FF9500' : todayCrossTraining.impact === 'positive' ? '#34C759' : '#666666'} />
+          </View>
+          <YStack flex={1}>
+            <B color="$color" fontSize={13} fontWeight="600">{CROSS_TRAINING_LABELS[todayCrossTraining.type]}</B>
+            <B color="$textTertiary" fontSize={11}>{todayCrossTraining.impact} impact · tap to manage</B>
+          </YStack>
+        </XStack>
+      ) : (
+        <XStack backgroundColor="$surface" borderRadius="$6" padding="$3" marginBottom="$4" alignItems="center"
+          pressStyle={{ opacity: 0.8 }} onPress={() => setShowCTModal(true)}>
+          <View width={32} height={32} borderRadius={16} backgroundColor="$surfaceLight" alignItems="center" justifyContent="center" marginRight="$3">
+            <MaterialCommunityIcons name="dumbbell" size={16} color="#A0A0A0" />
+          </View>
+          <B color="$textSecondary" fontSize={13} fontWeight="500">Log Cross-Training</B>
+        </XStack>
+      )}
+
+      {/* Cross-Training Modal */}
+      {showCTModal && (
+        <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end', zIndex: 100 }}>
+          <View style={{ backgroundColor: '#1E1E1E', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, paddingBottom: 40 }}>
+            {/* Drag handle */}
+            <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: '#555', alignSelf: 'center', marginBottom: 16 }} />
+            <XStack justifyContent="space-between" alignItems="center" marginBottom="$4">
+              <H color="$color" fontSize={18} letterSpacing={1}>LOG CROSS-TRAINING</H>
+              <B color="$textTertiary" fontSize={18} onPress={() => { setShowCTModal(false); setCTNotes(''); }}>✕</B>
+            </XStack>
+
+            {/* Options grid */}
+            {([
+              { type: 'leg_day' as CrossTrainingType, icon: 'weight-lifter', color: '#FF3B30' },
+              { type: 'upper_body' as CrossTrainingType, icon: 'arm-flex', color: '#666666' },
+              { type: 'full_body' as CrossTrainingType, icon: 'dumbbell', color: '#FF9500' },
+              { type: 'cycling' as CrossTrainingType, icon: 'bicycle', color: '#FF9500' },
+              { type: 'swimming' as CrossTrainingType, icon: 'swim', color: '#FF9500' },
+              { type: 'yoga_mobility' as CrossTrainingType, icon: 'meditation', color: '#34C759' },
+              { type: 'other' as CrossTrainingType, icon: 'pencil', color: '#666666' },
+            ] as const).map(({ type, icon, color }) => (
+              <XStack key={type} backgroundColor="#2A2A2A" borderRadius={12} padding="$3" marginBottom="$2" alignItems="center"
+                pressStyle={{ opacity: 0.7, backgroundColor: '#333' }}
+                onPress={() => {
+                  logCrossTraining(type, ctNotes);
+                  setShowCTModal(false);
+                  setCTNotes('');
+                }}>
+                <View width={36} height={36} borderRadius={18} backgroundColor={color + '22'} alignItems="center" justifyContent="center" marginRight="$3">
+                  <MaterialCommunityIcons name={icon as any} size={18} color={color} />
+                </View>
+                <YStack flex={1}>
+                  <B color="$color" fontSize={14} fontWeight="600">{CROSS_TRAINING_LABELS[type]}</B>
+                  <B color="$textTertiary" fontSize={11}>{CROSS_TRAINING_IMPACT[type]} impact</B>
+                </YStack>
+              </XStack>
+            ))}
+          </View>
+        </View>
+      )}
+
       {/* Modals */}
       <WeightCheckin
         visible={showWeightCheckin}

@@ -126,6 +126,33 @@ function buildReviewMessage(
   }
   parts.push('');
 
+  // Cross-training during this week
+  try {
+    const { getCrossTrainingForWeek } = require('../db/database');
+    const { CROSS_TRAINING_LABELS } = require('../types');
+    if (workouts.length > 0) {
+      const dates = workouts.map(w => w.scheduled_date).sort();
+      const weekCT = getCrossTrainingForWeek(dates[0], dates[dates.length - 1]);
+      if (weekCT.length > 0) {
+        parts.push('CROSS-TRAINING:');
+        for (const ct of weekCT) {
+          parts.push(`  ${ct.date}: ${CROSS_TRAINING_LABELS[ct.type] ?? ct.type} (${ct.impact} impact)`);
+        }
+        parts.push('');
+      }
+    }
+  } catch {}
+
+  // Execution quality summary
+  const qualityWorkouts = workouts.filter(w => w.execution_quality && w.execution_quality !== 'on_target' && (w.status === 'completed' || w.status === 'partial'));
+  if (qualityWorkouts.length > 0) {
+    parts.push('EXECUTION QUALITY:');
+    for (const w of qualityWorkouts) {
+      parts.push(`  ${w.scheduled_date}: ${w.title} — ${w.execution_quality}`);
+    }
+    parts.push('');
+  }
+
   parts.push(`Athlete: VDOT ${profile.vdot_score}, ${profile.experience_level}`);
   parts.push(`Pace zones: E ${formatPaceRange(paceZones.E)}, M ${formatPaceRange(paceZones.M)}, T ${formatPaceRange(paceZones.T)}`);
   parts.push('');

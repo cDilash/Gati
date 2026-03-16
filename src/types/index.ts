@@ -349,6 +349,7 @@ export interface BackupData {
     athlete_id: number;
     athlete_name: string | null;
   } | null;
+  crossTraining?: any[];
 }
 
 export interface BackupInfo {
@@ -440,6 +441,48 @@ export interface RecoveryStatus {
   signals: RecoverySignal[];
   recommendation: string;
 }
+
+// ─── Cross-Training ──────────────────────────────────────────
+
+export type CrossTrainingType =
+  | 'leg_day'
+  | 'upper_body'
+  | 'full_body'
+  | 'cycling'
+  | 'swimming'
+  | 'yoga_mobility'
+  | 'other';
+
+export type CrossTrainingImpact = 'high' | 'moderate' | 'low' | 'positive';
+
+export interface CrossTraining {
+  id: string;
+  date: string;
+  type: CrossTrainingType;
+  impact: CrossTrainingImpact;
+  notes: string | null;
+  createdAt: string;
+}
+
+export const CROSS_TRAINING_IMPACT: Record<CrossTrainingType, CrossTrainingImpact> = {
+  leg_day: 'high',
+  full_body: 'moderate',
+  upper_body: 'low',
+  cycling: 'moderate',
+  swimming: 'moderate',
+  yoga_mobility: 'positive',
+  other: 'low',
+};
+
+export const CROSS_TRAINING_LABELS: Record<CrossTrainingType, string> = {
+  leg_day: 'Leg Day (Heavy)',
+  upper_body: 'Upper Body',
+  full_body: 'Full Body',
+  cycling: 'Cycling',
+  swimming: 'Swimming',
+  yoga_mobility: 'Yoga / Mobility',
+  other: 'Other',
+};
 
 // ─── Weekly Digest ──────────────────────────────────────────
 

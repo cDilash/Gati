@@ -218,6 +218,21 @@ CREATE TABLE IF NOT EXISTS health_snapshot (
 export const CREATE_HEALTH_DATE_INDEX = `
 CREATE UNIQUE INDEX IF NOT EXISTS idx_health_date ON health_snapshot(date);`;
 
+// ─── Cross-Training ───────────────────────────────────────────
+
+export const CREATE_CROSS_TRAINING = `
+CREATE TABLE IF NOT EXISTS cross_training (
+  id TEXT PRIMARY KEY,
+  date TEXT NOT NULL,
+  type TEXT NOT NULL,
+  impact TEXT NOT NULL CHECK (impact IN ('high', 'moderate', 'low', 'positive')),
+  notes TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);`;
+
+export const CREATE_CROSS_TRAINING_DATE_INDEX = `
+CREATE INDEX IF NOT EXISTS idx_cross_training_date ON cross_training(date);`;
+
 // ─── Indexes ────────────────────────────────────────────────
 
 export const CREATE_WORKOUT_DATE_INDEX = `
@@ -248,4 +263,6 @@ export const ALL_TABLES = [
   CREATE_METRIC_DATE_INDEX,
   CREATE_COACH_MESSAGE_INDEX,
   CREATE_HEALTH_DATE_INDEX,
+  CREATE_CROSS_TRAINING,
+  CREATE_CROSS_TRAINING_DATE_INDEX,
 ];

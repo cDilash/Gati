@@ -5,7 +5,7 @@ import { useRouter } from 'expo-router';
 import { useAppStore } from '../../src/store';
 import { PHASE_COLORS, WORKOUT_TYPE_LABELS } from '../../src/utils/constants';
 import { formatDate, isToday } from '../../src/utils/dateUtils';
-import { Workout } from '../../src/types';
+import { Workout, CrossTraining, CROSS_TRAINING_LABELS } from '../../src/types';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { getWorkoutIcon } from '../../src/utils/workoutIcons';
 
@@ -37,6 +37,17 @@ export default function CalendarScreen() {
     for (const [, list] of map) list.sort((a, b) => a.scheduled_date.localeCompare(b.scheduled_date));
     return map;
   }, [workouts]);
+
+  // Cross-training by date for expanded weeks
+  const crossTrainingByDate = useMemo(() => {
+    const map = new Map<string, CrossTraining>();
+    try {
+      const { getCrossTrainingHistory } = require('../../src/db/database');
+      const history = getCrossTrainingHistory(120); // ~4 months
+      for (const ct of history) map.set(ct.date, ct);
+    } catch {}
+    return map;
+  }, [workouts]); // re-derive when workouts change (after sync)
 
   const adherence = useMemo(() => {
     const past = workouts.filter(w => w.workout_type !== 'rest' && (w.status === 'completed' || w.status === 'skipped' || w.status === 'partial'));
@@ -182,29 +193,42 @@ export default function CalendarScreen() {
                 {weekWorkouts.map(workout => {
                   const statusColor = workout.status === 'completed' ? '#34C759' : workout.status === 'skipped' ? '#FF3B30' : workout.status === 'partial' ? '#F59E0B' : '#666666';
                   const isWToday = isToday(workout.scheduled_date);
+                  const dayCT = crossTrainingByDate.get(workout.scheduled_date);
 
                   return (
-                    <XStack key={workout.id} alignItems="center" paddingVertical="$3" borderBottomWidth={0.5} borderBottomColor="$border"
-                      backgroundColor={isWToday ? '$surfaceLight' : 'transparent'} marginHorizontal={isWToday ? -14 : 0}
-                      paddingHorizontal={isWToday ? 14 : 0} borderRadius={isWToday ? 8 : 0}
-                      pressStyle={workout.workout_type !== 'rest' ? { opacity: 0.7 } : undefined}
-                      onPress={workout.workout_type !== 'rest' ? () => router.push(`/workout/${workout.id}`) : undefined}>
+                    <YStack key={workout.id}>
+                      <XStack alignItems="center" paddingVertical="$3" borderBottomWidth={0.5} borderBottomColor="$border"
+                        backgroundColor={isWToday ? '$surfaceLight' : 'transparent'} marginHorizontal={isWToday ? -14 : 0}
+                        paddingHorizontal={isWToday ? 14 : 0} borderRadius={isWToday ? 8 : 0}
+                        pressStyle={workout.workout_type !== 'rest' ? { opacity: 0.7 } : undefined}
+                        onPress={workout.workout_type !== 'rest' ? () => router.push(`/workout/${workout.id}`) : undefined}>
 
-                      <MaterialCommunityIcons name={getWorkoutIcon(workout.workout_type) as any} size={16} color={statusColor} style={{ marginRight: 8, width: 16 }} />
+                        <MaterialCommunityIcons name={getWorkoutIcon(workout.workout_type) as any} size={16} color={statusColor} style={{ marginRight: 8, width: 16 }} />
 
-                      <YStack flex={1}>
-                        <B color="$textTertiary" fontSize={11} fontWeight="600" marginBottom={1}>
-                          {formatDate(workout.scheduled_date)}{isWToday ? '  (Today)' : ''}
-                        </B>
-                        <B color="$color" fontSize={14}>{workout.workout_type === 'rest' ? 'Rest Day' : workout.title}</B>
-                      </YStack>
+                        <YStack flex={1}>
+                          <B color="$textTertiary" fontSize={11} fontWeight="600" marginBottom={1}>
+                            {formatDate(workout.scheduled_date)}{isWToday ? '  (Today)' : ''}
+                          </B>
+                          <B color="$color" fontSize={14}>{workout.workout_type === 'rest' ? 'Rest Day' : workout.title}</B>
+                        </YStack>
 
-                      {workout.workout_type !== 'rest' && workout.target_distance_miles != null && (
-                        <M color="$textSecondary" fontSize={13} fontWeight="700" marginLeft="$2">
-                          {workout.target_distance_miles.toFixed(1)} mi
-                        </M>
+                        {workout.workout_type !== 'rest' && workout.target_distance_miles != null && (
+                          <M color="$textSecondary" fontSize={13} fontWeight="700" marginLeft="$2">
+                            {workout.target_distance_miles.toFixed(1)} mi
+                          </M>
+                        )}
+                      </XStack>
+                      {/* Cross-training on this day */}
+                      {dayCT && (
+                        <XStack alignItems="center" paddingVertical={6} paddingLeft={24} borderBottomWidth={0.5} borderBottomColor="$border">
+                          <MaterialCommunityIcons name="dumbbell" size={12}
+                            color={dayCT.impact === 'high' ? '#FF3B30' : dayCT.impact === 'moderate' ? '#FF9500' : dayCT.impact === 'positive' ? '#34C759' : '#666666'}
+                            style={{ marginRight: 8 }} />
+                          <B color="$textTertiary" fontSize={12}>{CROSS_TRAINING_LABELS[dayCT.type] ?? dayCT.type}</B>
+                          <B color="$textTertiary" fontSize={10} marginLeft="$2">({dayCT.impact})</B>
+                        </XStack>
                       )}
-                    </XStack>
+                    </YStack>
                   );
                 })}
 

@@ -276,6 +276,41 @@ Keep responses to 2-4 paragraphs max unless the athlete asks for detailed analys
     parts.push('');
   }
 
+  // Cross-training context
+  try {
+    const { getCrossTrainingForWeek, getCrossTrainingHistory } = require('../db/database');
+    const { CROSS_TRAINING_LABELS } = require('../types');
+    // This week's cross-training
+    if (currentWeek && allWorkouts.length > 0) {
+      const weekWorkouts = allWorkouts.filter(w => w.week_number === currentWeek.week_number);
+      if (weekWorkouts.length > 0) {
+        const dates = weekWorkouts.map(w => w.scheduled_date).sort();
+        const weekCT = getCrossTrainingForWeek(dates[0], dates[dates.length - 1]);
+        if (weekCT.length > 0) {
+          parts.push('CROSS-TRAINING THIS WEEK:');
+          const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+          for (const ct of weekCT) {
+            const d = new Date(ct.date + 'T12:00:00');
+            const day = dayNames[d.getDay()];
+            parts.push(`  ${day}: ${CROSS_TRAINING_LABELS[ct.type] ?? ct.type} (${ct.impact} impact)${ct.notes ? ` — "${ct.notes}"` : ''}`);
+          }
+          parts.push('');
+        }
+      }
+    }
+    // Strength training pattern from profile
+    if (profile && (profile as any).does_strength_training) {
+      const legDay = (profile as any).leg_day_weekday;
+      const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+      parts.push('STRENGTH TRAINING:');
+      parts.push(`  Athlete does strength training regularly.`);
+      if (legDay !== null && legDay !== undefined) {
+        parts.push(`  Regular leg day: ${dayNames[legDay]}. Heavy leg days affect running for 24-48 hours.`);
+      }
+      parts.push('');
+    }
+  } catch {}
+
   // Recovery status
   if (recoveryStatus && recoveryStatus.level !== 'unknown') {
     parts.push('RECOVERY STATUS:');

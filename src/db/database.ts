@@ -117,6 +117,8 @@ export function initializeDatabase(): void {
     { table: 'user_profile', column: 'vdot_source', type: "TEXT DEFAULT 'manual'" },
     { table: 'user_profile', column: 'vdot_confidence', type: "TEXT DEFAULT 'moderate'" },
     { table: 'workout', column: 'execution_quality', type: "TEXT DEFAULT 'on_target'" },
+    { table: 'user_profile', column: 'does_strength_training', type: 'INTEGER DEFAULT 0' },
+    { table: 'user_profile', column: 'leg_day_weekday', type: 'INTEGER' },
   ];
   for (const { table, column, type } of newColumns) {
     try { database.execSync(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`); } catch {}
@@ -643,6 +645,52 @@ export function getShoes(): Shoe[] {
     maxMiles: r.max_miles,
     retired: !!r.retired,
   }));
+}
+
+// ─── Cross-Training CRUD ─────────────────────────────────────
+
+export function saveCrossTraining(entry: import('../types').CrossTraining): void {
+  const database = getDatabase();
+  database.runSync(
+    `INSERT OR REPLACE INTO cross_training (id, date, type, impact, notes) VALUES (?, ?, ?, ?, ?)`,
+    [entry.id, entry.date, entry.type, entry.impact, entry.notes ?? null]
+  );
+}
+
+export function getCrossTrainingForDate(date: string): import('../types').CrossTraining | null {
+  const database = getDatabase();
+  const row = database.getFirstSync<any>(
+    'SELECT * FROM cross_training WHERE date = ? ORDER BY created_at DESC',
+    [date]
+  );
+  if (!row) return null;
+  return { id: row.id, date: row.date, type: row.type, impact: row.impact, notes: row.notes, createdAt: row.created_at };
+}
+
+export function getCrossTrainingForWeek(weekStart: string, weekEnd: string): import('../types').CrossTraining[] {
+  const database = getDatabase();
+  const rows = database.getAllSync<any>(
+    'SELECT * FROM cross_training WHERE date >= ? AND date <= ? ORDER BY date',
+    [weekStart, weekEnd]
+  );
+  return rows.map((r: any) => ({ id: r.id, date: r.date, type: r.type, impact: r.impact, notes: r.notes, createdAt: r.created_at }));
+}
+
+export function getCrossTrainingHistory(daysBack: number): import('../types').CrossTraining[] {
+  const database = getDatabase();
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - daysBack);
+  const cutoffStr = cutoff.toISOString().split('T')[0];
+  const rows = database.getAllSync<any>(
+    'SELECT * FROM cross_training WHERE date >= ? ORDER BY date DESC',
+    [cutoffStr]
+  );
+  return rows.map((r: any) => ({ id: r.id, date: r.date, type: r.type, impact: r.impact, notes: r.notes, createdAt: r.created_at }));
+}
+
+export function deleteCrossTraining(id: string): void {
+  const database = getDatabase();
+  database.runSync('DELETE FROM cross_training WHERE id = ?', [id]);
 }
 
 // ─── Sweep & Volume ─────────────────────────────────────────

@@ -31,6 +31,8 @@ export function serializeDatabase(): BackupData {
   const coachMessages = db.getAllSync<any>('SELECT * FROM coach_message');
   const stravaDetails = db.getAllSync<any>('SELECT * FROM strava_activity_detail');
   const shoes = db.getAllSync<any>('SELECT * FROM shoes');
+  let crossTraining: any[] = [];
+  try { crossTraining = db.getAllSync<any>('SELECT * FROM cross_training'); } catch {}
 
   // Strava tokens for seamless restore
   const stravaRow = db.getFirstSync<any>('SELECT * FROM strava_tokens LIMIT 1');
@@ -66,6 +68,7 @@ export function serializeDatabase(): BackupData {
     briefingCache: [],
     stravaDetails,
     stravaTokens,
+    crossTraining,
   };
 }
 
@@ -181,6 +184,7 @@ export async function restoreDatabase(
       db.execSync('DELETE FROM coach_message');
       db.execSync('DELETE FROM ai_cache');
       db.execSync('DELETE FROM shoes');
+      try { db.execSync('DELETE FROM cross_training'); } catch {}
       db.execSync('DELETE FROM user_profile');
 
       // Restore user profile (handle both v1 and v2 column names)
@@ -354,6 +358,16 @@ export async function restoreDatabase(
           s.max_miles ?? s.maxMiles ?? 500,
           (s.retired ? 1 : 0),
         );
+      }
+
+      // Restore cross-training
+      for (const ct of (data as any).crossTraining ?? []) {
+        try {
+          db.runSync(
+            `INSERT OR REPLACE INTO cross_training (id, date, type, impact, notes, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+            ct.id, ct.date, ct.type, ct.impact, ct.notes ?? null, ct.created_at ?? ct.createdAt ?? new Date().toISOString(),
+          );
+        } catch {}
       }
 
       // Restore Strava tokens

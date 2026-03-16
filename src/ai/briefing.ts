@@ -118,6 +118,21 @@ export async function generatePostRunAnalysis(
       } catch {}
     }
 
+    // Check yesterday's cross-training for context
+    let ctContext = '';
+    try {
+      const { getCrossTrainingForDate } = require('../db/database');
+      const { CROSS_TRAINING_LABELS } = require('../types');
+      const runDate = new Date(metric.date + 'T12:00:00');
+      const yesterday = new Date(runDate);
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yesterdayStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
+      const yCT = getCrossTrainingForDate(yesterdayStr);
+      if (yCT && (yCT.impact === 'high' || yCT.impact === 'moderate')) {
+        ctContext = `\nNote: Athlete logged ${CROSS_TRAINING_LABELS[yCT.type] ?? yCT.type} (${yCT.impact} impact) yesterday — may explain slower pace or higher effort.`;
+      }
+    } catch {}
+
     const prompt = `You are a running coach analyzing a completed workout. 3-4 sentences. Be specific about pace, effort, and what went well or needs work. Reference actual numbers.
 
 PLANNED: ${workout.title} — ${workout.target_distance_miles}mi at ${workout.target_pace_zone || workout.workout_type} (target: ${targetPace})
@@ -125,7 +140,7 @@ PLANNED: ${workout.title} — ${workout.target_distance_miles}mi at ${workout.ta
 ACTUAL: ${metric.distance_miles.toFixed(1)}mi in ${metric.duration_minutes.toFixed(0)}min
 Avg pace: ${metric.avg_pace_sec_per_mile ? formatPace(metric.avg_pace_sec_per_mile) : '?'}/mi
 ${metric.avg_hr ? `Avg HR: ${metric.avg_hr}` : ''}${metric.max_hr ? ` | Max HR: ${metric.max_hr}` : ''}
-${metric.perceived_exertion ? `RPE: ${metric.perceived_exertion}/10` : ''}${splitsInfo}
+${metric.perceived_exertion ? `RPE: ${metric.perceived_exertion}/10` : ''}${splitsInfo}${ctContext}
 
 Respond with ONLY the analysis text. No JSON, no formatting.`;
 

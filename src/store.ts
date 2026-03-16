@@ -19,6 +19,9 @@ import {
   WeeklyDigest,
   HealthSnapshot,
   RecoveryStatus,
+  CrossTraining,
+  CrossTrainingType,
+  CROSS_TRAINING_IMPACT,
 } from './types';
 import {
   getUserProfile,
@@ -83,6 +86,10 @@ interface AppState {
   healthSnapshot: HealthSnapshot | null;
   recoveryStatus: RecoveryStatus | null;
 
+  // Cross-Training
+  todayCrossTraining: CrossTraining | null;
+  weekCrossTraining: CrossTraining[];
+
   // Sync state
   isSyncing: boolean;
   lastSyncResult: { strava: string | null; health: string | null } | null;
@@ -94,6 +101,7 @@ interface AppState {
     workoutId: string;
     action: 'swap_to_easy';
     workoutTitle: string;
+    ctSuggestion?: import('./ai/crossTrainingAdvisor').SwapSuggestion;
   } | null;
 
   // Derived
@@ -129,6 +137,8 @@ interface AppState {
   addManualRun: (date: string, distanceMiles: number, durationMinutes: number, rpe?: number) => void;
   syncHealth: () => Promise<void>;
   syncAll: () => Promise<void>;
+  logCrossTraining: (type: CrossTrainingType, notes?: string) => void;
+  deleteCrossTrainingEntry: (id: string) => void;
 }
 
 // ─── Store ──────────────────────────────────────────────────
@@ -154,6 +164,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   raceStrategy: null,
   healthSnapshot: null,
   recoveryStatus: null,
+  todayCrossTraining: null,
+  weekCrossTraining: [],
   isSyncing: false,
   lastSyncResult: null,
   vdotNotification: null,
@@ -242,6 +254,23 @@ export const useAppStore = create<AppState>((set, get) => ({
       const coachMessages = getCoachMessages();
       const shoes = getShoes();
 
+      // Load cross-training for today
+      let todayCT: CrossTraining | null = null;
+      let weekCT: CrossTraining[] = [];
+      try {
+        const { getCrossTrainingForDate, getCrossTrainingForWeek } = require('./db/database');
+        const today = getToday();
+        todayCT = getCrossTrainingForDate(today);
+        // Get week range from current week's workouts
+        if (currentWeek && workouts.length > 0) {
+          const weekWorkouts = workouts.filter(w => w.week_number === currentWeek.week_number);
+          if (weekWorkouts.length > 0) {
+            const dates = weekWorkouts.map(w => w.scheduled_date).sort();
+            weekCT = getCrossTrainingForWeek(dates[0], dates[dates.length - 1]);
+          }
+        }
+      } catch {}
+
       set({
         isLoading: false,
         userProfile: profile,
@@ -259,6 +288,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         lastSyncTime,
         coachMessages,
         shoes,
+        todayCrossTraining: todayCT,
+        weekCrossTraining: weekCT,
       });
     } catch (error) {
       console.error('[Store] Failed to initialize:', error);
@@ -909,5 +940,64 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     set({ isSyncing: false, lastSyncResult: results });
     console.log(`[SyncAll] Done — Strava: ${results.strava ?? 'skipped'}, Health: ${results.health ?? 'skipped'}`);
+  },
+
+  // ─── Cross-Training ───────────────────────────────────────
+
+  logCrossTraining: (type, notes) => {
+    const Crypto = require('expo-crypto');
+    const today = getToday();
+    const entry: CrossTraining = {
+      id: Crypto.randomUUID(),
+      date: today,
+      type,
+      impact: CROSS_TRAINING_IMPACT[type],
+      notes: notes?.trim() || null,
+      createdAt: new Date().toISOString(),
+    };
+    try {
+      const { saveCrossTraining } = require('./db/database');
+      saveCrossTraining(entry);
+      set({ todayCrossTraining: entry });
+      console.log(`[Store] Cross-training logged: ${type} (${entry.impact} impact)`);
+
+      // Evaluate impact on tomorrow's workout
+      try {
+        const { evaluateCrossTrainingImpact } = require('./ai/crossTrainingAdvisor');
+        const tomorrow = new Date(today + 'T00:00:00');
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        const tomorrowStr = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(tomorrow.getDate()).padStart(2, '0')}`;
+        const tomorrowWorkout = get().workouts.find(w => w.scheduled_date === tomorrowStr && w.status === 'upcoming') ?? null;
+        const recoveryScore = get().recoveryStatus?.score ?? null;
+        const suggestion = evaluateCrossTrainingImpact(entry, tomorrowWorkout, recoveryScore);
+        if (suggestion.shouldSuggest) {
+          set({
+            proactiveSuggestion: {
+              message: suggestion.message,
+              workoutId: suggestion.tomorrowWorkout!.id,
+              action: 'swap_to_easy',
+              workoutTitle: suggestion.tomorrowWorkout!.title,
+              ctSuggestion: suggestion,
+            },
+          });
+          console.log(`[Store] Cross-training suggestion: ${suggestion.severity}`);
+        }
+      } catch (e) {
+        console.log('[Store] CT evaluation failed:', e);
+      }
+    } catch (e) {
+      console.log('[Store] Cross-training save failed:', e);
+    }
+  },
+
+  deleteCrossTrainingEntry: (id) => {
+    try {
+      const { deleteCrossTraining, getCrossTrainingForDate } = require('./db/database');
+      deleteCrossTraining(id);
+      const today = getToday();
+      set({ todayCrossTraining: getCrossTrainingForDate(today), proactiveSuggestion: null });
+    } catch (e) {
+      console.log('[Store] Cross-training delete failed:', e);
+    }
   },
 }));

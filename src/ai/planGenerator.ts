@@ -205,6 +205,21 @@ function buildUserMessage(
   if (profile.scheduling_notes) {
     parts.push(`SCHEDULING NOTES: ${profile.scheduling_notes}`);
   }
+  // Strength training constraint
+  if ((profile as any).does_strength_training) {
+    const legDay = (profile as any).leg_day_weekday;
+    const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    parts.push('');
+    parts.push('STRENGTH TRAINING CONSTRAINT:');
+    parts.push('Athlete does strength training / bodybuilding with a dedicated leg day.');
+    if (legDay !== null && legDay !== undefined) {
+      parts.push(`Regular leg day: ${dayNames[legDay]}.`);
+      parts.push(`RULE: Never schedule threshold, intervals, tempo, or hill repeats the day after ${dayNames[legDay]} (leg day).`);
+      parts.push(`Schedule easy or recovery runs the day after leg day. The plan must coexist with the athlete's strength schedule.`);
+    } else {
+      parts.push('No fixed leg day — but avoid back-to-back quality + heavy lifting when possible.');
+    }
+  }
   parts.push('');
 
   // Strava history summary
