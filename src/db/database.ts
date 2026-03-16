@@ -97,6 +97,7 @@ export function initializeDatabase(): void {
 
   // Add new columns if they don't exist (safe to re-run)
   const newColumns = [
+    { table: 'user_profile', column: 'height_cm', type: 'REAL' },
     { table: 'strava_activity_detail', column: 'cadence_stream_json', type: 'TEXT' },
     { table: 'strava_activity_detail', column: 'time_stream_json', type: 'TEXT' },
     { table: 'strava_activity_detail', column: 'segment_efforts_json', type: 'TEXT' },
@@ -141,16 +142,17 @@ export function saveUserProfile(profile: Omit<UserProfile, 'id' | 'updated_at'>)
   const database = getDatabase();
   database.runSync(
     `INSERT OR REPLACE INTO user_profile
-     (id, name, age, gender, weight_kg, vdot_score, max_hr, rest_hr,
+     (id, name, age, gender, weight_kg, height_cm, vdot_score, max_hr, rest_hr,
       current_weekly_miles, longest_recent_run, experience_level,
       race_date, race_name, race_course_profile, race_goal_type,
       target_finish_time_sec, injury_history, known_weaknesses,
       scheduling_notes, available_days, long_run_day, updated_at)
-     VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+     VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
     profile.name ?? null,
     profile.age,
     profile.gender,
     profile.weight_kg ?? null,
+    profile.height_cm ?? null,
     profile.vdot_score,
     profile.max_hr ?? null,
     profile.rest_hr ?? null,
@@ -168,6 +170,16 @@ export function saveUserProfile(profile: Omit<UserProfile, 'id' | 'updated_at'>)
     JSON.stringify(profile.available_days),
     profile.long_run_day,
   );
+}
+
+export function updateWeight(weightKg: number): void {
+  const database = getDatabase();
+  database.runSync("UPDATE user_profile SET weight_kg = ?, updated_at = datetime('now') WHERE id = 1", weightKg);
+}
+
+export function updateHeight(heightCm: number): void {
+  const database = getDatabase();
+  database.runSync("UPDATE user_profile SET height_cm = ?, updated_at = datetime('now') WHERE id = 1", heightCm);
 }
 
 // ─── Training Plan ──────────────────────────────────────────

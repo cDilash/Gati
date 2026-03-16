@@ -8,6 +8,7 @@ import { Alert, KeyboardAvoidingView, Platform } from 'react-native';
 import { Text, YStack, XStack, ScrollView, Spinner, View, Input } from 'tamagui';
 import { useRouter } from 'expo-router';
 import { useAppStore } from '../src/store';
+import { useSettingsStore } from '../src/stores/settingsStore';
 import { COLORS } from '../src/utils/constants';
 import { formatPace } from '../src/engine/vdot';
 import { formatPaceRange, calculateHRZones } from '../src/engine/paceZones';
@@ -27,6 +28,8 @@ const GOAL_LABELS: Record<string, string> = { finish: 'Just Finish', time_goal: 
 export default function ProfileScreen() {
   const router = useRouter();
   const { userProfile, paceZones, saveProfile } = useAppStore();
+  const units = useSettingsStore(s => s.units);
+  const isMetric = units === 'metric';
   const [editing, setEditing] = useState(false);
 
   // Account state
@@ -42,6 +45,7 @@ export default function ProfileScreen() {
   const [age, setAge] = useState('');
   const [gender, setGender] = useState('male');
   const [weightKg, setWeightKg] = useState('');
+  const [heightCm, setHeightCm] = useState('');
   const [weeklyMiles, setWeeklyMiles] = useState('');
   const [longestRun, setLongestRun] = useState('');
   const [level, setLevel] = useState('intermediate');
@@ -63,6 +67,7 @@ export default function ProfileScreen() {
     setAge(String(userProfile.age));
     setGender(userProfile.gender);
     setWeightKg(userProfile.weight_kg ? String(userProfile.weight_kg) : '');
+    setHeightCm(userProfile.height_cm ? String(userProfile.height_cm) : '');
     setWeeklyMiles(String(userProfile.current_weekly_miles));
     setLongestRun(String(userProfile.longest_recent_run));
     setLevel(userProfile.experience_level);
@@ -93,6 +98,7 @@ export default function ProfileScreen() {
       age: Number(age) || userProfile.age,
       gender: gender as any,
       weight_kg: weightKg ? Number(weightKg) : null,
+      height_cm: heightCm ? Number(heightCm) : userProfile.height_cm,
       vdot_score: userProfile.vdot_score,
       max_hr: userProfile.max_hr,
       rest_hr: userProfile.rest_hr,
@@ -113,7 +119,7 @@ export default function ProfileScreen() {
 
     setEditing(false);
     Alert.alert('Saved', 'Profile updated successfully.');
-  }, [userProfile, name, age, gender, weightKg, weeklyMiles, longestRun, level, raceName, raceDate, courseProfile, goalType, targetTime, injuries, weaknesses, schedulingNotes, availableDays, longRunDay, saveProfile]);
+  }, [userProfile, name, age, gender, weightKg, heightCm, weeklyMiles, longestRun, level, raceName, raceDate, courseProfile, goalType, targetTime, injuries, weaknesses, schedulingNotes, availableDays, longRunDay, saveProfile]);
 
   if (!userProfile) {
     return (
@@ -136,15 +142,28 @@ export default function ProfileScreen() {
           <InfoRow label="Name" value={userProfile.name || '—'} />
           <InfoRow label="Age" value={String(userProfile.age)} />
           <InfoRow label="Gender" value={userProfile.gender === 'male' ? 'Male' : 'Female'} />
-          {userProfile.weight_kg && <InfoRow label="Weight" value={`${userProfile.weight_kg} kg`} />}
+          <InfoRow label="Height" value={
+            userProfile.height_cm
+              ? isMetric ? `${userProfile.height_cm} cm` : `${Math.floor(userProfile.height_cm / 30.48)}'${Math.round((userProfile.height_cm % 30.48) / 2.54)}"`
+              : 'Not set'
+          } />
+          <InfoRow label="Weight" value={
+            userProfile.weight_kg
+              ? isMetric ? `${userProfile.weight_kg} kg` : `${Math.round(userProfile.weight_kg * 2.20462)} lbs`
+              : 'Not set'
+          } />
           <InfoRow label="Experience" value={userProfile.experience_level} />
         </YStack>
 
         {/* Running */}
         <SectionTitle title="Running" />
         <YStack backgroundColor={COLORS.surface} borderRadius={14} overflow="hidden">
-          <InfoRow label="Weekly Mileage" value={`${userProfile.current_weekly_miles} mi`} />
-          <InfoRow label="Longest Recent Run" value={`${userProfile.longest_recent_run} mi`} />
+          <LiveInfoRow label="Weekly Mileage" value={
+            isMetric ? `${(userProfile.current_weekly_miles * 1.60934).toFixed(1)} km` : `${userProfile.current_weekly_miles} mi`
+          } />
+          <LiveInfoRow label="Longest Recent Run" value={
+            isMetric ? `${(userProfile.longest_recent_run * 1.60934).toFixed(1)} km` : `${userProfile.longest_recent_run} mi`
+          } />
           <InfoRow label="Available Days" value={userProfile.available_days.map(d => DAY_LABELS[d]).join(', ')} />
           <InfoRow label="Long Run Day" value={DAY_LABELS[userProfile.long_run_day]} />
         </YStack>
@@ -219,31 +238,34 @@ export default function ProfileScreen() {
         <H fontSize={28} color={COLORS.text} marginBottom={20} letterSpacing={1}>Edit Profile</H>
 
         <Label text="Name" />
-        <Input backgroundColor="$surface" borderColor="$border" color="$color" fontSize={16} fontFamily="$body" placeholderTextColor="$textTertiary" value={name} onChangeText={setName} />
+        <Input size="$5" backgroundColor="$surface" borderColor="$border" color="$color" fontSize={16} fontFamily="$body" placeholderTextColor="$textTertiary" value={name} onChangeText={setName} />
 
         <Label text="Age" />
-        <Input backgroundColor="$surface" borderColor="$border" color="$color" fontSize={16} fontFamily="$body" placeholderTextColor="$textTertiary" keyboardType="number-pad" value={age} onChangeText={setAge} />
+        <Input size="$5" backgroundColor="$surface" borderColor="$border" color="$color" fontSize={16} fontFamily="$body" placeholderTextColor="$textTertiary" keyboardType="number-pad" value={age} onChangeText={setAge} />
+
+        <Label text="Height (cm)" />
+        <Input size="$5" backgroundColor="$surface" borderColor="$border" color="$color" fontSize={16} fontFamily="$body" placeholder="e.g. 175" placeholderTextColor="$textTertiary" keyboardType="number-pad" value={heightCm} onChangeText={setHeightCm} />
 
         <Label text="Weight (kg)" />
-        <Input backgroundColor="$surface" borderColor="$border" color="$color" fontSize={16} fontFamily="$body" placeholder="Optional" placeholderTextColor="$textTertiary" keyboardType="decimal-pad" value={weightKg} onChangeText={setWeightKg} />
+        <Input size="$5" backgroundColor="$surface" borderColor="$border" color="$color" fontSize={16} fontFamily="$body" placeholder="Optional" placeholderTextColor="$textTertiary" keyboardType="decimal-pad" value={weightKg} onChangeText={setWeightKg} />
 
         <Label text="Weekly Mileage" />
-        <Input backgroundColor="$surface" borderColor="$border" color="$color" fontSize={16} fontFamily="$body" placeholderTextColor="$textTertiary" keyboardType="decimal-pad" value={weeklyMiles} onChangeText={setWeeklyMiles} />
+        <Input size="$5" backgroundColor="$surface" borderColor="$border" color="$color" fontSize={16} fontFamily="$body" placeholderTextColor="$textTertiary" keyboardType="decimal-pad" value={weeklyMiles} onChangeText={setWeeklyMiles} />
 
         <Label text="Longest Recent Run (mi)" />
-        <Input backgroundColor="$surface" borderColor="$border" color="$color" fontSize={16} fontFamily="$body" placeholderTextColor="$textTertiary" keyboardType="decimal-pad" value={longestRun} onChangeText={setLongestRun} />
+        <Input size="$5" backgroundColor="$surface" borderColor="$border" color="$color" fontSize={16} fontFamily="$body" placeholderTextColor="$textTertiary" keyboardType="decimal-pad" value={longestRun} onChangeText={setLongestRun} />
 
         <Label text="Race Name" />
-        <Input backgroundColor="$surface" borderColor="$border" color="$color" fontSize={16} fontFamily="$body" placeholder="Optional" placeholderTextColor="$textTertiary" value={raceName} onChangeText={setRaceName} />
+        <Input size="$5" backgroundColor="$surface" borderColor="$border" color="$color" fontSize={16} fontFamily="$body" placeholder="Optional" placeholderTextColor="$textTertiary" value={raceName} onChangeText={setRaceName} />
 
         <Label text="Race Date (YYYY-MM-DD)" />
-        <Input backgroundColor="$surface" borderColor="$border" color="$color" fontSize={16} fontFamily="$body" placeholderTextColor="$textTertiary" value={raceDate} onChangeText={setRaceDate} />
+        <Input size="$5" backgroundColor="$surface" borderColor="$border" color="$color" fontSize={16} fontFamily="$body" placeholderTextColor="$textTertiary" value={raceDate} onChangeText={setRaceDate} />
 
         <Label text="Target Finish Time (H:MM:SS)" />
-        <Input backgroundColor="$surface" borderColor="$border" color="$color" fontSize={16} fontFamily="$body" placeholder="Optional" placeholderTextColor="$textTertiary" value={targetTime} onChangeText={setTargetTime} />
+        <Input size="$5" backgroundColor="$surface" borderColor="$border" color="$color" fontSize={16} fontFamily="$body" placeholder="Optional" placeholderTextColor="$textTertiary" value={targetTime} onChangeText={setTargetTime} />
 
         <Label text="Scheduling Notes" />
-        <Input backgroundColor="$surface" borderColor="$border" color="$color" fontSize={16} fontFamily="$body" placeholder="Optional" placeholderTextColor="$textTertiary" multiline numberOfLines={3} minHeight={60} value={schedulingNotes} onChangeText={setSchedulingNotes} />
+        <Input size="$5" backgroundColor="$surface" borderColor="$border" color="$color" fontSize={16} fontFamily="$body" placeholder="Optional" placeholderTextColor="$textTertiary" multiline numberOfLines={3} minHeight={60} value={schedulingNotes} onChangeText={setSchedulingNotes} />
 
         {/* Save / Cancel */}
         <YStack marginTop={24} gap={10}>
@@ -320,5 +342,17 @@ function InfoRow({ label, value, accent }: { label: string; value: string; accen
         <B fontSize={15} color={COLORS.text} textAlign="right" flex={1} fontWeight="600">{value}</B>
       )}
     </XStack>
+  );
+}
+
+function LiveInfoRow({ label, value }: { label: string; value: string }) {
+  return (
+    <YStack paddingVertical={12} paddingHorizontal={16} borderBottomWidth={0.5} borderBottomColor={COLORS.border}>
+      <XStack justifyContent="space-between" alignItems="center">
+        <B fontSize={15} color={COLORS.textSecondary} flex={1}>{label}</B>
+        <M fontSize={15} color={COLORS.text} fontWeight="700">{value}</M>
+      </XStack>
+      <B fontSize={10} color={COLORS.accent} marginTop={2}>auto-updated from Strava</B>
+    </YStack>
   );
 }

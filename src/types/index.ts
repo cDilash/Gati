@@ -13,6 +13,7 @@ export interface UserProfile {
   age: number;
   gender: 'male' | 'female';
   weight_kg: number | null;
+  height_cm: number | null;
   vdot_score: number;
   max_hr: number | null;
   rest_hr: number | null;

@@ -89,6 +89,7 @@ export default function SetupScreen() {
   const [raceTime, setRaceTime] = useState(''); const [calculatedVDOT, setCalculatedVDOT] = useState<number | null>(null);
   const [weeklyMileage, setWeeklyMileage] = useState(''); const [longestRun, setLongestRun] = useState('');
   const [experienceLevel, setExperienceLevel] = useState<ExperienceLevel>('Intermediate'); const [weightKg, setWeightKg] = useState('');
+  const [heightCm, setHeightCm] = useState('');
   const [stravaFilledFields, setStravaFilledFields] = useState<Set<string>>(new Set());
   const [raceName, setRaceName] = useState(''); const [raceDate, setRaceDate] = useState('');
   const [courseProfile, setCourseProfile] = useState<CourseProfile>('Unknown'); const [goalType, setGoalType] = useState<GoalType>('Time Goal');
@@ -119,7 +120,7 @@ export default function SetupScreen() {
 
   const saveProfileAndGenerate = useCallback(() => {
     if(!calculatedVDOT)return;const gm:Record<GoalType,string>={'Just Finish':'finish','Time Goal':'time_goal','BQ':'bq','PR':'pr'};const cm:Record<CourseProfile,string>={'Flat':'flat','Rolling':'rolling','Hilly':'hilly','Unknown':'unknown'};const lm:Record<ExperienceLevel,string>={'Beginner':'beginner','Intermediate':'intermediate','Advanced':'advanced'};const gn:Record<Gender,string>={'Male':'male','Female':'female'};let ts:number|null=null;if((goalType==='Time Goal'||goalType==='BQ')&&targetFinishTime.trim())ts=parseRaceTime(targetFinishTime.trim());
-    useAppStore.getState().saveProfile({name:name.trim()||null,age:Number(age),gender:gn[gender] as any,weight_kg:weightKg?Number(weightKg):null,vdot_score:calculatedVDOT,max_hr:null,rest_hr:null,current_weekly_miles:Number(weeklyMileage),longest_recent_run:Number(longestRun),experience_level:lm[experienceLevel] as any,race_date:raceDate.trim(),race_name:raceName.trim()||null,race_course_profile:cm[courseProfile] as any,race_goal_type:gm[goalType] as any,target_finish_time_sec:ts,injury_history:injuries.filter(i=>i!=='None'),known_weaknesses:weaknesses,scheduling_notes:schedulingNotes.trim()||null,available_days:availableDays,long_run_day:longRunDay});setStep(7);
+    useAppStore.getState().saveProfile({name:name.trim()||null,age:Number(age),gender:gn[gender] as any,weight_kg:weightKg?Number(weightKg):null,height_cm:heightCm?Number(heightCm):null,vdot_score:calculatedVDOT,max_hr:null,rest_hr:null,current_weekly_miles:Number(weeklyMileage),longest_recent_run:Number(longestRun),experience_level:lm[experienceLevel] as any,race_date:raceDate.trim(),race_name:raceName.trim()||null,race_course_profile:cm[courseProfile] as any,race_goal_type:gm[goalType] as any,target_finish_time_sec:ts,injury_history:injuries.filter(i=>i!=='None'),known_weaknesses:weaknesses,scheduling_notes:schedulingNotes.trim()||null,available_days:availableDays,long_run_day:longRunDay});setStep(7);
   }, [calculatedVDOT,name,age,gender,weightKg,weeklyMileage,longestRun,experienceLevel,raceDate,raceName,courseProfile,goalType,targetFinishTime,availableDays,longRunDay,injuries,weaknesses,schedulingNotes]);
 
   const generatePlanRef = useRef(false);
@@ -218,6 +219,7 @@ export default function SetupScreen() {
       <FieldLabel text="Name" fromStrava={stravaFilledFields.has('name')} /><Input backgroundColor="$surface" borderColor="$border" color="$color" fontSize={16} fontFamily="$body" placeholder="Your name" placeholderTextColor="$textTertiary" value={name} onChangeText={setName} />
       <FieldLabel text="Age *" /><Input backgroundColor="$surface" borderColor="$border" color="$color" fontSize={16} fontFamily="$body" placeholder="e.g. 35" placeholderTextColor="$textTertiary" keyboardType="number-pad" value={age} onChangeText={setAge} />
       <FieldLabel text="Gender" fromStrava={stravaFilledFields.has('gender')} /><SegmentedControl options={GENDERS} selected={gender} onSelect={setGender} />
+      <FieldLabel text="Height (cm)" /><Input backgroundColor="$surface" borderColor="$border" color="$color" fontSize={16} fontFamily="$body" placeholder="e.g. 175" placeholderTextColor="$textTertiary" keyboardType="number-pad" value={heightCm} onChangeText={setHeightCm} />
       <FieldLabel text="Recent Race Distance" fromStrava={stravaFilledFields.has('raceDistance')} /><SegmentedControl options={RACE_DISTANCES} selected={raceDistance} onSelect={setRaceDistance} />
       <FieldLabel text="Recent Race Time *" fromStrava={stravaFilledFields.has('raceTime')} />
       <YStack backgroundColor="$surface" borderRadius="$4" borderWidth={1} borderColor="$border" paddingHorizontal="$3" paddingVertical="$3" pressStyle={{opacity:0.8}} onPress={()=>openDurationPicker(raceTime,'race')}><B color={raceTime?'$color':'$textTertiary'} fontSize={16}>{raceTime||'Tap to set time'}</B></YStack>

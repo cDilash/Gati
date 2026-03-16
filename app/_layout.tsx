@@ -1,9 +1,8 @@
 import { useEffect } from 'react';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { View, ActivityIndicator } from 'react-native';
+import { View, ActivityIndicator, Pressable } from 'react-native';
 import { TamaguiProvider } from 'tamagui';
-import { PortalProvider } from '@tamagui/portal';
 import { useFonts } from 'expo-font';
 import { BebasNeue_400Regular } from '@expo-google-fonts/bebas-neue';
 import {
@@ -14,6 +13,7 @@ import {
   JetBrainsMono_400Regular, JetBrainsMono_500Medium,
   JetBrainsMono_600SemiBold, JetBrainsMono_700Bold, JetBrainsMono_800ExtraBold,
 } from '@expo-google-fonts/jetbrains-mono';
+import { X, ChevronLeft } from '@tamagui/lucide-icons';
 import config from '../tamagui.config';
 import { useAppStore } from '../src/store';
 
@@ -82,7 +82,6 @@ export default function RootLayout() {
 
   return (
     <TamaguiProvider config={config} defaultTheme="dark">
-      <PortalProvider>
         <StatusBar style="light" />
         <Stack
           screenOptions={{
@@ -90,15 +89,51 @@ export default function RootLayout() {
             headerTintColor: '#FFFFFF',
             headerTitleStyle: { fontFamily: 'Exo2_600SemiBold' },
             contentStyle: { backgroundColor: '#121212' },
+            headerBackVisible: false,
           }}
         >
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen name="setup" options={{ headerShown: false, presentation: 'fullScreenModal' }} />
-          <Stack.Screen name="workout/[id]" options={{ title: 'Workout Details', presentation: 'modal' }} />
-          <Stack.Screen name="activity/[id]" options={{ title: 'Activity', presentation: 'modal' }} />
-          <Stack.Screen name="profile" options={{ title: 'Profile', presentation: 'modal' }} />
+          <Stack.Screen
+            name="workout/[id]"
+            options={({ navigation }) => ({
+              title: 'Workout Details',
+              presentation: 'modal',
+              gestureEnabled: true,
+              headerLeft: () => null,
+              headerRight: () => (
+                <Pressable onPress={() => navigation.goBack()} hitSlop={12} style={{ marginRight: 8 }}>
+                  <X size={22} color="#A0A0A0" />
+                </Pressable>
+              ),
+            })}
+          />
+          <Stack.Screen
+            name="activity/[id]"
+            options={({ navigation }) => ({
+              title: 'Activity',
+              presentation: 'modal',
+              gestureEnabled: true,
+              headerLeft: () => null,
+              headerRight: () => (
+                <Pressable onPress={() => navigation.goBack()} hitSlop={12} style={{ marginRight: 8 }}>
+                  <X size={22} color="#A0A0A0" />
+                </Pressable>
+              ),
+            })}
+          />
+          <Stack.Screen
+            name="profile"
+            options={({ navigation }) => ({
+              title: 'Profile',
+              headerLeft: () => (
+                <Pressable onPress={() => navigation.goBack()} hitSlop={12} style={{ marginLeft: 4 }}>
+                  <ChevronLeft size={24} color="#FFFFFF" />
+                </Pressable>
+              ),
+            })}
+          />
         </Stack>
-      </PortalProvider>
     </TamaguiProvider>
   );
 }

@@ -59,11 +59,28 @@ Keep responses to 2-4 paragraphs max unless the athlete asks for detailed analys
   // Profile
   parts.push('ATHLETE PROFILE:');
   parts.push(`- Age: ${profile.age}, Gender: ${profile.gender}, VDOT: ${profile.vdot_score}`);
+  if (profile.height_cm && profile.weight_kg) {
+    const heightM = profile.height_cm / 100;
+    const bmi = Math.round((profile.weight_kg / (heightM * heightM)) * 10) / 10;
+    parts.push(`- Height: ${profile.height_cm}cm, Weight: ${profile.weight_kg}kg, BMI: ${bmi}`);
+    if (bmi > 30) parts.push(`- NOTE: Elevated BMI — favor time-based long run targets, add extra recovery, be conservative with volume`);
+  } else if (profile.weight_kg) {
+    parts.push(`- Weight: ${profile.weight_kg}kg`);
+  }
   parts.push(`- Experience: ${profile.experience_level}`);
   parts.push(`- Race: ${profile.race_name || 'Marathon'} on ${profile.race_date} (${daysUntilRace} days away)`);
   if (profile.race_course_profile !== 'unknown') parts.push(`- Course: ${profile.race_course_profile}`);
   if (profile.target_finish_time_sec) parts.push(`- Goal time: ${formatTime(profile.target_finish_time_sec)}`);
   parts.push(`- Predicted marathon: ${formatTime(predictMarathonTime(profile.vdot_score))}`);
+  // Check for flagged weight change
+  try {
+    const { getSetting, setSetting } = require('../db/database');
+    const weightFlag = getSetting('weight_change_flag');
+    if (weightFlag) {
+      parts.push(`- ⚠️ WEIGHT CHANGE THIS WEEK: ${weightFlag}kg. Ask if this is accurate. Rapid changes affect performance.`);
+      setSetting('weight_change_flag', ''); // Clear after surfacing
+    }
+  } catch {}
   if (profile.injury_history.length > 0) parts.push(`- Injury history: ${profile.injury_history.join(', ')}`);
   if (profile.known_weaknesses.length > 0) parts.push(`- Weaknesses: ${profile.known_weaknesses.join(', ')}`);
   parts.push('');

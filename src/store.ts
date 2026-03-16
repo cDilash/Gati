@@ -578,12 +578,25 @@ export const useAppStore = create<AppState>((set, get) => ({
       const result: SyncResult = await syncStravaActivities();
 
       // Sync shoes from athlete profile (fire-and-forget)
+      try { const { syncShoes } = require('./strava/shoes'); await syncShoes(); }
+      catch (e) { console.warn('[Store] Shoe sync failed:', e); }
+
+      // Auto-update profile from actual training data
       try {
-        const { syncShoes } = require('./strava/shoes');
-        await syncShoes();
-      } catch (e) {
-        console.warn('[Store] Shoe sync failed:', e);
-      }
+        const { updateProfileFromStrava } = require('./strava/profileUpdater');
+        const profileUpdate = updateProfileFromStrava();
+        if (profileUpdate.summary) {
+          console.log('[Store] Profile auto-updated:', profileUpdate.summary);
+          // Recalculate pace zones if VDOT changed
+          if (profileUpdate.vdotChanged) {
+            const updated = getUserProfile();
+            if (updated) {
+              const newZones = calculatePaceZones(updated.vdot_score);
+              set({ userProfile: updated, paceZones: newZones });
+            }
+          }
+        }
+      } catch (e) { console.warn('[Store] Profile update failed:', e); }
 
       get().refreshState();
       get().syncStravaConnection();

@@ -4,6 +4,7 @@ import { Alert } from 'react-native';
 import { ScrollView, YStack, XStack, Text, View, Spinner } from 'tamagui';
 import { useRouter } from 'expo-router';
 import { useAppStore } from '../../src/store';
+import { useSettingsStore } from '../../src/stores/settingsStore';
 
 const H = (props: any) => <Text fontFamily="$heading" {...props} />;
 const B = (props: any) => <Text fontFamily="$body" {...props} />;
@@ -30,6 +31,30 @@ function SettingsRow({ label, subtitle, onPress, loading, destructive, disabled,
 
 function StatusDot({ connected }: { connected: boolean }) {
   return <View width={10} height={10} borderRadius={5} backgroundColor={connected ? '$success' : '$danger'} />;
+}
+
+function UnitsToggle() {
+  const units = useSettingsStore(s => s.units);
+  const setUnits = useSettingsStore(s => s.setUnits);
+  return (
+    <>
+      <SectionHeader title="Units" />
+      <XStack backgroundColor="$surface" borderRadius="$6" overflow="hidden">
+        <YStack flex={1} paddingVertical="$3" alignItems="center"
+          backgroundColor={units === 'imperial' ? '$accent' : 'transparent'}
+          pressStyle={{ opacity: 0.8 }} onPress={() => setUnits('imperial')}>
+          <B color={units === 'imperial' ? 'white' : '$textSecondary'} fontSize={15} fontWeight={units === 'imperial' ? '700' : '500'}>Imperial</B>
+          <B color={units === 'imperial' ? 'white' : '$textTertiary'} fontSize={11} marginTop={2}>mi, lbs, ft</B>
+        </YStack>
+        <YStack flex={1} paddingVertical="$3" alignItems="center"
+          backgroundColor={units === 'metric' ? '$accent' : 'transparent'}
+          pressStyle={{ opacity: 0.8 }} onPress={() => setUnits('metric')}>
+          <B color={units === 'metric' ? 'white' : '$textSecondary'} fontSize={15} fontWeight={units === 'metric' ? '700' : '500'}>Metric</B>
+          <B color={units === 'metric' ? 'white' : '$textTertiary'} fontSize={11} marginTop={2}>km, kg, cm</B>
+        </YStack>
+      </XStack>
+    </>
+  );
 }
 
 export default function SettingsScreen() {
@@ -133,6 +158,9 @@ export default function SettingsScreen() {
 
   return (
     <ScrollView flex={1} backgroundColor="$background" contentContainerStyle={{ padding: 16 }} showsVerticalScrollIndicator={false}>
+      {/* Units */}
+      <UnitsToggle />
+
       {/* Strava */}
       <SectionHeader title="Strava" />
       <YStack backgroundColor="$surface" borderRadius="$6" overflow="hidden">

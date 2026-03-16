@@ -13,6 +13,7 @@ import { formatDate } from '../../src/utils/dateUtils';
 import { formatPace, formatTime } from '../../src/engine/vdot';
 import { PerformanceMetric } from '../../src/types';
 import { RouteMap } from '../../src/components/RouteMap';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 const H = (props: any) => <Text fontFamily="$heading" {...props} />;
 const B = (props: any) => <Text fontFamily="$body" {...props} />;
@@ -69,12 +70,13 @@ export default function ActivitiesScreen() {
         polyMap[m.id] = row?.summary_polyline_encoded || row?.polyline_encoded || null;
         nameMap[m.id] = row?.activity_name || null;
 
-        // Derive run type label from activity_type + workout_type
+        // Derive run type label from activity_type + workout_type + polyline presence
         const wType = row?.strava_workout_type ?? m.strava_workout_type;
         const aType = row?.activity_type ?? 'Run';
+        const hasRoute = !!polyMap[m.id];
         // Environment type
         if (aType === 'TrailRun') typeMap[m.id] = 'Trail';
-        else if (aType === 'VirtualRun') typeMap[m.id] = 'Treadmill';
+        else if (aType === 'VirtualRun' || (!hasRoute && aType === 'Run')) typeMap[m.id] = 'Treadmill';
         // Effort type (overrides for specific workout types)
         else if (wType === 1) typeMap[m.id] = 'Race';
         else if (wType === 2) typeMap[m.id] = 'Long Run';
@@ -299,7 +301,7 @@ export default function ActivitiesScreen() {
                     justifyContent="center"
                     alignItems="center"
                   >
-                    <Text fontSize={20}>🏃</Text>
+                    <MaterialCommunityIcons name="run" size={24} color="#666666" />
                   </YStack>
                 )}
               </View>

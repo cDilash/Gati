@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from 'react';
+import { useEffect, useCallback, useState } from 'react';
 import { RefreshControl } from 'react-native';
 import { ScrollView, YStack, XStack, Text, View, Spinner, Button } from 'tamagui';
 import { useRouter } from 'expo-router';
@@ -9,6 +9,7 @@ import { formatPace } from '../../src/engine/vdot';
 import { IntervalStep } from '../../src/types';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { getWorkoutIcon } from '../../src/utils/workoutIcons';
+import { WeightCheckin } from '../../src/components/WeightCheckin';
 
 const H = (props: any) => <Text fontFamily="$heading" {...props} />;
 const B = (props: any) => <Text fontFamily="$body" {...props} />;
@@ -60,6 +61,49 @@ export default function TodayScreen() {
     refreshState();
     if (todaysWorkout) fetchBriefing();
   }, [todaysWorkout?.id]);
+
+  // ─── Weight check-in + Height prompt ─────────────────────
+  const [showWeightCheckin, setShowWeightCheckin] = useState(false);
+  const userProfile = useAppStore(s => s.userProfile);
+
+  useEffect(() => {
+    if (!userProfile || !activePlan) return;
+    if (daysUntilRace <= 7 && daysUntilRace >= 0) return;
+
+    try {
+      const { getSetting } = require('../../src/db/database');
+      const lastCheckin = getSetting('last_weight_checkin_date');
+      const today = getToday();
+      if (lastCheckin) {
+        const daysSince = Math.floor((new Date(today + 'T00:00:00').getTime() - new Date(lastCheckin + 'T00:00:00').getTime()) / 86400000);
+        if (daysSince < 7) return;
+      }
+      // Show after a short delay so it doesn't block the screen
+      setTimeout(() => setShowWeightCheckin(true), 2000);
+    } catch {}
+  }, [userProfile?.id, activePlan?.id]);
+
+  const handleWeightUpdate = useCallback((weightKg: number) => {
+    try {
+      const { updateWeight, getSetting, setSetting } = require('../../src/db/database');
+      const oldWeight = userProfile?.weight_kg;
+      updateWeight(weightKg);
+      setSetting('last_weight_checkin_date', getToday());
+      setShowWeightCheckin(false);
+      useAppStore.getState().refreshState();
+      // Auto-backup
+      (async () => { try { const { autoBackup } = require('../../src/backup/backup'); await autoBackup(); } catch {} })();
+      // Flag large change for coach
+      if (oldWeight && Math.abs(weightKg - oldWeight) > 2) {
+        setSetting('weight_change_flag', `${oldWeight}→${weightKg}`);
+      }
+    } catch {}
+  }, [userProfile?.weight_kg]);
+
+  const handleWeightNoChange = useCallback(() => {
+    try { const { setSetting } = require('../../src/db/database'); setSetting('last_weight_checkin_date', getToday()); } catch {}
+    setShowWeightCheckin(false);
+  }, []);
 
   const getTomorrowWorkout = () => {
     const today = getToday();
@@ -273,6 +317,14 @@ export default function TodayScreen() {
           <B color="$textSecondary" fontSize={14} lineHeight={21}>{postRunAnalysis}</B>
         </YStack>
       )}
+      {/* Modals */}
+      <WeightCheckin
+        visible={showWeightCheckin}
+        currentWeight={userProfile?.weight_kg ?? null}
+        onUpdate={handleWeightUpdate}
+        onNoChange={handleWeightNoChange}
+        onSkip={() => setShowWeightCheckin(false)}
+      />
     </ScrollView>
   );
 }
