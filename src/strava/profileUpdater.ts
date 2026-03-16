@@ -126,7 +126,25 @@ export function updateProfileFromStrava(): ProfileUpdateResult {
     }
   } catch {}
 
-  // ── 4. Apply changes to user_profile ──
+  // ── 4. Auto-detect max HR from Strava runs ──
+  try {
+    const maxHRRow = db.getFirstSync<any>(
+      'SELECT MAX(max_hr) as peak FROM performance_metric WHERE max_hr IS NOT NULL'
+    );
+    const detectedMaxHR = maxHRRow?.peak;
+    if (detectedMaxHR && detectedMaxHR > 0) {
+      const currentMaxHR = profile.max_hr;
+      if (!currentMaxHR || detectedMaxHR > currentMaxHR) {
+        db.runSync(
+          'UPDATE user_profile SET max_hr = ?, max_hr_source = ? WHERE id = 1',
+          [detectedMaxHR, 'strava']
+        );
+        changes.push(`Max HR: ${currentMaxHR ?? 'unknown'} → ${detectedMaxHR}bpm (from Strava)`);
+      }
+    }
+  } catch {}
+
+  // ── 5. Apply changes to user_profile ──
   if (result.weeklyMileageChanged || result.longestRunChanged || result.vdotChanged) {
     const updates: string[] = [];
     const values: any[] = [];

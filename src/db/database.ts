@@ -112,10 +112,21 @@ export function initializeDatabase(): void {
     { table: 'health_snapshot', column: 'spo2', type: 'REAL' },
     { table: 'health_snapshot', column: 'spo2_trend_json', type: 'TEXT' },
     { table: 'health_snapshot', column: 'steps', type: 'INTEGER' },
+    { table: 'user_profile', column: 'max_hr_source', type: "TEXT DEFAULT 'formula'" },
   ];
   for (const { table, column, type } of newColumns) {
     try { database.execSync(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`); } catch {}
   }
+
+  // Set formula max HR if not yet set
+  try {
+    const profile = database.getFirstSync<any>('SELECT max_hr, age FROM user_profile WHERE id = 1');
+    if (profile && !profile.max_hr && profile.age) {
+      const formulaMaxHR = 220 - profile.age;
+      database.runSync('UPDATE user_profile SET max_hr = ?, max_hr_source = ? WHERE id = 1', [formulaMaxHR, 'formula']);
+      console.log(`[DB] Set formula max HR: 220 - ${profile.age} = ${formulaMaxHR}`);
+    }
+  } catch {}
 
   // Repair: if metrics exist but strava_activity_detail is empty,
   // the data is from the old v1 sync — wipe and force clean re-sync

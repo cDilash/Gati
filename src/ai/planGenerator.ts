@@ -139,7 +139,10 @@ function buildUserMessage(
   parts.push('ATHLETE PROFILE:');
   parts.push(`- Age: ${profile.age}, Gender: ${profile.gender}`);
   if (profile.weight_kg) parts.push(`- Weight: ${profile.weight_kg} kg`);
+  if (profile.height_cm) parts.push(`- Height: ${profile.height_cm}cm`);
   parts.push(`- VDOT: ${profile.vdot_score}`);
+  if (profile.max_hr) parts.push(`- Max HR: ${profile.max_hr}bpm`);
+  if (profile.rest_hr) parts.push(`- Resting HR: ${profile.rest_hr}bpm`);
   parts.push(`- Experience: ${profile.experience_level}`);
   parts.push(`- Current weekly mileage: ${profile.current_weekly_miles} miles/week`);
   parts.push(`- Longest recent run: ${profile.longest_recent_run} miles`);
@@ -209,6 +212,34 @@ function buildUserMessage(
     }
     parts.push('');
   }
+
+  // Best efforts from Strava for calibration
+  try {
+    const { getDatabase } = require('../db/database');
+    const bestRows = getDatabase().getAllSync(
+      `SELECT best_efforts_json FROM performance_metric
+       WHERE best_efforts_json IS NOT NULL AND best_efforts_json != '[]'
+       ORDER BY date DESC LIMIT 10`
+    );
+    const allBestEfforts: any[] = [];
+    for (const row of bestRows) {
+      try { allBestEfforts.push(...JSON.parse(row.best_efforts_json)); } catch {}
+    }
+    const prDistances = ['1 mile', '5k', '10k'];
+    const prs = prDistances
+      .map(dist => {
+        const matching = allBestEfforts.filter((e: any) => e.name === dist && e.pr_rank === 1);
+        if (matching.length === 0) return null;
+        const best = matching[0];
+        const mins = Math.floor(best.elapsed_time / 60);
+        const secs = best.elapsed_time % 60;
+        return `${dist} PR: ${mins}:${String(secs).padStart(2, '0')}`;
+      })
+      .filter(Boolean);
+    if (prs.length > 0) {
+      parts.push(`\nRecent PRs (from Strava): ${prs.join(', ')}`);
+    }
+  } catch {}
 
   return parts.join('\n');
 }

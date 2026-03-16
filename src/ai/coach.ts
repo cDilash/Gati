@@ -71,6 +71,9 @@ Keep responses to 2-4 paragraphs max unless the athlete asks for detailed analys
   } else if (profile.weight_kg) {
     parts.push(`- Weight: ${profile.weight_kg}kg`);
   }
+  if (profile.max_hr) {
+    parts.push(`- Max HR: ${profile.max_hr}bpm${profile.rest_hr ? `, Resting HR: ${profile.rest_hr}bpm` : ''}`);
+  }
   parts.push(`- Experience: ${profile.experience_level}`);
   parts.push(`- Race: ${profile.race_name || 'Marathon'} on ${profile.race_date} (${daysUntilRace} days away)`);
   if (profile.race_course_profile !== 'unknown') parts.push(`- Course: ${profile.race_course_profile}`);
@@ -87,6 +90,7 @@ Keep responses to 2-4 paragraphs max unless the athlete asks for detailed analys
   } catch {}
   if (profile.injury_history.length > 0) parts.push(`- Injury history: ${profile.injury_history.join(', ')}`);
   if (profile.known_weaknesses.length > 0) parts.push(`- Weaknesses: ${profile.known_weaknesses.join(', ')}`);
+  if (profile.scheduling_notes) parts.push(`- Schedule: ${profile.scheduling_notes}`);
   parts.push('');
 
   // Pace zones
@@ -125,10 +129,59 @@ Keep responses to 2-4 paragraphs max unless the athlete asks for detailed analys
       const pace = m.avg_pace_sec_per_mile ? formatPace(m.avg_pace_sec_per_mile) : '?';
       const hr = m.avg_hr ? ` HR:${m.avg_hr}` : '';
       const rpe = m.perceived_exertion ? ` RPE:${m.perceived_exertion}` : '';
-      parts.push(`  ${m.date}: ${m.distance_miles.toFixed(1)}mi @ ${pace}/mi${hr}${rpe}`);
+      const gear = m.gear_name ? ` [${m.gear_name}]` : '';
+      let splitNote = '';
+      if (m.splits_json) {
+        try {
+          const splits = JSON.parse(m.splits_json);
+          if (splits.length >= 2) {
+            const firstHalf = splits.slice(0, Math.floor(splits.length / 2));
+            const secondHalf = splits.slice(Math.floor(splits.length / 2));
+            const avgFirst = firstHalf.reduce((s: number, sp: any) => s + (sp.average_speed || sp.averageSpeed || sp.moving_time / sp.distance || 0), 0) / firstHalf.length;
+            const avgSecond = secondHalf.reduce((s: number, sp: any) => s + (sp.average_speed || sp.averageSpeed || sp.moving_time / sp.distance || 0), 0) / secondHalf.length;
+            if (avgSecond > avgFirst * 1.02) splitNote = ' (negative split)';
+            else if (avgFirst > avgSecond * 1.02) splitNote = ' (positive split)';
+            else splitNote = ' (even split)';
+          }
+        } catch {}
+      }
+      parts.push(`  ${m.date}: ${m.distance_miles.toFixed(1)}mi @ ${pace}/mi${hr}${rpe}${gear}${splitNote}`);
     }
     parts.push('');
   }
+
+  // Best efforts from Strava
+  try {
+    const { getDatabase } = require('../db/database');
+    const bestEfforts = getDatabase().getAllSync(
+      `SELECT best_efforts_json FROM performance_metric
+       WHERE best_efforts_json IS NOT NULL AND best_efforts_json != '[]'
+       ORDER BY date DESC LIMIT 5`
+    );
+    if (bestEfforts.length > 0) {
+      const allEfforts: any[] = [];
+      for (const row of bestEfforts) {
+        try { allEfforts.push(...JSON.parse(row.best_efforts_json)); } catch {}
+      }
+      // Find PRs for key distances
+      const prDistances = ['400m', '1/2 mile', '1 mile', '1k', '2 mile', '5k', '10k'];
+      const prs = prDistances
+        .map(dist => {
+          const matching = allEfforts.filter((e: any) => e.name === dist && e.pr_rank === 1);
+          if (matching.length === 0) return null;
+          const best = matching[0];
+          const mins = Math.floor(best.elapsed_time / 60);
+          const secs = best.elapsed_time % 60;
+          return `${dist}: ${mins}:${String(secs).padStart(2, '0')}`;
+        })
+        .filter(Boolean);
+      if (prs.length > 0) {
+        parts.push('PERSONAL RECORDS (from Strava):');
+        parts.push(`  ${prs.join(' | ')}`);
+        parts.push('');
+      }
+    }
+  } catch {}
 
   // Volume trend (last 4 weeks)
   if (weeks.length > 0) {

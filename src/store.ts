@@ -705,6 +705,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         set({ healthSnapshot: snapshot, recoveryStatus: recovery });
 
         // Auto-update weight from HealthKit if newer
+        let needsRefresh = false;
         if (snapshot.weight) {
           const profile = get().userProfile;
           if (profile) {
@@ -719,12 +720,34 @@ export const useAppStore = create<AppState>((set, get) => ({
                   [snapshot.weight.value, 'healthkit', hkDate]
                 );
                 console.log(`[Store] Weight auto-updated from HealthKit: ${snapshot.weight.value}kg (${hkDate})`);
-                get().refreshState();
+                needsRefresh = true;
               } catch (e) {
                 console.log('[Store] Weight auto-update failed:', e);
               }
             }
           }
+        }
+
+        // Auto-update resting HR from HealthKit
+        if (snapshot.restingHR !== null) {
+          const currentProfile = get().userProfile;
+          if (currentProfile && currentProfile.rest_hr !== snapshot.restingHR) {
+            try {
+              const db = require('./db/database').getDatabase();
+              db.runSync(
+                'UPDATE user_profile SET rest_hr = ? WHERE id = 1',
+                [snapshot.restingHR]
+              );
+              console.log(`[Store] Resting HR auto-updated from HealthKit: ${snapshot.restingHR}bpm`);
+              needsRefresh = true;
+            } catch (e) {
+              console.log('[Store] Resting HR auto-update failed:', e);
+            }
+          }
+        }
+
+        if (needsRefresh) {
+          get().refreshState();
         }
       }
     } catch (e) {
