@@ -291,6 +291,28 @@ export const useAppStore = create<AppState>((set, get) => ({
         todayCrossTraining: todayCT,
         weekCrossTraining: weekCT,
       });
+
+      // Restore persisted suggestions
+      try {
+        const vdotNote = getSetting('pending_vdot_notification');
+        if (vdotNote) {
+          const parsed = JSON.parse(vdotNote);
+          set({ vdotNotification: parsed });
+        }
+        const proNote = getSetting('pending_proactive_suggestion');
+        if (proNote) {
+          const parsed = JSON.parse(proNote);
+          // Only restore if the workout is still upcoming
+          if (parsed?.workoutId) {
+            const workout = workouts.find((w: any) => w.id === parsed.workoutId);
+            if (workout && workout.status === 'upcoming') {
+              set({ proactiveSuggestion: parsed });
+            } else {
+              setSetting('pending_proactive_suggestion', '');
+            }
+          }
+        }
+      } catch {}
     } catch (error) {
       console.error('[Store] Failed to initialize:', error);
       set({ isLoading: false });
@@ -661,6 +683,7 @@ export const useAppStore = create<AppState>((set, get) => ({
                 paceZones: newZones,
                 vdotNotification: { oldVDOT: profileUpdate.oldVDOT, newVDOT: profileUpdate.newVDOT, source: src },
               });
+              try { setSetting('pending_vdot_notification', JSON.stringify({ oldVDOT: profileUpdate.oldVDOT, newVDOT: profileUpdate.newVDOT, source: src })); } catch {}
             }
           }
         }
@@ -923,14 +946,14 @@ export const useAppStore = create<AppState>((set, get) => ({
             message = `You ran ${miles} miles on your rest day. Tomorrow's ${tomorrowWorkout.title} may be harder than usual since you didn't fully recover. Would you like to swap it to an easy run?`;
           }
 
-          set({
-            proactiveSuggestion: {
-              message,
-              workoutId: tomorrowWorkout.id,
-              action: 'swap_to_easy',
-              workoutTitle: tomorrowWorkout.title,
-            },
-          });
+          const suggestion = {
+            message,
+            workoutId: tomorrowWorkout.id,
+            action: 'swap_to_easy' as const,
+            workoutTitle: tomorrowWorkout.title,
+          };
+          set({ proactiveSuggestion: suggestion });
+          try { setSetting('pending_proactive_suggestion', JSON.stringify(suggestion)); } catch {}
           console.log(`[SyncAll] Proactive suggestion: rest day run + quality tomorrow`);
         }
       }
@@ -971,15 +994,15 @@ export const useAppStore = create<AppState>((set, get) => ({
         const recoveryScore = get().recoveryStatus?.score ?? null;
         const suggestion = evaluateCrossTrainingImpact(entry, tomorrowWorkout, recoveryScore);
         if (suggestion.shouldSuggest) {
-          set({
-            proactiveSuggestion: {
-              message: suggestion.message,
-              workoutId: suggestion.tomorrowWorkout!.id,
-              action: 'swap_to_easy',
-              workoutTitle: suggestion.tomorrowWorkout!.title,
-              ctSuggestion: suggestion,
-            },
-          });
+          const ctProactive = {
+            message: suggestion.message,
+            workoutId: suggestion.tomorrowWorkout!.id,
+            action: 'swap_to_easy' as const,
+            workoutTitle: suggestion.tomorrowWorkout!.title,
+            ctSuggestion: suggestion,
+          };
+          set({ proactiveSuggestion: ctProactive });
+          try { setSetting('pending_proactive_suggestion', JSON.stringify(ctProactive)); } catch {}
           console.log(`[Store] Cross-training suggestion: ${suggestion.severity}`);
         }
       } catch (e) {

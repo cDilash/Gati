@@ -2,11 +2,15 @@ import { Pressable } from 'react-native';
 import { Tabs, useRouter } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Settings, User } from '@tamagui/lucide-icons';
+import { useAppStore } from '../../src/store';
 
 const ICON_SIZE = 24;
 
 export default function TabLayout() {
   const router = useRouter();
+  const vdotNotification = useAppStore(s => s.vdotNotification);
+  const proactiveSuggestion = useAppStore(s => s.proactiveSuggestion);
+  const weeklyDigest = useAppStore(s => s.weeklyDigest);
 
   return (
     <Tabs
@@ -40,6 +44,8 @@ export default function TabLayout() {
         options={{
           title: 'Today',
           tabBarIcon: ({ color }) => <MaterialCommunityIcons name="run-fast" size={ICON_SIZE} color={color} />,
+          tabBarBadge: (vdotNotification || proactiveSuggestion) ? '' : undefined,
+          tabBarBadgeStyle: { backgroundColor: '#FF6B35', minWidth: 8, maxHeight: 8, borderRadius: 4, top: 2 },
           headerLeft: () => (
             <Pressable onPress={() => router.push('/profile')} hitSlop={12} style={{ marginLeft: 16 }}>
               <User size={22} color="#A0A0A0" />
@@ -59,6 +65,8 @@ export default function TabLayout() {
         options={{
           title: 'Plan',
           tabBarIcon: ({ color }) => <MaterialCommunityIcons name="calendar-month-outline" size={ICON_SIZE} color={color} />,
+          tabBarBadge: (weeklyDigest?.adaptationNeeded) ? '' : undefined,
+          tabBarBadgeStyle: { backgroundColor: '#FF9500', minWidth: 8, maxHeight: 8, borderRadius: 4, top: 2 },
         }}
       />
 

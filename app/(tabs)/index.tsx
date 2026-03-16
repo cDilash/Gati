@@ -242,7 +242,7 @@ export default function TodayScreen() {
               )}
             </YStack>
             <B color="$textTertiary" fontSize={18} marginLeft="$2"
-              onPress={() => useAppStore.setState({ vdotNotification: null })}>✕</B>
+              onPress={() => { useAppStore.setState({ vdotNotification: null }); try { const { setSetting } = require('../../src/db/database'); setSetting('pending_vdot_notification', ''); } catch {} }}>✕</B>
           </XStack>
         </YStack>
       )}
@@ -258,7 +258,7 @@ export default function TodayScreen() {
               <H color={proactiveSuggestion.ctSuggestion?.severity === 'strong' ? '$danger' : '$warning'}
                 fontSize={13} letterSpacing={1} textTransform="uppercase">Coach Suggestion</H>
             </XStack>
-            <B color="$textTertiary" fontSize={18} onPress={() => useAppStore.setState({ proactiveSuggestion: null })}>✕</B>
+            <B color="$textTertiary" fontSize={18} onPress={() => { useAppStore.setState({ proactiveSuggestion: null }); try { const { setSetting } = require('../../src/db/database'); setSetting('pending_proactive_suggestion', ''); } catch {} }}>✕</B>
           </XStack>
           <B color="$color" fontSize={14} lineHeight={20} marginBottom="$3">{proactiveSuggestion.message}</B>
           <YStack gap="$2">
@@ -291,6 +291,7 @@ export default function TodayScreen() {
                     // 'keep' = no DB change
                   } catch {}
                   useAppStore.setState({ proactiveSuggestion: null });
+                  try { const { setSetting } = require('../../src/db/database'); setSetting('pending_proactive_suggestion', ''); } catch {}
                   useAppStore.getState().refreshState();
                 }}>
                 <XStack alignItems="center" justifyContent="space-between">

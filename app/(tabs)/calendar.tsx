@@ -142,7 +142,31 @@ export default function CalendarScreen() {
           {weeklyDigest.nextWeekPreview ? <B color="$textTertiary" fontSize={13} fontStyle="italic" marginTop="$1">{weeklyDigest.nextWeekPreview}</B> : null}
           {weeklyDigest.adaptationNeeded && weeklyDigest.adaptationReason && (
             <YStack backgroundColor="$surfaceLight" borderRadius="$3" padding="$3" marginTop="$3" borderLeftWidth={2} borderLeftColor="$warning">
-              <B color="$warning" fontSize={13}>Adaptation suggested: {weeklyDigest.adaptationReason}</B>
+              <B color="$warning" fontSize={13} marginBottom="$2">Adaptation suggested: {weeklyDigest.adaptationReason}</B>
+              <XStack gap="$3">
+                <YStack flex={1} backgroundColor="$warning" paddingVertical="$2" borderRadius="$4" alignItems="center"
+                  pressStyle={{ opacity: 0.8 }} onPress={async () => {
+                    const { Alert } = require('react-native');
+                    Alert.alert('Adapt Plan', `Reason: ${weeklyDigest.adaptationReason}\n\nThis will modify future workouts based on your recent performance. Continue?`, [
+                      { text: 'Cancel', style: 'cancel' },
+                      { text: 'Adapt', style: 'default', onPress: async () => {
+                        try {
+                          const result = await useAppStore.getState().requestPlanAdaptation(weeklyDigest.adaptationReason!);
+                          Alert.alert(result.success ? 'Plan Adapted' : 'Failed', result.summary || result.error || '');
+                          setDigestDismissed(true);
+                        } catch (e: any) {
+                          Alert.alert('Error', e.message ?? 'Failed');
+                        }
+                      }},
+                    ]);
+                  }}>
+                  <B color="white" fontSize={13} fontWeight="700">Adapt Plan</B>
+                </YStack>
+                <YStack flex={1} backgroundColor="$surface" paddingVertical="$2" borderRadius="$4" alignItems="center" borderWidth={1} borderColor="$border"
+                  pressStyle={{ opacity: 0.8 }} onPress={() => setDigestDismissed(true)}>
+                  <B color="$textSecondary" fontSize={13} fontWeight="600">Keep Current</B>
+                </YStack>
+              </XStack>
             </YStack>
           )}
         </YStack>
