@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo } from 'react';
-import { RefreshControl } from 'react-native';
+import { RefreshControl, Pressable } from 'react-native';
 import { ScrollView, YStack, XStack, Text, View, Spinner } from 'tamagui';
 import { useRouter } from 'expo-router';
 import { useAppStore } from '../../src/store';
@@ -125,28 +125,29 @@ export default function CalendarScreen() {
             borderWidth={1} borderColor={isCurrent ? '$accent' : 'transparent'}>
 
             {/* Week Header */}
-            <XStack justifyContent="space-between" alignItems="center" padding="$3"
-              pressStyle={{ opacity: 0.8 }} onPress={() => toggleWeek(week.week_number)}>
-              <XStack alignItems="center" gap="$2" flexShrink={1}>
-                <H color={isCurrent ? '$accent' : '$color'} fontSize={15} letterSpacing={1}>Week {week.week_number}</H>
-                <YStack paddingHorizontal="$2" paddingVertical={2} borderRadius="$2" backgroundColor={phaseColor + '22'}>
-                  <H color={phaseColor} fontSize={11} textTransform="uppercase" letterSpacing={1}>
-                    {week.phase.charAt(0).toUpperCase() + week.phase.slice(1)}
-                  </H>
-                </YStack>
-                {week.is_cutback && (
-                  <YStack backgroundColor="rgba(174,174,178,0.15)" paddingHorizontal="$1" paddingVertical={2} borderRadius="$1">
-                    <H color="$textTertiary" fontSize={10} textTransform="uppercase" letterSpacing={1}>Cutback</H>
+            <Pressable onPress={() => toggleWeek(week.week_number)}>
+              <XStack justifyContent="space-between" alignItems="center" padding={12}>
+                <XStack alignItems="center" gap={8} flexShrink={1}>
+                  <H color={isCurrent ? '$accent' : '$color'} fontSize={15} letterSpacing={1}>Week {week.week_number}</H>
+                  <YStack paddingHorizontal={8} paddingVertical={2} borderRadius={6} backgroundColor={phaseColor + '22'}>
+                    <H color={phaseColor} fontSize={11} textTransform="uppercase" letterSpacing={1}>
+                      {week.phase.charAt(0).toUpperCase() + week.phase.slice(1)}
+                    </H>
                   </YStack>
-                )}
+                  {week.is_cutback && (
+                    <YStack backgroundColor="rgba(174,174,178,0.15)" paddingHorizontal={6} paddingVertical={2} borderRadius={4}>
+                      <H color="$textTertiary" fontSize={10} textTransform="uppercase" letterSpacing={1}>Cutback</H>
+                    </YStack>
+                  )}
+                </XStack>
+                <XStack alignItems="center" gap={8}>
+                  <M color="$textSecondary" fontSize={13} fontWeight="700">
+                    {completedVolume > 0 ? `${completedVolume.toFixed(0)}/${week.target_volume.toFixed(0)} mi` : `${week.target_volume.toFixed(0)} mi`}
+                  </M>
+                  <B color="$textTertiary" fontSize={14}>{isExpanded ? '▾' : '▸'}</B>
+                </XStack>
               </XStack>
-              <XStack alignItems="center" gap="$2">
-                <M color="$textSecondary" fontSize={13} fontWeight="700">
-                  {completedVolume > 0 ? `${completedVolume.toFixed(0)}/${week.target_volume.toFixed(0)} mi` : `${week.target_volume.toFixed(0)} mi`}
-                </M>
-                <B color="$textTertiary" fontSize={14}>{isExpanded ? '▾' : '▸'}</B>
-              </XStack>
-            </XStack>
+            </Pressable>
 
             {/* Expanded Body */}
             {isExpanded && (

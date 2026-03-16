@@ -307,10 +307,52 @@ export function getWorkoutsForWeek(planId: string, weekNumber: number): Workout[
 
 export function getAllWorkouts(planId: string): Workout[] {
   const database = getDatabase();
-  return database.getAllSync<Workout>(
+  let workouts = database.getAllSync<Workout>(
     'SELECT * FROM workout WHERE plan_id = ? ORDER BY scheduled_date',
     planId,
   );
+
+  // Fallback: if no workouts found for this plan_id, try re-associating orphaned workouts
+  if (workouts.length === 0) {
+    const orphanCount = (database.getFirstSync('SELECT COUNT(*) as cnt FROM workout') as any)?.cnt ?? 0;
+    if (orphanCount > 0) {
+      console.log(`[DB] No workouts for plan ${planId.substring(0,8)}, but ${orphanCount} orphaned workouts found — re-associating`);
+      database.runSync('UPDATE workout SET plan_id = ? WHERE plan_id != ?', planId, planId);
+      database.runSync('UPDATE training_week SET plan_id = ? WHERE plan_id != ?', planId, planId);
+      workouts = database.getAllSync<Workout>(
+        'SELECT * FROM workout WHERE plan_id = ? ORDER BY scheduled_date',
+        planId,
+      );
+    }
+  }
+
+  // Fix: re-derive week numbers if they don't start on Monday (from v1 restore)
+  if (workouts.length > 5) {
+    // Check if week 1 starts on a non-Monday — sign of bad derivation
+    const week1Workouts = workouts.filter(w => w.week_number === 1);
+    const firstDow = week1Workouts.length > 0 ? new Date(week1Workouts[0].scheduled_date + 'T00:00:00').getDay() : 1;
+    const needsReDerive = workouts.every(w => w.week_number === 1) || (firstDow !== 1 && firstDow !== 0); // not Mon or Sun
+    const allWeek1 = needsReDerive;
+    if (allWeek1) {
+      console.log(`[DB] All ${workouts.length} workouts stuck in week 1 — re-deriving week numbers from dates`);
+      // Find the Monday of the first workout's week as the true start
+      const firstDate = new Date(workouts[0].scheduled_date + 'T00:00:00');
+      const dow = firstDate.getDay(); // 0=Sun
+      const mondayOffset = dow === 0 ? -6 : 1 - dow; // shift to Monday
+      const monday = new Date(firstDate);
+      monday.setDate(monday.getDate() + mondayOffset);
+      const startMs = monday.getTime();
+      for (const w of workouts) {
+        const wMs = new Date(w.scheduled_date + 'T00:00:00').getTime();
+        const weekNum = Math.floor((wMs - startMs) / (7 * 86400000)) + 1;
+        database.runSync('UPDATE workout SET week_number = ? WHERE id = ?', weekNum, w.id);
+        w.week_number = weekNum;
+      }
+      console.log(`[DB] Re-derived week numbers: weeks 1-${Math.max(...workouts.map(w => w.week_number))}`);
+    }
+  }
+
+  return workouts;
 }
 
 export function updateWorkoutStatus(workoutId: string, status: 'completed' | 'skipped', stravaActivityId?: number): void {
