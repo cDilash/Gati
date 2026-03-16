@@ -1,40 +1,26 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback } from 'react';
+import React from 'react';
 import { Alert } from 'react-native';
 import { ScrollView, YStack, XStack, Text, View, Spinner } from 'tamagui';
 import { useRouter } from 'expo-router';
 import { useAppStore } from '../../src/store';
 
-// Font helpers
 const H = (props: any) => <Text fontFamily="$heading" {...props} />;
 const B = (props: any) => <Text fontFamily="$body" {...props} />;
 
 function SectionHeader({ title }: { title: string }) {
-  return (
-    <H color="$textSecondary" fontSize={14} textTransform="uppercase" letterSpacing={1.5}
-      marginTop="$6" marginBottom="$3" marginLeft="$1">
-      {title}
-    </H>
-  );
+  return <H color="$textSecondary" fontSize={14} textTransform="uppercase" letterSpacing={1.5} marginTop="$6" marginBottom="$3" marginLeft="$1">{title}</H>;
 }
 
-function SettingsRow({
-  label, subtitle, onPress, loading, destructive, disabled, rightElement,
-}: {
-  label: string; subtitle?: string; onPress?: () => void; loading?: boolean;
-  destructive?: boolean; disabled?: boolean; rightElement?: React.ReactNode;
+function SettingsRow({ label, subtitle, onPress, loading, destructive, disabled, rightElement }: {
+  label: string; subtitle?: string; onPress?: () => void; loading?: boolean; destructive?: boolean; disabled?: boolean; rightElement?: React.ReactNode;
 }) {
   return (
-    <XStack
-      alignItems="center" paddingVertical="$3" paddingHorizontal="$4"
-      borderBottomWidth={0.5} borderBottomColor="$border"
-      opacity={disabled ? 0.5 : 1}
-      pressStyle={onPress && !disabled ? { backgroundColor: '$surfaceLight' } : undefined}
-      onPress={disabled || loading || !onPress ? undefined : onPress}
-    >
+    <XStack alignItems="center" paddingVertical="$3" paddingHorizontal="$4" borderBottomWidth={0.5} borderBottomColor="$border"
+      opacity={disabled ? 0.5 : 1} pressStyle={onPress && !disabled ? { backgroundColor: '$surfaceLight' } : undefined}
+      onPress={disabled || loading || !onPress ? undefined : onPress}>
       <YStack flex={1}>
-        <B color={destructive ? '$danger' : disabled ? '$textTertiary' : '$color'} fontSize={16} fontWeight="500">
-          {label}
-        </B>
+        <B color={destructive ? '$danger' : disabled ? '$textTertiary' : '$color'} fontSize={16} fontWeight="500">{label}</B>
         {subtitle && <B color="$textSecondary" fontSize={13} marginTop={2}>{subtitle}</B>}
       </YStack>
       {loading ? <Spinner size="small" color="$accent" /> : rightElement ?? null}
@@ -48,52 +34,36 @@ function StatusDot({ connected }: { connected: boolean }) {
 
 export default function SettingsScreen() {
   const router = useRouter();
-  const isStravaConnected = useAppStore((s) => s.isStravaConnected);
-  const lastSyncTime = useAppStore((s) => s.lastSyncTime);
-  const syncStrava = useAppStore((s) => s.syncStrava);
-  const syncStravaConnection = useAppStore((s) => s.syncStravaConnection);
-  const generatePlan = useAppStore((s) => s.generatePlan);
-  const activePlan = useAppStore((s) => s.activePlan);
-  const userProfile = useAppStore((s) => s.userProfile);
+  const generatePlan = useAppStore(s => s.generatePlan);
+  const activePlan = useAppStore(s => s.activePlan);
+  const userProfile = useAppStore(s => s.userProfile);
+  const isStravaConnected = useAppStore(s => s.isStravaConnected);
+  const lastSyncTime = useAppStore(s => s.lastSyncTime);
+  const syncStrava = useAppStore(s => s.syncStrava);
+  const syncStravaConnection = useAppStore(s => s.syncStravaConnection);
 
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [isConnecting, setIsConnecting] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isBackingUp, setIsBackingUp] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
-  const [accountEmail, setAccountEmail] = useState<string | null>(null);
-  const [isSigningOut, setIsSigningOut] = useState(false);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const { getCurrentUser } = require('../../src/backup/auth');
-        const user = await getCurrentUser();
-        setAccountEmail(user?.email ?? null);
-      } catch {}
-    })();
-  }, []);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(false);
 
   const formatLastSync = useCallback((iso: string | null): string => {
     if (!iso) return 'Never';
-    const d = new Date(iso);
-    const diffMs = Date.now() - d.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-    if (diffMins < 1) return 'Just now';
-    if (diffMins < 60) return `${diffMins}m ago`;
-    const diffHrs = Math.floor(diffMins / 60);
-    if (diffHrs < 24) return `${diffHrs}h ago`;
-    return `${Math.floor(diffHrs / 24)}d ago`;
+    const m = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
+    if (m < 1) return 'Just now';
+    if (m < 60) return `${m}m ago`;
+    const h = Math.floor(m / 60);
+    return h < 24 ? `${h}h ago` : `${Math.floor(h / 24)}d ago`;
   }, []);
 
   const handleConnectStrava = useCallback(async () => {
     setIsConnecting(true);
     try {
       const { connectStrava } = require('../../src/strava/auth');
-      const result = await connectStrava();
-      if (result) { syncStravaConnection(); Alert.alert('Connected', `Connected to Strava as ${result.athleteName ?? 'athlete'}.`); }
-      else Alert.alert('Cancelled', 'Strava connection was cancelled.');
-    } catch (e: any) { Alert.alert('Error', e.message ?? 'Failed to connect.'); }
+      const r = await connectStrava();
+      if (r) { syncStravaConnection(); Alert.alert('Connected', `As ${r.athleteName ?? 'athlete'}.`); }
+    } catch (e: any) { Alert.alert('Error', e.message ?? 'Failed.'); }
     finally { setIsConnecting(false); }
   }, [syncStravaConnection]);
 
@@ -109,8 +79,8 @@ export default function SettingsScreen() {
 
   const handleSyncStrava = useCallback(async () => {
     setIsSyncing(true);
-    try { const r = await syncStrava(); Alert.alert('Sync Complete', `${r.newActivities ?? 0} new, ${r.matched ?? 0} matched.`); }
-    catch (e: any) { Alert.alert('Sync Failed', e.message ?? 'Could not sync.'); }
+    try { const r = await syncStrava(); Alert.alert('Synced', `${r.newActivities ?? 0} new, ${r.matched ?? 0} matched.`); }
+    catch (e: any) { Alert.alert('Failed', e.message ?? 'Error.'); }
     finally { setIsSyncing(false); }
   }, [syncStrava]);
 
@@ -118,11 +88,11 @@ export default function SettingsScreen() {
     setIsBackingUp(true);
     try {
       const { isLoggedIn } = require('../../src/backup/auth');
-      if (!(await isLoggedIn())) { Alert.alert('Login Required', 'Sign in first.'); setIsBackingUp(false); return; }
+      if (!(await isLoggedIn())) { Alert.alert('Login Required', 'Sign in from your Profile first.'); setIsBackingUp(false); return; }
       const { uploadBackup } = require('../../src/backup/backup');
       await uploadBackup();
       Alert.alert('Backup Complete', 'Data backed up to cloud.');
-    } catch (e: any) { Alert.alert('Backup Failed', e.message ?? 'Error.'); }
+    } catch (e: any) { Alert.alert('Failed', e.message ?? 'Error.'); }
     finally { setIsBackingUp(false); }
   }, []);
 
@@ -154,41 +124,15 @@ export default function SettingsScreen() {
         setIsGenerating(true);
         try {
           const r = await generatePlan();
-          if (r.success) Alert.alert('Plan Generated', r.violations ? `Done.\n\n${r.violations}` : 'Done.');
-          else Alert.alert('Failed', r.error ?? 'Unknown error.');
+          Alert.alert(r.success ? 'Plan Generated' : 'Failed', r.success ? (r.violations ? `Done.\n\n${r.violations}` : 'Done.') : (r.error ?? 'Error.'));
         } catch (e: any) { Alert.alert('Error', e.message ?? 'Failed.'); }
         finally { setIsGenerating(false); }
       }},
     ]);
   }, [userProfile, generatePlan]);
 
-  const handleSignOut = useCallback(() => {
-    Alert.alert('Sign Out', 'Your local data will remain on this device.', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Sign Out', style: 'destructive', onPress: async () => {
-        setIsSigningOut(true);
-        try { const { signOut } = require('../../src/backup/auth'); await signOut(); setAccountEmail(null); }
-        catch (e: any) { Alert.alert('Error', e.message ?? 'Failed.'); }
-        finally { setIsSigningOut(false); }
-      }},
-    ]);
-  }, []);
-
   return (
     <ScrollView flex={1} backgroundColor="$background" contentContainerStyle={{ padding: 16 }} showsVerticalScrollIndicator={false}>
-      {/* Account */}
-      <SectionHeader title="Account" />
-      <YStack backgroundColor="$surface" borderRadius="$6" overflow="hidden">
-        {accountEmail ? (
-          <>
-            <SettingsRow label={accountEmail} subtitle="Signed in — cloud backup enabled" rightElement={<StatusDot connected />} />
-            <SettingsRow label="Sign Out" onPress={handleSignOut} loading={isSigningOut} destructive />
-          </>
-        ) : (
-          <SettingsRow label="Sign In" subtitle="Enable cloud backup & restore" onPress={() => router.push('/setup')} />
-        )}
-      </YStack>
-
       {/* Strava */}
       <SectionHeader title="Strava" />
       <YStack backgroundColor="$surface" borderRadius="$6" overflow="hidden">
@@ -204,14 +148,14 @@ export default function SettingsScreen() {
         )}
       </YStack>
 
-      {/* Backup */}
+      {/* Cloud Backup */}
       <SectionHeader title="Cloud Backup" />
       <YStack backgroundColor="$surface" borderRadius="$6" overflow="hidden">
         <SettingsRow label="Backup to Cloud" subtitle="Save all data to Supabase" onPress={handleBackup} loading={isBackingUp} />
         <SettingsRow label="Restore from Cloud" subtitle="Replace local data with backup" onPress={handleRestore} loading={isRestoring} destructive />
       </YStack>
 
-      {/* Plan */}
+      {/* Training Plan */}
       <SectionHeader title="Training Plan" />
       <YStack backgroundColor="$surface" borderRadius="$6" overflow="hidden">
         <SettingsRow
@@ -219,16 +163,6 @@ export default function SettingsScreen() {
           subtitle={activePlan ? 'Delete current plan and create a new one' : 'Generate your first training plan'}
           onPress={handleRegeneratePlan} loading={isGenerating}
           destructive={!!activePlan} disabled={!userProfile}
-        />
-      </YStack>
-
-      {/* Profile */}
-      <SectionHeader title="Profile" />
-      <YStack backgroundColor="$surface" borderRadius="$6" overflow="hidden">
-        <SettingsRow
-          label="View & Edit Profile"
-          subtitle={userProfile ? `VDOT ${userProfile.vdot_score} | ${userProfile.experience_level}` : 'Not set up'}
-          onPress={() => router.push('/profile')}
         />
       </YStack>
 

@@ -1,7 +1,7 @@
 import { Pressable } from 'react-native';
 import { Tabs, useRouter } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { Settings } from '@tamagui/lucide-icons';
+import { Settings, User } from '@tamagui/lucide-icons';
 
 const COLORS = {
   accent: '#FF6B35',
@@ -41,6 +41,11 @@ export default function TabLayout() {
         options={{
           title: 'Today',
           tabBarIcon: ({ color, size }) => <MaterialCommunityIcons name="run-fast" size={size} color={color} />,
+          headerLeft: () => (
+            <Pressable onPress={() => router.push('/profile')} hitSlop={12} style={{ marginLeft: 16 }}>
+              <User size={22} color={COLORS.textSecondary} />
+            </Pressable>
+          ),
           headerRight: () => (
             <Pressable onPress={() => router.push('/(tabs)/settings')} hitSlop={12} style={{ marginRight: 16 }}>
               <Settings size={22} color={COLORS.textSecondary} />

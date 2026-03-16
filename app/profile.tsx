@@ -29,6 +29,14 @@ export default function ProfileScreen() {
   const { userProfile, paceZones, saveProfile } = useAppStore();
   const [editing, setEditing] = useState(false);
 
+  // Account state
+  const [accountEmail, setAccountEmail] = useState<string | null>(null);
+  const [isSigningOut, setIsSigningOut] = useState(false);
+
+  useEffect(() => {
+    (async () => { try { const { getCurrentUser } = require('../src/backup/auth'); const u = await getCurrentUser(); setAccountEmail(u?.email ?? null); } catch {} })();
+  }, []);
+
   // Editable fields
   const [name, setName] = useState('');
   const [age, setAge] = useState('');
@@ -122,13 +130,6 @@ export default function ProfileScreen() {
   if (!editing) {
     return (
       <ScrollView flex={1} backgroundColor={COLORS.background} contentContainerStyle={{ padding: 16 }}>
-        {/* VDOT Card */}
-        <YStack backgroundColor={COLORS.surface} borderRadius={14} paddingVertical={24} alignItems="center" marginBottom={8}>
-          <H fontSize={14} color={COLORS.textSecondary} textTransform="uppercase" letterSpacing={1.5}>VDOT</H>
-          <M fontSize={56} color={COLORS.accent} lineHeight={64} fontWeight="800">{userProfile.vdot_score}</M>
-          <M fontSize={13} color={COLORS.textTertiary} marginTop={4}>Predicted marathon: {formatTime(predicted)}</M>
-        </YStack>
-
         {/* Personal */}
         <SectionTitle title="Personal" />
         <YStack backgroundColor={COLORS.surface} borderRadius={14} overflow="hidden">
@@ -158,20 +159,6 @@ export default function ProfileScreen() {
           {userProfile.target_finish_time_sec && <InfoRow label="Target Time" value={formatTime(userProfile.target_finish_time_sec)} />}
         </YStack>
 
-        {/* Pace Zones */}
-        {paceZones && (
-          <>
-            <SectionTitle title="Pace Zones" />
-            <YStack backgroundColor={COLORS.surface} borderRadius={14} overflow="hidden">
-              <InfoRow label="E (Easy)" value={`${formatPaceRange(paceZones.E)} /mi`} accent />
-              <InfoRow label="M (Marathon)" value={`${formatPaceRange(paceZones.M)} /mi`} accent />
-              <InfoRow label="T (Threshold)" value={`${formatPaceRange(paceZones.T)} /mi`} accent />
-              <InfoRow label="I (Interval)" value={`${formatPaceRange(paceZones.I)} /mi`} accent />
-              <InfoRow label="R (Repetition)" value={`${formatPaceRange(paceZones.R)} /mi`} accent />
-            </YStack>
-          </>
-        )}
-
         {/* Coaching Context */}
         {(userProfile.injury_history.length > 0 || userProfile.known_weaknesses.length > 0 || userProfile.scheduling_notes) && (
           <>
@@ -185,16 +172,38 @@ export default function ProfileScreen() {
         )}
 
         {/* Edit button */}
-        <YStack
-          backgroundColor={COLORS.accent}
-          borderRadius={12}
-          paddingVertical={14}
-          alignItems="center"
-          marginTop={24}
-          pressStyle={{ opacity: 0.8 }}
-          onPress={() => setEditing(true)}
-        >
+        <YStack backgroundColor={COLORS.accent} borderRadius={12} paddingVertical={14} alignItems="center" marginTop={24}
+          pressStyle={{ opacity: 0.8 }} onPress={() => setEditing(true)}>
           <B color="#fff" fontSize={16} fontWeight="700">Edit Profile</B>
+        </YStack>
+
+        {/* Account */}
+        <SectionTitle title="Account" />
+        <YStack backgroundColor={COLORS.surface} borderRadius={14} overflow="hidden">
+          {accountEmail ? (
+            <>
+              <InfoRow label={accountEmail} value="Signed in" accent />
+              <XStack paddingVertical={12} paddingHorizontal={16}
+                pressStyle={{ opacity: 0.7 }} onPress={() => {
+                  Alert.alert('Sign Out', 'Your local data will remain.', [
+                    { text: 'Cancel', style: 'cancel' },
+                    { text: 'Sign Out', style: 'destructive', onPress: async () => {
+                      setIsSigningOut(true);
+                      try { const { signOut } = require('../src/backup/auth'); await signOut(); setAccountEmail(null); }
+                      catch (e: any) { Alert.alert('Error', e.message ?? 'Failed.'); }
+                      finally { setIsSigningOut(false); }
+                    }},
+                  ]);
+                }}>
+                <B color="$danger" fontSize={15} fontWeight="500">{isSigningOut ? 'Signing out...' : 'Sign Out'}</B>
+              </XStack>
+            </>
+          ) : (
+            <XStack paddingVertical={12} paddingHorizontal={16} pressStyle={{ opacity: 0.7 }} onPress={() => router.push('/setup')}>
+              <B color="$color" fontSize={15} fontWeight="500" flex={1}>Sign In</B>
+              <B color="$textTertiary" fontSize={13}>Enable cloud backup</B>
+            </XStack>
+          )}
         </YStack>
 
         <YStack height={40} />
