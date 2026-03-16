@@ -1,445 +1,353 @@
-# Marathon Coach - Project Guidelines
+# Marathon Coach v2 — Project Guidelines
 
 ## Overview
-A personal-use React Native marathon training app. Single user, local-first, never publishing to App Store. Built for marathon training over a ~5 month cycle. The app generates a periodized training plan using sports science algorithms (no AI), syncs run data from Garmin via HealthKit, and provides AI coaching via Google Gemini.
+A personal-use React Native marathon training app. AI-first architecture — Gemini generates training plans, adapts them based on performance, and provides coaching chat. Strava is the primary data source for run history. Local-first with Supabase cloud backup.
 
 ## Tech Stack
 - **Framework**: React Native + Expo SDK 52+ (managed workflow)
 - **Language**: TypeScript (strict)
 - **Routing**: Expo Router (file-based)
-- **Database**: expo-sqlite (local) + Supabase (cloud sync/backend)
-- **Health Data**: react-native-health (Apple HealthKit read-only)
-- **AI Coach**: Google Gemini 2.5 Flash via `@google/generative-ai` SDK (free tier)
-- **State Management**: Zustand (minimal — most state lives in SQLite)
-- **Styling**: NativeWind (TailwindCSS for React Native) OR StyleSheet.create() — pick whichever is simpler per component
-- **Icons**: Phosphor React Native (`phosphor-react-native`)
-- **UUID**: `expo-crypto` randomUUID() — NEVER use the `uuid` npm package (crypto.getRandomValues not supported in Expo)
+- **Database**: expo-sqlite (local, primary) + Supabase (cloud backup only)
+- **AI Engine**: Google Gemini 2.5 Flash via `@google/generative-ai` SDK
+- **Run Data**: Strava API (OAuth2, activity sync, streams, segments)
+- **State Management**: Zustand (single store at `src/store.ts`)
+- **UI Framework**: Tamagui (configured in `tamagui.config.ts`)
+- **Styling**: `StyleSheet.create()` with Tamagui theme tokens
+- **Icons**: MaterialCommunityIcons (`@expo/vector-icons`) for fitness icons + Lucide (`@tamagui/lucide-icons`) for general UI
+- **Maps**: react-native-maps (route display)
+- **SVG**: react-native-svg (polyline thumbnails)
+- **UUID**: `expo-crypto` randomUUID() — NEVER use the `uuid` npm package
 
-## Architecture Principles
+## Typography System
 
-### Data Flow
+Three custom fonts loaded via `expo-font`. Every text element MUST use one of these — no system fonts, no fallbacks.
+
+### Bebas Neue — Headings
+- **Use for**: Screen titles, section headers, phase badges, stat labels, type badges, tab headers
+- **Style**: Always uppercase, `letterSpacing: 1` or more
+- **Font family**: `'BebasNeue_400Regular'`
+- **Example**: `WEEK 5 OF 18 — BUILD PHASE`, `COACH BRIEFING`, `EASY RUN`
+
+### Exo 2 — Body Text
+- **Use for**: Workout descriptions, coaching text, chat messages, AI briefings, button labels, input text, subtitles
+- **Weights**: 300 Light, 400 Regular, 500 Medium, 600 SemiBold, 700 Bold, 800 ExtraBold
+- **Font families**: `'Exo2_400Regular'`, `'Exo2_600SemiBold'`, `'Exo2_700Bold'`, etc.
+- **Example**: "Run at conversational pace. Focus on relaxed shoulders and quick turnover."
+
+### JetBrains Mono — Numbers & Data
+- **Use for**: ALL numbers — pace (8:42/mi), distance (6.2 mi), duration (52:14), HR (148 bpm), VDOT score, split tables, zone values, percentages, volumes
+- **Weights**: 400 Regular, 500 Medium, 600 SemiBold, 700 Bold, 800 ExtraBold
+- **Font families**: `'JetBrainsMono_700Bold'`, `'JetBrainsMono_400Regular'`, etc.
+- **Rule**: EVERY number on EVERY screen uses JetBrains Mono. No exceptions. Remove `fontVariant: ['tabular-nums']` — it's already monospace.
+- **Example**: `9:26 /mi`, `6.4 mi`, `148 bpm`, `VDOT 44`
+
+### Font Application Rules
+```typescript
+// HEADING — section headers, badges, labels
+{ fontFamily: 'BebasNeue_400Regular', letterSpacing: 1, textTransform: 'uppercase' }
+
+// BODY — descriptions, messages, buttons
+{ fontFamily: 'Exo2_400Regular' }        // body text
+{ fontFamily: 'Exo2_600SemiBold' }       // emphasis
+{ fontFamily: 'Exo2_700Bold' }           // buttons
+
+// NUMBERS — all numeric data
+{ fontFamily: 'JetBrainsMono_700Bold' }  // primary numbers
+{ fontFamily: 'JetBrainsMono_400Regular' } // secondary numbers
 ```
-Garmin Watch --> Garmin Connect App --> Apple HealthKit --> react-native-health --> SQLite
-```
-- All data stored locally in SQLite via expo-sqlite
-- HealthKit is READ-ONLY — we never write to it
-- Gemini API is the ONLY network dependency (coaching chat)
-- If the phone dies, the plan can be regenerated deterministically from the same inputs
 
-### No Auth, No Cloud
-- No user accounts, no onboarding flow, no subscription logic
-- No multi-user support — single `user_profile` row
-- Gemini API key stored in `app.config.ts` `extra` field, accessed via `expo-constants`
-- No other environment variables
+## Icon System
+
+### MaterialCommunityIcons (fitness-specific)
+```
+Tab bar: "run-fast" (Today), "calendar-month" (Plan), "robot" (Coach), "gauge" (Zones), "shoe-sneaker" (Runs)
+Workout: "run" (easy), "run-fast" (threshold), "routes" (long run), "sleep" (rest), "walk" (recovery)
+Metrics: "heart-pulse" (HR), "speedometer" (pace), "map-marker-distance" (distance), "timer-outline" (duration), "fire" (calories)
+Status: "trophy" (PR/best effort), "medal" (race), "terrain" (hills)
+```
+
+### Lucide Icons (general UI)
+```
+Settings, ChevronRight, Send, X, Check, AlertTriangle, Plus, ArrowLeft, Search
+```
+
+## Color Palette (Dark Theme)
+
+Defined in `tamagui.config.ts` tokens and `src/utils/constants.ts`:
+```
+Background:    #121212           (app background)
+Surface:       #1E1E1E           (cards, inputs)
+Surface Light: #2A2A2A           (hover states, nested cards)
+Border:        #333333           (subtle borders)
+
+Accent:        #FF6B35           (primary brand color — bold orange)
+Accent Light:  #FF8A5C           (hover/pressed accent)
+Primary:       #007AFF           (iOS blue — links, long run day)
+
+Success:       #34C759           (completed, connected, healthy)
+Warning:       #FF9500           (caution, approaching limit)
+Danger:        #FF3B30           (destructive, critical, skipped)
+
+Text:          #FFFFFF           (primary text)
+Text Secondary:#A0A0A0           (descriptions, subtitles)
+Text Tertiary: #666666           (timestamps, hints, muted)
+
+Phase Base:    #007AFF (blue)
+Phase Build:   #FF9500 (orange)
+Phase Peak:    #FF3B30 (red)
+Phase Taper:   #34C759 (green)
+
+Strava:        #FC4C02           (Strava brand orange)
+```
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────┐
+│                  USER INTERFACE                   │
+│  Today | Plan | Coach | Zones | Runs | Settings  │
+└──────────────────────┬──────────────────────────┘
+                       │
+┌──────────────────────▼──────────────────────────┐
+│              AI ENGINE (Gemini 2.5 Flash)         │
+│  Plan generation, adaptation, briefings,          │
+│  post-run analysis, weekly review, coaching chat  │
+└──────────────────────┬──────────────────────────┘
+                       │
+┌──────────────────────▼──────────────────────────┐
+│           SAFETY VALIDATOR (thin math layer)      │
+│  15% max volume increase, 35% long run cap,      │
+│  20% quality cap, 2mi min, taper enforcement      │
+└──────────────────────┬──────────────────────────┘
+                       │
+┌──────────────────────▼──────────────────────────┐
+│              DATA LAYER                           │
+│  SQLite (local)  │  Strava API  │  Supabase      │
+│  Primary store   │  Run data    │  Backup only    │
+└─────────────────────────────────────────────────┘
+```
+
+### Core Principle
+Gemini IS the coach. It generates plans, adapts them, and gives advice. The math layer is just a safety net that silently caps dangerous numbers. The app is a UI for the AI coach + a data pipeline from Strava.
 
 ## File Structure
 ```
-app/                          # Expo Router screens
-├── _layout.tsx               # Root layout with providers
+app/
+├── _layout.tsx               # Root: TamaguiProvider, PortalProvider, fonts, auth guard
+├── setup.tsx                 # 8-step onboarding wizard
+├── profile.tsx               # View/edit profile (modal)
 ├── (tabs)/
-│   ├── _layout.tsx           # Tab navigator config
-│   ├── today.tsx             # Today's workout screen
-│   ├── plan.tsx              # Training plan calendar/list
-│   ├── coach.tsx             # AI coaching chat
-│   └── zones.tsx             # Pace & HR zone reference
-├── workout/
-│   └── [id].tsx              # Workout detail view
-└── plan/
-    └── setup.tsx             # Initial plan setup (VDOT input, race date, etc.)
+│   ├── _layout.tsx           # Tab navigator with MaterialCommunityIcons
+│   ├── index.tsx             # Today — workout + briefing + analysis
+│   ├── calendar.tsx          # Plan — expandable weeks by phase
+│   ├── coach.tsx             # AI Coach — chat with plan changes
+│   ├── zones.tsx             # Zones — pace/HR zones, predictions, shoes
+│   ├── activities.tsx        # Runs — activity list with maps + filters
+│   └── settings.tsx          # Settings (hidden tab, gear icon access)
+├── workout/[id].tsx          # Workout detail (modal)
+└── activity/[id].tsx         # Activity detail with full Strava data (modal)
 
 src/
-├── components/               # Reusable UI components
-│   ├── workout/              # Workout-related components
-│   ├── plan/                 # Plan view components
-│   ├── coach/                # Chat UI components
-│   └── common/               # Shared primitives
+├── ai/
+│   ├── gemini.ts             # Gemini client, retry, JSON extraction
+│   ├── planGenerator.ts      # AI plan generation + validation
+│   ├── safetyValidator.ts    # Safety constraint clamping (~50 lines of logic)
+│   ├── adaptation.ts         # Plan adaptation (missed workouts, injury, etc.)
+│   ├── weeklyReview.ts       # AI weekly review + adaptation triggers
+│   ├── coach.ts              # Coaching chat with context building
+│   └── briefing.ts           # Pre-workout, post-run, race strategy
 ├── db/
-│   ├── schema.ts             # SQLite table definitions
-│   ├── client.ts             # Database initialization
-│   └── migrations/           # Schema migrations
-├── engine/                   # Pure TypeScript training logic (NO AI)
-│   ├── vdot.ts               # VDOT calculator + lookup table
-│   ├── paceZones.ts          # Daniels pace zone derivation
-│   ├── hrZones.ts            # Karvonen HR zone calculator
-│   └── planGenerator.ts      # Full macrocycle generation algorithm
-├── hooks/                    # React hooks for data access
-│   ├── useWorkouts.ts
-│   ├── useHealthKit.ts
-│   ├── useProfile.ts
-│   └── useCoach.ts
-├── stores/                   # Zustand stores (minimal)
-│   ├── activeWorkoutStore.ts
-│   └── settingsStore.ts
-├── services/
-│   ├── gemini.ts             # Gemini API client + context builder
-│   └── healthkit.ts          # HealthKit query service
-├── utils/
-│   ├── paceFormat.ts         # min:sec ↔ decimal conversions
-│   ├── dateUtils.ts          # Date math helpers
-│   └── constants.ts          # App-wide constants
-└── types/
-    └── index.ts              # Shared TypeScript types
+│   ├── schema.ts             # All CREATE TABLE statements
+│   ├── database.ts           # DB init, CRUD, migrations
+│   └── client.ts             # Re-export for backward compat
+├── engine/
+│   ├── vdot.ts               # VDOT calculator + race predictions
+│   └── paceZones.ts          # Daniels pace zones + HR zones
+├── strava/
+│   ├── auth.ts               # OAuth2 + token management
+│   ├── api.ts                # REST client (activities, detail, streams, athlete, gear)
+│   ├── sync.ts               # Activity sync pipeline + auto-matching
+│   ├── shoes.ts              # Shoe sync from athlete profile
+│   ├── profileImport.ts      # Import profile data for setup pre-fill
+│   ├── convert.ts            # Unit conversions (meters→miles, m/s→sec/mi)
+│   ├── bestEfforts.ts        # Best effort analysis
+│   └── historicalSync.ts     # First-time 8-week backfill
+├── backup/
+│   ├── supabase.ts           # Supabase client
+│   ├── auth.ts               # Sign in/up/out, session management
+│   └── backup.ts             # Serialize/upload/download/restore
+├── components/
+│   ├── common/
+│   │   └── PlanGenerationLoader.tsx  # AI loading screen with streaming steps
+│   ├── RouteMap.tsx           # MapView with decoded polyline
+│   └── PolylineThumbnail.tsx  # SVG polyline for list cards
+├── store.ts                  # Zustand store (single, ~600 lines)
+├── types/index.ts            # All TypeScript types
+├── stores/
+│   └── settingsStore.ts      # Unit preferences (imperial/metric)
+└── utils/
+    ├── constants.ts           # COLORS, PHASE_COLORS, WORKOUT_TYPE_LABELS
+    ├── dateUtils.ts           # Date formatting and math
+    └── units.ts               # Display unit conversions
 ```
 
-## Tab Screens
+## Styling Conventions
 
-### 1. Today
-- Shows today's scheduled workout: distance, pace zone, interval breakdown (if applicable)
-- "Mark Complete" / "Mark Skipped" buttons
-- Displays HealthKit auto-detected run data if available
-- Matches HealthKit workouts to scheduled workouts by date
-
-### 2. Plan
-- Calendar/list view of the full macrocycle
-- Weeks grouped by phase: Base / Build / Peak / Taper
-- Cutback weeks visually marked (distinct styling)
-- Tap a workout to see full details
-
-### 3. Coach
-- AI chat screen powered by Gemini 2.5 Flash
-- Every message includes fresh context (see AI Coach Architecture below)
-- Gemini can suggest plan modifications as structured JSON
-- User confirms before any plan changes are applied
-
-### 4. Zones
-- Reference screen showing 5 Daniels pace zones (E/M/T/I/R) in min:mile
-- Heart rate zones via Karvonen formula
-- Derived from current VDOT — updates when VDOT changes
-
-## Core Engine (Pure TypeScript, No AI)
-
-### VDOT Calculator (`src/engine/vdot.ts`)
-- Input: recent race time (e.g., 10K in 48:30)
-- Uses interpolation on Daniels VDOT lookup table
-- Outputs: VDOT score, predicted race times (marathon, half, 10K, 5K)
-- CONSTRAINT: VDOT must be calculated from ACTUAL recent race time, NEVER from goal time
-
-### Pace Zone Calculator (`src/engine/paceZones.ts`)
-- Derives 5 Daniels zones from VDOT using exponential decay model:
-  - Threshold pace: `P_t = 0.0697 * VDOT^(-0.8081)` (days/km, convert to min/mile)
-  - Other zones are ratios off threshold
-- Zone definitions:
-  - **E (Easy)**: ~59-74% VO2max
-  - **M (Marathon)**: ~75-84% VO2max
-  - **T (Threshold)**: ~83-88% VO2max
-  - **I (Interval)**: ~95-100% VO2max
-  - **R (Repetition)**: faster than I pace
-
-### HR Zone Calculator (`src/engine/hrZones.ts`)
-- Karvonen formula: `target_HR = resting_HR + (max_HR - resting_HR) * intensity%`
-- Requires: resting HR, max HR (or age-estimated)
-
-### Plan Generator (`src/engine/planGenerator.ts`)
-The 5-step macrocycle generation algorithm:
-
-**Step 1 — Initialization**
-- Anchor `V_start` to current weekly mileage
-- Calculate `V_peak` based on runner level (intermediate: ~50-55 mpw peak)
-- Set phase durations proportional to total weeks available
-
-**Step 2 — Volume Interpolation**
-- Sigmoid curve from `V_start` to `V_peak`
-- CONSTRAINT: Max 12% week-over-week volume increase
-- CONSTRAINT: Inject cutback week every 4th week (20% volume reduction)
-- CONSTRAINT: 3-week taper before race (75% / 50% / 25% of peak)
-
-**Step 3 — Long Run Distribution**
-- Progressive long run distance
-- CONSTRAINT: Long run capped at 30% of weekly volume
-- CONSTRAINT: Max long run 20-22 miles for intermediate level
-
-**Step 4 — Quality Sessions**
-- Threshold intervals: build + peak phases
-- VO2max intervals: peak phase only
-- Marathon pace segments: base phase
-- CONSTRAINT: Interval distance <= 8% of weekly volume
-- CONSTRAINT: Threshold distance <= 10% of weekly volume
-
-**Step 5 — Fill Remaining Volume**
-- Easy/recovery runs fill remaining weekly mileage
-- CONSTRAINT: No run under 3 miles — consolidate if needed
-- CONSTRAINT: Day after long run = recovery run
-
-### Safety Constraints Summary
-These MUST be enforced — never bypass:
-- [ ] Max 12% week-over-week volume increase
-- [ ] Cutback week every 4th week (20% reduction)
-- [ ] Long run <= 30% of weekly volume
-- [ ] Long run max 20-22 miles (intermediate)
-- [ ] Interval <= 8% weekly volume
-- [ ] Threshold <= 10% weekly volume
-- [ ] No run under 3 miles
-- [ ] Day after long run = recovery
-- [ ] 3-week taper (75/50/25)
-- [ ] VDOT from actual race time, not goal time
-
-## AI Coach Architecture (`src/services/gemini.ts`)
-
-### Provider
-- Google Gemini 2.5 Flash via `@google/generative-ai` SDK
-- API key in `app.config.ts` → `extra.geminiApiKey`, accessed via `Constants.expoConfig.extra.geminiApiKey`
-- Free tier: ~15 RPM rate limit
-
-### Context Building
-Every chat message includes a system prompt assembled from:
-1. User profile: age, weight, VDOT, HR zones, pace zones
-2. Timeline: current week number, current phase, days until race
-3. This week: scheduled workouts + completion status
-4. Recent performance: last 7 days of HealthKit data (distance, pace, HR)
-5. Volume trend: last 4 weeks of weekly mileage + adherence rate
-6. Today: today's scheduled workout details
-
-### System Prompt Embedding
-The system prompt includes sports science rules:
-- 80/20 polarized training distribution
-- Progressive overload principles
-- Banister impulse-response fatigue model concepts
-- ACWR (Acute:Chronic Workload Ratio) safety thresholds
-- Daniels training philosophy
-
-### Plan Modification Flow
-1. User asks Gemini a question (e.g., "I feel tired, should I adjust?")
-2. Gemini responds with coaching advice
-3. If Gemini suggests plan changes, it returns a structured JSON block:
-   ```json
-   {
-     "action": "modify_workout",
-     "workout_id": "abc-123",
-     "changes": { "distance_miles": 4, "zone": "E" },
-     "reason": "Fatigue detected — reducing today's tempo to easy recovery"
-   }
-   ```
-4. App parses JSON, shows user a confirmation dialog
-5. User approves → app updates SQLite workout rows
-6. User declines → no changes applied
-
-### Gemini Best Practices
-- Cache the system prompt string — only rebuild when underlying data changes
-- Add retry with exponential backoff (free tier rate limits)
-- Gemini is for coaching chat ONLY — plan generation uses the deterministic engine
-- Always send fresh context — no stale state between messages
-
-## SQLite Schema (`src/db/schema.ts`)
-
-### Tables
-```
-user_profile (single row)
-├── id TEXT PRIMARY KEY
-├── name TEXT
-├── age INTEGER
-├── weight_lbs REAL
-├── resting_hr INTEGER
-├── max_hr INTEGER
-├── vdot REAL
-├── current_weekly_mileage REAL
-├── race_date TEXT (ISO 8601)
-├── race_distance TEXT ('marathon' | 'half')
-├── recent_race_distance TEXT
-├── recent_race_time_seconds INTEGER
-├── created_at TEXT
-└── updated_at TEXT
-
-training_plan
-├── id TEXT PRIMARY KEY
-├── start_date TEXT
-├── race_date TEXT
-├── total_weeks INTEGER
-├── peak_weekly_mileage REAL
-├── vdot_at_creation REAL
-├── created_at TEXT
-└── updated_at TEXT
-
-training_week
-├── id TEXT PRIMARY KEY
-├── plan_id TEXT REFERENCES training_plan(id)
-├── week_number INTEGER
-├── phase TEXT ('base' | 'build' | 'peak' | 'taper')
-├── is_cutback INTEGER (boolean)
-├── target_volume_miles REAL
-├── actual_volume_miles REAL
-├── start_date TEXT
-└── end_date TEXT
-
-workout
-├── id TEXT PRIMARY KEY
-├── week_id TEXT REFERENCES training_week(id)
-├── date TEXT
-├── day_of_week INTEGER (0=Mon..6=Sun)
-├── workout_type TEXT ('easy' | 'long' | 'tempo' | 'interval' | 'recovery' | 'marathon_pace' | 'rest')
-├── distance_miles REAL
-├── target_pace_zone TEXT ('E' | 'M' | 'T' | 'I' | 'R')
-├── intervals_json TEXT (nullable, JSON string for structured intervals)
-├── status TEXT ('scheduled' | 'completed' | 'skipped')
-├── notes TEXT
-├── created_at TEXT
-└── updated_at TEXT
-
-performance_metric
-├── id TEXT PRIMARY KEY
-├── workout_id TEXT REFERENCES workout(id) (nullable)
-├── date TEXT
-├── source TEXT ('healthkit' | 'manual')
-├── distance_miles REAL
-├── duration_seconds INTEGER
-├── avg_pace_per_mile INTEGER (seconds)
-├── avg_hr INTEGER
-├── max_hr INTEGER
-├── calories INTEGER
-├── route_json TEXT (nullable)
-└── synced_at TEXT
-
-coach_message
-├── id TEXT PRIMARY KEY
-├── role TEXT ('user' | 'assistant')
-├── content TEXT
-├── structured_action_json TEXT (nullable)
-├── action_applied INTEGER (boolean, default 0)
-├── created_at TEXT
-└── conversation_id TEXT
+### Card Pattern
+```typescript
+{
+  backgroundColor: '#1E1E1E',    // COLORS.surface
+  borderRadius: 14,
+  padding: 16,
+  borderWidth: 0.5,
+  borderColor: '#333333',        // COLORS.border
+}
 ```
 
-### Schema Rules
-- Use `expo-crypto` randomUUID() for all IDs
-- ISO 8601 strings for all dates
-- Boolean fields stored as INTEGER (0/1)
-- JSON stored as TEXT in `*_json` columns — parse in application layer
-- Foreign key relationships enforced at application level (SQLite FK support is optional)
-- Wrap migrations in transactions
+### Button Pattern
+```typescript
+// Primary action
+{ backgroundColor: '#FF6B35', borderRadius: 12, paddingVertical: 14, alignItems: 'center' }
+// Button text
+{ fontFamily: 'Exo2_700Bold', fontSize: 16, color: '#FFFFFF' }
 
-## HealthKit Integration (`src/services/healthkit.ts`)
-
-### Permissions Required
-- Read: Workout Distance, Workout Duration, Heart Rate, Workout Route
-- Declared in `Info.plist` AND requested at runtime
-- MUST test on real device — HealthKit not available in Simulator
-
-### Data Flow
-```
-Garmin Watch → Garmin Connect App → Apple HealthKit → react-native-health → SQLite
+// Secondary action
+{ backgroundColor: '#1E1E1E', borderRadius: 12, borderWidth: 1, borderColor: '#333333' }
+// Secondary text
+{ fontFamily: 'Exo2_600SemiBold', fontSize: 15, color: '#A0A0A0' }
 ```
 
-### Matching Logic
-- Query HealthKit for workouts of type `.running` in the last 24-48 hours
-- Match to scheduled workouts by date (same calendar day)
-- Auto-populate `performance_metric` rows
-- Handle case where Garmin data hasn't synced yet (show "waiting for sync" state)
+### Section Header Pattern
+```typescript
+{ fontFamily: 'BebasNeue_400Regular', fontSize: 14, color: '#A0A0A0', textTransform: 'uppercase', letterSpacing: 1.5 }
+```
 
-### Gotchas
-- HealthKit authorization must be in Info.plist AND requested at runtime via `react-native-health`
-- Garmin → HealthKit sync can be delayed by minutes or hours
-- Always check authorization status before querying
-- HealthKit queries are async — use appropriate loading states
+### Stat Display Pattern
+```typescript
+// Value
+{ fontFamily: 'JetBrainsMono_700Bold', fontSize: 18, color: '#FFFFFF' }
+// Label below
+{ fontFamily: 'BebasNeue_400Regular', fontSize: 11, color: '#666666', textTransform: 'uppercase', letterSpacing: 1 }
+```
 
-## Debugging Playbook
+### Status Colors
+- Completed: `#34C759` (green)
+- Upcoming: `#666666` (gray)
+- Skipped: `#FF3B30` (red)
+- Modified: `#FF9500` (orange)
 
-### General Approach
-1. **Diagnostics first**: Use `Alert.alert()` checkpoints before applying fixes
-2. **One fix at a time**: Never batch multiple changes — isolate variables
-3. **Behavior-only prompts**: Describe bug behavior, don't paste code examples
+## Data Architecture
 
-### expo-sqlite
-- Wrap all migrations in transactions
-- Check schema version before running migrations
-- Use synchronous API for reads where possible, async for writes
-- If a query returns unexpected results, log the raw SQL first
-- Column type mismatches are silent — always verify types match schema
+### SQLite (Primary — local)
+All data lives in SQLite. The app works fully offline.
 
-### HealthKit
-- Must declare permissions in `Info.plist` AND request at runtime
-- Test on real device only — not available in iOS Simulator
-- Authorization can be revoked by user at any time — always check status
-- Garmin → HealthKit sync delay: show appropriate loading/retry UI
+Key tables: `user_profile` (single row), `training_plan` (plan_json JSONB), `workout` (individual workouts), `training_week`, `performance_metric` (run data), `coach_message`, `strava_activity_detail` (rich Strava data), `shoes`, `ai_cache`, `strava_tokens`
 
-### Gemini API
-- Free tier: ~15 RPM rate limit
-- Add retry with exponential backoff on 429 responses
-- Cache the assembled system prompt — rebuild only when data changes
-- Response parsing: always validate structured JSON before applying
-- If Gemini returns malformed JSON, show the text response and skip action parsing
+### Supabase (Backup only — cloud)
+One `backups` table with one row per user. Contains full SQLite snapshot as JSONB. Auto-backup fires after profile save and plan generation. Auto-restore on fresh install if user is logged in.
 
-### Expo General
-- `expo-crypto` for UUIDs, never `uuid` package
-- No EAS Build env vars except Gemini API key in `app.config.ts` extra
-- File system: use `expo-file-system` new API (`new File(Paths.cache, name)`) if needed
-- Modals: use `presentationStyle="pageSheet"` for iOS-style sheets
+### Strava API (Run data source)
+Fetches: activities, detail (splits, laps, best efforts, segments), streams (HR, pace, elevation, cadence, time, distance), athlete profile, gear detail. All stored in `performance_metric` + `strava_activity_detail`.
 
-### NativeWind
-- Ensure babel plugin is configured in `babel.config.js`
-- If styles don't apply, check that `nativewind/babel` plugin is loaded
-- Use `className` prop on components (not `style` for Tailwind classes)
+## AI Architecture
 
-## Code Conventions
+### Gemini Client (`src/ai/gemini.ts`)
+- Model: `gemini-2.5-flash`
+- Retry with exponential backoff (max 3, 1.5s base)
+- `sendStructuredMessage()` for single-turn (plan generation, briefings)
+- `sendChatMessage()` for multi-turn (coaching chat)
+- `extractJSON()` handles markdown fences, code blocks, raw JSON
 
-### Components
-- Functional components with hooks only
-- Props interfaces defined inline or in same file
-- Use `Pressable` over `TouchableOpacity`
-- Always provide `key` prop for list items
-- All hooks called unconditionally before any early returns
+### Plan Generation (`src/ai/planGenerator.ts`)
+- AI generates full `AIGeneratedPlan` JSON (weeks + workouts)
+- Safety validator clamps violations silently
+- Stored as JSON blob in `training_plan.plan_json`
+- Workouts extracted to individual `workout` rows for querying
 
-### Styling
-- NativeWind `className` for layout and common patterns
-- `StyleSheet.create()` for complex or dynamic styles
-- Pick whichever is simpler per component — don't mix both in the same component
-- Color palette:
-  - Primary: `#007AFF` (iOS blue)
-  - Success: `#34C759` (green)
-  - Warning: `#FF9500` (orange)
-  - Danger: `#FF3B30` (red)
-  - Background: `#F2F2F7` (iOS system gray 6)
+### Safety Validator (`src/ai/safetyValidator.ts`)
+7 rules, all silent clamping:
+1. Max 15% week-over-week volume increase
+2. Peak volume ≤ 1.6× starting volume
+3. Long run ≤ 35% of weekly volume
+4. Quality volume ≤ 20% of weekly volume
+5. Minimum 2mi per run
+6. At least 1 rest day per week
+7. Taper in final 3 weeks (75%/50%/30%)
 
-### Database Operations
-- Wrap complex operations in try/catch
-- Use parameterized queries (never string interpolation for SQL values)
-- Foreign key relationships handled at application level
-- Generate UUIDs with `expo-crypto` randomUUID()
+### AI Content (all cached in `ai_cache` table)
+- Pre-workout briefing: 2-3 sentences, specific to today's workout
+- Post-run analysis: 3-4 sentences analyzing actual vs planned
+- Race week strategy: pacing plan with mile-by-mile guidance
+- Weekly review: structured assessment with adaptation recommendation
 
-### Naming
-- Files: camelCase for utilities, PascalCase for components
-- Types/Interfaces: PascalCase
-- Variables/functions: camelCase
-- Constants: SCREAMING_SNAKE_CASE
-- Database columns: snake_case
+## Setup Flow
+```
+1. Sign In / Create Account (Supabase auth)
+   → If backup exists → restore → skip to tabs
+2. Connect Strava → import profile data + 8 weeks of activities
+3. Profile (pre-filled from Strava, all editable, "from Strava" tags)
+4. Race Details (date picker, course profile, goal type)
+5. Training Preferences (available days, long run day)
+6. Coaching Context (injuries, weaknesses, schedule notes — optional)
+7. AI Plan Generation (loading screen with streaming steps)
+8. Plan Review (summary, principles, warnings → Start Training)
+```
 
-### Engine Code (`src/engine/`)
-- Pure functions only — no side effects, no database calls, no React
-- Fully testable in isolation
-- Input → Output, deterministic
-- All training constraints enforced in this layer
+## Key Constraints
 
-## Key Constraints (Summary)
+1. **AI generates, math validates** — Gemini creates plans, safety validator clamps numbers
+2. **Local-first** — SQLite is primary, Supabase is backup only, app works offline
+3. **Strava is the data source** — no HealthKit in v2 (add later)
+4. **Fail gracefully everywhere** — if Gemini is down, show fallback. If Strava disconnected, manual entry works.
+5. **Cache AI content aggressively** — same inputs = don't call Gemini again
+6. **expo-crypto for UUIDs** — NEVER `uuid` package
+7. **Auto-backup after key events** — profile save, plan generation
+8. **Auto-restore on fresh install** — if logged in with cloud backup
+9. **Every number uses JetBrains Mono** — no exceptions
+10. **Every heading uses Bebas Neue** — uppercase with letter-spacing
+11. **Every body text uses Exo 2** — weights 400-700
 
-1. Plan generation MUST enforce ALL safety constraints (volume caps, cutback injection, long run limits)
-2. VDOT must be calculated from ACTUAL recent race time, not goal time
-3. AI coach receives fresh context every message — no stale state
-4. Local-first with Supabase cloud sync — plan is deterministically regenerable from same inputs
-5. Gemini API key in `app.config.ts` `extra` field via `expo-constants`
-6. UUID generation: `expo-crypto` randomUUID() — NEVER `uuid` package
-7. HealthKit is read-only — we never write health data
-8. No auth, no onboarding, no subscriptions, no multi-user
-9. Gemini is for coaching chat ONLY — plan generation is deterministic TypeScript
-10. Supabase for cloud sync/backend — SQLite remains primary local store
+## Skill Triggers
 
-## Testing Strategy
+Use these skills proactively — don't wait to be asked. Invoke whenever the task matches the trigger.
 
-### Unit Tests (Engine)
-- VDOT calculation accuracy against known Daniels tables
-- Pace zone derivation correctness
-- Plan generator constraint enforcement (all safety rules)
-- Edge cases: very low/high VDOT, short/long training windows
+### `/frontend-design`
+**Trigger**: Any task involving creating new screens, redesigning existing UI, building components, changing layouts, or improving visual design. Use BEFORE writing any UI code — it produces higher quality, more distinctive designs than default output.
+Examples: "add a new stats screen", "redesign the workout card", "make the coach chat look better"
 
-### Integration Tests
-- Plan generation → SQLite storage → retrieval
-- HealthKit data → performance metric matching
-- Gemini response parsing → plan modification flow
+### `/debug-playbook`
+**Trigger**: Any bug, crash, blank screen, unexpected behavior, or "it doesn't work" report. Use BEFORE proposing fixes — diagnoses root cause systematically instead of guessing.
+Examples: "the app crashes on launch", "NaN showing in pace", "Strava sync fails", "screen is blank"
 
-### Manual Testing Checklist
-- [ ] Plan generates correctly from profile inputs
-- [ ] All safety constraints enforced (check volume progression)
-- [ ] Today screen shows correct workout
-- [ ] Mark Complete/Skipped updates workout status
-- [ ] HealthKit data appears when Garmin syncs
-- [ ] Coach chat sends/receives messages
-- [ ] Coach plan modification flow works (suggest → confirm → apply)
-- [ ] Zones screen shows correct paces for VDOT
-- [ ] Plan view shows phases and cutback weeks correctly
+### `/expo-react-native`
+**Trigger**: Expo/RN-specific tasks — setting up new native modules, configuring app.config.ts, EAS Build issues, expo-router navigation, native module gotchas, HealthKit/permissions setup.
+Examples: "add push notifications", "configure EAS Build", "fix expo-sqlite issue"
+
+### `/gemini-integration`
+**Trigger**: Anything involving the Gemini API — building prompts, parsing responses, handling rate limits, adding new AI features, modifying the coaching system, changing AI behavior.
+Examples: "add a new AI feature", "improve the coaching prompt", "fix Gemini response parsing"
+
+### `/training-science`
+**Trigger**: Changes to training logic, safety constraints, volume calculations, pace zone math, periodization, taper algorithms, or any code that affects the training plan structure.
+Examples: "adjust the safety validator", "add a new workout type", "change taper percentages"
+
+### `/project-audit`
+**Trigger**: When asked to review, audit, verify, or check the implementation. Also use after completing a major feature to verify correctness.
+Examples: "audit the code", "check everything works", "review the Strava sync"
+
+### `/brainstorm`
+**Trigger**: Before any creative or architectural work — new features, redesigns, major refactors. Explores requirements and design before jumping to code.
+Examples: "add social features", "redesign the app architecture", "what should we build next"
+
+### `/code-review`
+**Trigger**: After completing implementation work, before committing. Reviews for bugs, security issues, and adherence to project conventions.
+
+## Common Gotchas
+
+1. **expo-sqlite `prepareSync` crash**: Use shared DB instance from `database.ts`. Never open a second connection via `require('expo-sqlite').openDatabaseSync()`.
+2. **v1→v2 migration**: Check `PRAGMA user_version` and column existence. Drop incompatible tables, bump version.
+3. **Strava sync**: Always check `strava_activity_id` is populated. Old v1 metrics may have null values.
+4. **Font loading**: All fonts must load via `useFonts()` before rendering. Show loading screen until `fontsLoaded === true`.
+5. **Tamagui babel plugin**: Must be in `babel.config.js`. Clear Metro cache after config changes (`--clear`).
+6. **Foreign keys in restore**: Disable `PRAGMA foreign_keys` during cloud restore — v1 backup data has different FK relationships.
+7. **Hot reload limitations**: Changes to `database.ts`, `store.ts`, and module-level code require full Metro restart.

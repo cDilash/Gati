@@ -9,6 +9,7 @@ import {
   StravaActivity,
   StravaActivityDetail,
   StravaBestEffort,
+  StravaSegmentEffort,
   StravaStreams,
   StravaSplit,
   StravaLap,
@@ -116,6 +117,21 @@ function mapBestEffort(raw: any): StravaBestEffort {
   };
 }
 
+function mapSegmentEffort(raw: any): StravaSegmentEffort {
+  return {
+    name: raw.name ?? raw.segment?.name ?? 'Segment',
+    distance: raw.distance ?? raw.segment?.distance ?? 0,
+    movingTime: raw.moving_time ?? 0,
+    elapsedTime: raw.elapsed_time ?? 0,
+    startDate: raw.start_date ?? '',
+    prRank: raw.pr_rank ?? null,
+    komRank: raw.kom_rank ?? null,
+    averageHeartrate: raw.average_heartrate ?? null,
+    maxHeartrate: raw.max_heartrate ?? null,
+    averageWatts: raw.average_watts ?? null,
+  };
+}
+
 function mapActivityDetail(raw: any): StravaActivityDetail {
   return {
     ...mapActivity(raw),
@@ -132,6 +148,9 @@ function mapActivityDetail(raw: any): StravaActivityDetail {
     stravaWorkoutType: raw.workout_type ?? null,
     polylineEncoded: raw.map?.polyline ?? null,
     summaryPolylineEncoded: raw.map?.summary_polyline ?? null,
+    segmentEfforts: (raw.segment_efforts ?? []).map(mapSegmentEffort),
+    timezone: raw.timezone ?? null,
+    utcOffset: raw.utc_offset ?? null,
   };
 }
 
@@ -156,9 +175,10 @@ export async function getRecentActivities(
   const raw = await stravaFetch<any[]>('/athlete/activities', params);
   if (!raw) return [];
 
-  // Filter to Run type only — ignore rides, swims, hikes, etc.
+  // Filter to running activity types — ignore rides, swims, hikes, etc.
+  const RUN_TYPES = new Set(['Run', 'TrailRun', 'VirtualRun']);
   return raw
-    .filter((a: any) => a.type === 'Run')
+    .filter((a: any) => RUN_TYPES.has(a.type))
     .map(mapActivity);
 }
 

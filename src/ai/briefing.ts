@@ -1,198 +1,193 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
-import Constants from 'expo-constants';
-import { Workout, RecoveryStatus, PerformanceMetric, PaceZones, WeatherData } from '../types';
-import { formatPace } from '../engine/vdot';
-import { generateContextHash, getCachedBriefing, setCachedBriefing } from './cacheHelper';
-import { canMakeAPICall, incrementAPICallCount } from './rateLimiter';
+/**
+ * AI Briefings — proactive coaching content.
+ *
+ * Pre-workout briefings, post-run analysis, weekly digests.
+ * All cached aggressively. All fail silently. All fire async.
+ */
 
-const API_KEY = Constants.expoConfig?.extra?.geminiApiKey || '';
-const genAI = new GoogleGenerativeAI(API_KEY);
+import { sendStructuredMessage, isGeminiAvailable } from './gemini';
+import { getCachedAIContent, setCachedAIContent } from '../db/database';
+import {
+  UserProfile,
+  PaceZones,
+  Workout,
+  PerformanceMetric,
+  TrainingWeek,
+} from '../types';
+import { formatPace, formatTime } from '../engine/vdot';
+import { formatPaceRange } from '../engine/paceZones';
+import * as Crypto from 'expo-crypto';
 
-const FALLBACK = 'Unable to generate briefing';
+// ─── Cache Helpers ──────────────────────────────────────────
 
-function paceStr(seconds: number): string {
-  return formatPace(seconds);
+function hashInputs(...values: any[]): string {
+  // Simple string hash for cache key
+  const str = JSON.stringify(values);
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash |= 0;
+  }
+  return Math.abs(hash).toString(36);
 }
 
-function buildPreWorkoutUserMessage(
+// ─── Pre-Workout Briefing ───────────────────────────────────
+
+export async function generateBriefing(
   workout: Workout,
+  recentRuns: PerformanceMetric[],
   paceZones: PaceZones,
-  recoveryStatus: RecoveryStatus | null,
-  recentMetrics: PerformanceMetric[],
-  weather: WeatherData | null,
-): string {
-  const zone = workout.target_pace_zone;
-  const paceRange = paceZones[zone];
-  const lines: string[] = [];
+  profile: UserProfile,
+  currentWeek: TrainingWeek | null,
+  daysUntilRace: number,
+): Promise<string | null> {
+  if (!isGeminiAvailable()) return null;
+  if (workout.workout_type === 'rest') return null;
 
-  lines.push(`Today's workout: ${workout.workout_type}, ${workout.distance_miles} miles, ${zone} zone (${paceStr(paceRange.max)}-${paceStr(paceRange.min)}/mi)`);
-
-  if (workout.intervals && workout.intervals.length > 0) {
-    lines.push(`Structure: ${workout.intervals.map(s => `${s.type}: ${s.distance_miles}mi @ ${s.pace_zone}`).join(' → ')}`);
-  }
-
-  if (recoveryStatus && recoveryStatus.signalCount >= 2) {
-    lines.push(`Recovery score: ${recoveryStatus.score}/100 (${recoveryStatus.recommendation})`);
-    for (const sig of recoveryStatus.signals) {
-      lines.push(`  ${sig.type}: ${sig.value} (${sig.status})`);
-    }
-  }
-
-  if (recentMetrics.length > 0) {
-    const last = recentMetrics[0];
-    lines.push(`Last run: ${last.distance_miles}mi in ${paceStr(last.avg_pace_per_mile)}/mi${last.avg_hr ? ` @ ${last.avg_hr}bpm` : ''}`);
-  }
-
-  if (weather) {
-    lines.push(`Weather: ${weather.temp}°F, ${weather.humidity}% humidity, ${weather.condition}`);
-  }
-
-  return lines.join('\n');
-}
-
-export async function generatePreWorkoutBriefing(
-  workout: Workout,
-  recoveryStatus: RecoveryStatus | null,
-  recentMetrics: PerformanceMetric[],
-  weather: WeatherData | null,
-  paceZones: PaceZones,
-): Promise<string> {
-  const today = new Date().toISOString().split('T')[0];
-  const hashData = {
-    workoutId: workout.id,
-    recoveryScore: recoveryStatus?.score ?? null,
-    weatherTemp: weather?.temp ?? null,
-  };
-  const contextHash = generateContextHash(hashData);
-
-  // Check cache first
-  const cached = getCachedBriefing('pre_workout', today, contextHash);
+  // Check cache
+  const cacheKey = hashInputs(
+    workout.id,
+    recentRuns.slice(0, 3).map(r => r.id),
+    daysUntilRace,
+  );
+  const cached = getCachedAIContent('briefing', cacheKey);
   if (cached) return cached;
 
-  if (!canMakeAPICall()) return FALLBACK;
-
   try {
-    incrementAPICallCount();
-    const model = genAI.getGenerativeModel({
-      model: 'gemini-2.5-flash',
-      systemInstruction: 'You are a marathon running coach. Give a concise pre-workout briefing in 2-4 sentences. Be specific — use actual pace numbers, distances, and zone names. Never use generic motivation. Reference recovery data if provided. Reference weather if provided.',
-    });
+    const prompt = `You are a running coach giving a quick pre-workout briefing. 2-3 sentences max. Be specific, reference the workout details and recent performance. Encouraging but practical.
 
-    const userMessage = buildPreWorkoutUserMessage(workout, paceZones, recoveryStatus, recentMetrics, weather);
-    const result = await model.generateContent(userMessage);
-    const text = result.response.text().trim();
+TODAY'S WORKOUT: ${workout.title} — ${workout.target_distance_miles}mi
+Description: ${workout.description}
+Week ${currentWeek?.week_number || '?'}, ${currentWeek?.phase || '?'} phase. ${daysUntilRace} days to race.
 
-    if (text) {
-      setCachedBriefing('pre_workout', today, contextHash, text);
-    }
+${recentRuns.length > 0 ? `LAST RUN: ${recentRuns[0].date} — ${recentRuns[0].distance_miles.toFixed(1)}mi @ ${recentRuns[0].avg_pace_sec_per_mile ? formatPace(recentRuns[0].avg_pace_sec_per_mile) : '?'}/mi${recentRuns[0].avg_hr ? ` HR:${recentRuns[0].avg_hr}` : ''}` : 'No recent data.'}
 
-    return text || FALLBACK;
-  } catch {
-    return FALLBACK;
+PACE ZONES: E ${formatPaceRange(paceZones.E)}, M ${formatPaceRange(paceZones.M)}, T ${formatPaceRange(paceZones.T)}
+
+Respond with ONLY the briefing text. No JSON, no formatting.`;
+
+    const text = await sendStructuredMessage(
+      'You are a concise running coach. Give pre-workout briefings in 2-3 sentences.',
+      prompt,
+    );
+
+    const briefing = text.trim();
+    setCachedAIContent('briefing', cacheKey, briefing);
+    return briefing;
+  } catch (error) {
+    console.warn('[Briefing] Failed:', error);
+    return null;
   }
 }
 
-function buildPostRunUserMessage(
-  workout: Workout,
-  metric: PerformanceMetric | null,
-  paceZones: PaceZones,
-  recoveryStatus: RecoveryStatus | null,
-  weekContext: { targetVolume: number; completedVolume: number; remainingWorkouts: number },
-  stravaDetail?: any,
-): string {
-  const zone = workout.target_pace_zone;
-  const paceRange = paceZones[zone];
-  const lines: string[] = [];
-
-  lines.push(`Completed workout: ${workout.workout_type}, ${workout.distance_miles}mi planned, ${zone} zone (target: ${paceStr(paceRange.max)}-${paceStr(paceRange.min)}/mi)`);
-
-  if (metric) {
-    lines.push(`Actual: ${metric.distance_miles}mi, ${paceStr(metric.avg_pace_per_mile)}/mi avg pace${metric.avg_hr ? `, ${metric.avg_hr}bpm avg HR` : ''}`);
-
-    // Compare actual vs target
-    if (metric.avg_pace_per_mile < paceRange.max) {
-      lines.push('Note: ran FASTER than target zone');
-    } else if (metric.avg_pace_per_mile > paceRange.min) {
-      lines.push('Note: ran SLOWER than target zone');
-    } else {
-      lines.push('Note: pace was within target zone');
-    }
-  } else {
-    lines.push('No GPS/watch data available for this run');
-  }
-
-  // Strava per-mile splits for deeper analysis
-  if (stravaDetail?.splits && stravaDetail.splits.length > 0) {
-    const splitLines = stravaDetail.splits.map((s: any) => {
-      const paceSec = s.movingTime > 0 && s.distance > 0
-        ? Math.round((s.movingTime / s.distance) * 1609.344)
-        : 0;
-      return `  Mile ${s.split}: ${paceStr(paceSec)}/mi${s.averageHeartrate ? ` @ ${Math.round(s.averageHeartrate)}bpm` : ''}`;
-    });
-    lines.push(`Per-mile splits:\n${splitLines.join('\n')}`);
-  }
-
-  // Strava elevation and cadence
-  if (stravaDetail) {
-    const extras: string[] = [];
-    if (stravaDetail.elevation_gain_ft) extras.push(`${Math.round(stravaDetail.elevation_gain_ft)}ft elevation gain`);
-    if (stravaDetail.cadence_avg) extras.push(`${Math.round(stravaDetail.cadence_avg * 2)} spm cadence`);
-    if (stravaDetail.suffer_score) extras.push(`relative effort: ${stravaDetail.suffer_score}`);
-    if (extras.length > 0) lines.push(`Extras: ${extras.join(', ')}`);
-  }
-
-  if (recoveryStatus && recoveryStatus.signalCount >= 2) {
-    lines.push(`Pre-run recovery: ${recoveryStatus.score}/100 (${recoveryStatus.recommendation})`);
-  }
-
-  lines.push(`Week volume: ${weekContext.completedVolume.toFixed(1)}/${weekContext.targetVolume.toFixed(1)} mi completed, ${weekContext.remainingWorkouts} workouts remaining`);
-
-  return lines.join('\n');
-}
+// ─── Post-Run Analysis ──────────────────────────────────────
 
 export async function generatePostRunAnalysis(
   workout: Workout,
-  metric: PerformanceMetric | null,
-  recoveryStatus: RecoveryStatus | null,
+  metric: PerformanceMetric,
   paceZones: PaceZones,
-  weekContext: { targetVolume: number; completedVolume: number; remainingWorkouts: number },
-  stravaDetail?: any,
-): Promise<string> {
-  const today = new Date().toISOString().split('T')[0];
-  const hashData = {
-    workoutId: workout.id,
-    metricPace: metric?.avg_pace_per_mile ?? null,
-    metricDistance: metric?.distance_miles ?? null,
-    hasSplits: !!(stravaDetail?.splits?.length),
-  };
-  const contextHash = generateContextHash(hashData);
+  profile: UserProfile,
+): Promise<string | null> {
+  if (!isGeminiAvailable()) return null;
 
-  const cached = getCachedBriefing('post_run', today, contextHash);
+  // Check cache
+  const cacheKey = hashInputs(workout.id, metric.id);
+  const cached = getCachedAIContent('analysis', cacheKey);
   if (cached) return cached;
 
-  if (!canMakeAPICall()) return FALLBACK;
-
   try {
-    incrementAPICallCount();
-    const systemPrompt = stravaDetail?.splits?.length
-      ? "You are a marathon running coach reviewing a just-completed workout with per-mile split data from Strava. Give specific feedback in 3-5 sentences. Analyze split consistency — flag positive splits (slowing down) or negative splits (speeding up). Reference actual paces vs targets. Call out if easy runs were too fast. If HR data is available per split, note cardiac drift. Mention volume progress for the week. Preview what's next. Never say 'great job' without specifics."
-      : "You are a marathon running coach reviewing a just-completed workout. Give specific feedback in 3-5 sentences. Reference actual paces vs targets. Call out if easy runs were too fast. Mention volume progress for the week. Preview what's next. Never say 'great job' without specifics.";
+    const targetPace = workout.target_pace_zone
+      ? formatPaceRange((paceZones as any)[workout.target_pace_zone] || paceZones.E)
+      : 'N/A';
 
-    const model = genAI.getGenerativeModel({
-      model: 'gemini-2.5-flash',
-      systemInstruction: systemPrompt,
-    });
-
-    const userMessage = buildPostRunUserMessage(workout, metric, paceZones, recoveryStatus, weekContext, stravaDetail);
-    const result = await model.generateContent(userMessage);
-    const text = result.response.text().trim();
-
-    if (text) {
-      setCachedBriefing('post_run', today, contextHash, text);
+    let splitsInfo = '';
+    if (metric.splits_json) {
+      try {
+        const splits = JSON.parse(metric.splits_json);
+        if (Array.isArray(splits) && splits.length > 0) {
+          const paces = splits.map((s: any) => {
+            const pace = s.averageSpeed > 0 ? Math.round(1609.344 / s.averageSpeed) : 0;
+            return pace > 0 ? formatPace(pace) : '?';
+          });
+          splitsInfo = `\nSPLITS (per mile): ${paces.join(', ')}`;
+        }
+      } catch {}
     }
 
-    return text || FALLBACK;
-  } catch {
-    return FALLBACK;
+    const prompt = `You are a running coach analyzing a completed workout. 3-4 sentences. Be specific about pace, effort, and what went well or needs work. Reference actual numbers.
+
+PLANNED: ${workout.title} — ${workout.target_distance_miles}mi at ${workout.target_pace_zone || workout.workout_type} (target: ${targetPace})
+
+ACTUAL: ${metric.distance_miles.toFixed(1)}mi in ${metric.duration_minutes.toFixed(0)}min
+Avg pace: ${metric.avg_pace_sec_per_mile ? formatPace(metric.avg_pace_sec_per_mile) : '?'}/mi
+${metric.avg_hr ? `Avg HR: ${metric.avg_hr}` : ''}${metric.max_hr ? ` | Max HR: ${metric.max_hr}` : ''}
+${metric.perceived_exertion ? `RPE: ${metric.perceived_exertion}/10` : ''}${splitsInfo}
+
+Respond with ONLY the analysis text. No JSON, no formatting.`;
+
+    const text = await sendStructuredMessage(
+      'You are a concise running coach. Analyze completed workouts in 3-4 sentences.',
+      prompt,
+    );
+
+    const analysis = text.trim();
+    setCachedAIContent('analysis', cacheKey, analysis);
+    return analysis;
+  } catch (error) {
+    console.warn('[Analysis] Failed:', error);
+    return null;
+  }
+}
+
+// ─── Race Week Pacing Strategy ──────────────────────────────
+
+export async function generateRaceStrategy(
+  profile: UserProfile,
+  paceZones: PaceZones,
+  recentMetrics: PerformanceMetric[],
+): Promise<string | null> {
+  if (!isGeminiAvailable()) return null;
+
+  const cacheKey = hashInputs('race_strategy', profile.vdot_score, profile.race_date);
+  const cached = getCachedAIContent('race_strategy', cacheKey);
+  if (cached) return cached;
+
+  try {
+    const recentSummary = recentMetrics.slice(0, 5).map(m => {
+      const pace = m.avg_pace_sec_per_mile ? formatPace(m.avg_pace_sec_per_mile) : '?';
+      return `${m.date}: ${m.distance_miles.toFixed(1)}mi @ ${pace}/mi`;
+    }).join('\n');
+
+    const prompt = `You are a marathon running coach. Your athlete's race is in a few days. Give a specific race-day pacing strategy.
+
+ATHLETE: VDOT ${profile.vdot_score}, ${profile.experience_level}
+RACE: ${profile.race_name || 'Marathon'}, course: ${profile.race_course_profile}
+${profile.target_finish_time_sec ? `Goal: ${formatTime(profile.target_finish_time_sec)}` : `Predicted: ${formatTime(require('../engine/vdot').predictMarathonTime(profile.vdot_score))}`}
+Marathon pace zone: ${formatPaceRange(paceZones.M)}
+
+RECENT RUNS:
+${recentSummary || 'No recent data'}
+
+Include:
+1. Mile-by-mile pacing strategy (first 5K, 10K-half, half-30K, 30K-finish)
+2. Fueling/hydration timing
+3. Mental strategy for the wall (miles 20-22)
+4. Course-specific advice if the course is hilly
+
+Keep it to ~200 words. Specific paces, not ranges.
+Respond with ONLY the strategy text.`;
+
+    const text = await sendStructuredMessage(
+      'You are a marathon running coach giving race-day strategy.',
+      prompt,
+    );
+
+    const strategy = text.trim();
+    setCachedAIContent('race_strategy', cacheKey, strategy);
+    return strategy;
+  } catch (error) {
+    console.warn('[RaceStrategy] Failed:', error);
+    return null;
   }
 }

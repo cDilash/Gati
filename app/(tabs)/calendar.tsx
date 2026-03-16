@@ -1,230 +1,197 @@
-import { useState, useMemo } from 'react';
-import { View, Text, ScrollView, Pressable, StyleSheet, Alert } from 'react-native';
+import { useState, useCallback, useMemo } from 'react';
+import { RefreshControl } from 'react-native';
+import { ScrollView, YStack, XStack, Text, View, Spinner } from 'tamagui';
 import { useRouter } from 'expo-router';
-import { Lightning, Sparkle, X } from 'phosphor-react-native';
 import { useAppStore } from '../../src/store';
-import { useSettingsStore } from '../../src/stores/settingsStore';
-import { COLORS, PHASE_COLORS, WORKOUT_TYPE_LABELS, DAY_NAMES } from '../../src/utils/constants';
-import { formatDate, isToday, isPast } from '../../src/utils/dateUtils';
-import { displayDistance, distanceLabel } from '../../src/utils/units';
+import { PHASE_COLORS, WORKOUT_TYPE_LABELS } from '../../src/utils/constants';
+import { formatDate, isToday } from '../../src/utils/dateUtils';
+import { Workout } from '../../src/types';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { getWorkoutIcon } from '../../src/utils/workoutIcons';
+
+const H = (props: any) => <Text fontFamily="$heading" {...props} />;
+const B = (props: any) => <Text fontFamily="$body" {...props} />;
+const M = (props: any) => <Text fontFamily="$mono" {...props} />;
 
 export default function CalendarScreen() {
-  const { activePlan, weeks, allWorkouts, currentWeek, weeklyDigest, hasUnreadDigest, dismissWeeklyDigest } = useAppStore();
-  const units = useSettingsStore(s => s.units);
-  const [expandedWeeks, setExpandedWeeks] = useState<Set<string>>(new Set(currentWeek ? [currentWeek.id] : []));
   const router = useRouter();
-  const dl = distanceLabel(units);
+  const isLoading = useAppStore(s => s.isLoading);
+  const activePlan = useAppStore(s => s.activePlan);
+  const weeks = useAppStore(s => s.weeks);
+  const workouts = useAppStore(s => s.workouts);
+  const currentWeekNumber = useAppStore(s => s.currentWeekNumber);
+  const weeklyDigest = useAppStore(s => s.weeklyDigest);
+  const refreshState = useAppStore(s => s.refreshState);
 
-  const toggleWeek = (weekId: string) => {
-    setExpandedWeeks(prev => {
-      const next = new Set(prev);
-      if (next.has(weekId)) next.delete(weekId);
-      else next.add(weekId);
-      return next;
-    });
-  };
+  const [expandedWeeks, setExpandedWeeks] = useState<Set<number>>(() => new Set(currentWeekNumber > 0 ? [currentWeekNumber] : []));
+  const [digestDismissed, setDigestDismissed] = useState(false);
+
+  const workoutsByWeek = useMemo(() => {
+    const map = new Map<number, Workout[]>();
+    for (const w of workouts) {
+      const list = map.get(w.week_number) ?? [];
+      list.push(w);
+      map.set(w.week_number, list);
+    }
+    for (const [, list] of map) list.sort((a, b) => a.scheduled_date.localeCompare(b.scheduled_date));
+    return map;
+  }, [workouts]);
 
   const adherence = useMemo(() => {
-    const pastWorkouts = allWorkouts.filter(w => w.workout_type !== 'rest' && isPast(w.date));
-    if (pastWorkouts.length === 0) return 100;
-    const completed = pastWorkouts.filter(w => w.status === 'completed').length;
-    return Math.round((completed / pastWorkouts.length) * 100);
-  }, [allWorkouts]);
+    const past = workouts.filter(w => w.workout_type !== 'rest' && (w.status === 'completed' || w.status === 'skipped'));
+    if (past.length === 0) return null;
+    return Math.round((past.filter(w => w.status === 'completed').length / past.length) * 100);
+  }, [workouts]);
+
+  const toggleWeek = useCallback((n: number) => {
+    setExpandedWeeks(prev => { const next = new Set(prev); next.has(n) ? next.delete(n) : next.add(n); return next; });
+  }, []);
+
+  if (isLoading) {
+    return <YStack flex={1} backgroundColor="$background" justifyContent="center" alignItems="center"><Spinner size="large" color="$accent" /></YStack>;
+  }
 
   if (!activePlan) {
     return (
-      <View style={styles.container}>
-        <Text style={styles.emptyText}>No training plan generated yet.</Text>
-      </View>
+      <YStack flex={1} backgroundColor="$background" justifyContent="center" alignItems="center" padding="$8">
+        <H color="$color" fontSize={22} letterSpacing={1} marginBottom="$2">No Training Plan</H>
+        <B color="$textSecondary" fontSize={15} textAlign="center" lineHeight={22}>Generate a plan from Settings to see your schedule here.</B>
+      </YStack>
     );
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <View style={styles.statsRow}>
-        <View style={styles.statBox}>
-          <Text style={styles.statValue}>{activePlan.total_weeks}</Text>
-          <Text style={styles.statLabel}>Total Weeks</Text>
-        </View>
-        <View style={styles.statBox}>
-          <Text style={styles.statValue}>{currentWeek?.week_number || '-'}</Text>
-          <Text style={styles.statLabel}>Current Week</Text>
-        </View>
-        <View style={styles.statBox}>
-          <Text style={[styles.statValue, { color: adherence >= 80 ? COLORS.success : adherence >= 60 ? COLORS.warning : COLORS.danger }]}>{adherence}%</Text>
-          <Text style={styles.statLabel}>Adherence</Text>
-        </View>
-      </View>
+    <ScrollView flex={1} backgroundColor="$background" contentContainerStyle={{ padding: 16 }}
+      refreshControl={<RefreshControl refreshing={false} onRefresh={refreshState} tintColor="#FF6B35" />}>
 
-      {hasUnreadDigest && weeklyDigest && (
-        <View style={styles.digestCard}>
-          <View style={styles.digestHeader}>
-            <View style={styles.digestHeaderLeft}>
-              <Sparkle size={16} color={COLORS.accent} weight="fill" />
-              <Text style={styles.digestLabel}>WEEKLY DIGEST</Text>
-            </View>
-            <Pressable onPress={dismissWeeklyDigest} hitSlop={12}>
-              <X size={18} color={COLORS.textTertiary} />
-            </Pressable>
-          </View>
-          <Text style={styles.digestHeadline}>{weeklyDigest.headline}</Text>
-          <Text style={styles.digestVolume}>{weeklyDigest.volumeSummary}</Text>
+      {/* Summary Bar */}
+      <XStack backgroundColor="$surface" borderRadius="$6" padding="$4" marginBottom="$4" alignItems="center">
+        <YStack flex={1} alignItems="center">
+          <M color="$color" fontSize={22} fontWeight="700">{weeks.length}</M>
+          <H color="$textTertiary" fontSize={11} textTransform="uppercase" letterSpacing={1} marginTop={2}>Weeks</H>
+        </YStack>
+        <View width={1} height={28} backgroundColor="$border" />
+        <YStack flex={1} alignItems="center">
+          <M color="$color" fontSize={22} fontWeight="700">{currentWeekNumber}</M>
+          <H color="$textTertiary" fontSize={11} textTransform="uppercase" letterSpacing={1} marginTop={2}>Current</H>
+        </YStack>
+        <View width={1} height={28} backgroundColor="$border" />
+        <YStack flex={1} alignItems="center">
+          <M color="$color" fontSize={22} fontWeight="700">{adherence != null ? `${adherence}%` : '--'}</M>
+          <H color="$textTertiary" fontSize={11} textTransform="uppercase" letterSpacing={1} marginTop={2}>Adherence</H>
+        </YStack>
+      </XStack>
 
+      {/* Weekly Digest */}
+      {weeklyDigest && !digestDismissed && (
+        <YStack backgroundColor="$surface" borderRadius="$6" padding="$4" marginBottom="$4" borderLeftWidth={3} borderLeftColor="$primary">
+          <XStack justifyContent="space-between" alignItems="center" marginBottom="$3">
+            <H color="$primary" fontSize={13} textTransform="uppercase" letterSpacing={1}>Weekly Review</H>
+            <B color="$textTertiary" fontSize={13} fontWeight="600" onPress={() => setDigestDismissed(true)}>Dismiss</B>
+          </XStack>
+          <B color="$textSecondary" fontSize={14} lineHeight={21} marginBottom="$2">{weeklyDigest.summary}</B>
+          {weeklyDigest.volumeComparison ? <M color="$color" fontSize={13} fontWeight="700" marginBottom="$2">{weeklyDigest.volumeComparison}</M> : null}
           {weeklyDigest.highlights.length > 0 && (
-            <View style={styles.digestSection}>
-              {weeklyDigest.highlights.map((h, i) => (
-                <View key={i} style={styles.digestBulletRow}>
-                  <View style={[styles.digestDot, { backgroundColor: COLORS.success }]} />
-                  <Text style={styles.digestBulletText}>{h}</Text>
-                </View>
-              ))}
-            </View>
+            <YStack marginBottom="$1">
+              {weeklyDigest.highlights.map((h, i) => <B key={i} color="$success" fontSize={13} lineHeight={19}>+ {h}</B>)}
+            </YStack>
           )}
-
           {weeklyDigest.concerns.length > 0 && (
-            <View style={styles.digestSection}>
-              {weeklyDigest.concerns.map((c, i) => (
-                <View key={i} style={styles.digestBulletRow}>
-                  <View style={[styles.digestDot, { backgroundColor: COLORS.warning }]} />
-                  <Text style={styles.digestBulletText}>{c}</Text>
-                </View>
-              ))}
-            </View>
+            <YStack marginBottom="$1">
+              {weeklyDigest.concerns.map((c, i) => <B key={i} color="$warning" fontSize={13} lineHeight={19}>- {c}</B>)}
+            </YStack>
           )}
-
-          {weeklyDigest.recoveryTrend ? (
-            <Text style={styles.digestRecovery}>{weeklyDigest.recoveryTrend}</Text>
-          ) : null}
-
-          {weeklyDigest.nextWeekPreview ? (
-            <View style={styles.digestNextWeek}>
-              <Text style={styles.digestNextWeekLabel}>NEXT WEEK</Text>
-              <Text style={styles.digestNextWeekText}>{weeklyDigest.nextWeekPreview}</Text>
-            </View>
-          ) : null}
-
-          {weeklyDigest.coachNote ? (
-            <Text style={styles.digestCoachNote}>{weeklyDigest.coachNote}</Text>
-          ) : null}
-
-          <Pressable style={styles.digestDiscussButton} onPress={() => router.push('/(tabs)/coach')}>
-            <Text style={styles.digestDiscussText}>Discuss with Coach</Text>
-          </Pressable>
-        </View>
+          {weeklyDigest.nextWeekPreview ? <B color="$textTertiary" fontSize={13} fontStyle="italic" marginTop="$1">{weeklyDigest.nextWeekPreview}</B> : null}
+          {weeklyDigest.adaptationNeeded && weeklyDigest.adaptationReason && (
+            <YStack backgroundColor="$surfaceLight" borderRadius="$3" padding="$3" marginTop="$3" borderLeftWidth={2} borderLeftColor="$warning">
+              <B color="$warning" fontSize={13}>Adaptation suggested: {weeklyDigest.adaptationReason}</B>
+            </YStack>
+          )}
+        </YStack>
       )}
 
+      {/* Week List */}
       {weeks.map(week => {
-        const isCurrentWeek = currentWeek?.id === week.id;
-        const isExpanded = expandedWeeks.has(week.id);
-        const weekWorkouts = allWorkouts.filter(w => w.week_id === week.id);
-        const phaseColor = PHASE_COLORS[week.phase];
+        const isExpanded = expandedWeeks.has(week.week_number);
+        const isCurrent = week.week_number === currentWeekNumber;
+        const weekWorkouts = workoutsByWeek.get(week.week_number) ?? [];
+        const phaseColor = PHASE_COLORS[week.phase] ?? '#666666';
+        const completedVolume = weekWorkouts
+          .filter(w => w.status === 'completed' && w.target_distance_miles != null)
+          .reduce((sum, w) => sum + (w.target_distance_miles ?? 0), 0);
 
         return (
-          <View key={week.id} style={[styles.weekCard, isCurrentWeek && { borderColor: COLORS.accent, borderWidth: 1.5 }]}>
-            <Pressable onPress={() => toggleWeek(week.id)} style={styles.weekHeader}>
-              <View style={styles.weekLeft}>
-                <Text style={styles.weekNumber}>W{week.week_number}</Text>
-                <View style={[styles.phaseBadge, { backgroundColor: phaseColor }]}>
-                  <Text style={styles.phaseBadgeText}>{week.phase.toUpperCase()}</Text>
-                </View>
-                {week.is_cutback && (
-                  <View style={[styles.phaseBadge, { backgroundColor: COLORS.textTertiary }]}>
-                    <Text style={styles.phaseBadgeText}>CUTBACK</Text>
-                  </View>
-                )}
-              </View>
-              <View style={styles.weekRight}>
-                <Text style={styles.volumeText}>{displayDistance(week.target_volume_miles, units).toFixed(0)} {dl}</Text>
-                <Text style={styles.expandIcon}>{isExpanded ? '▼' : '▶'}</Text>
-              </View>
-            </Pressable>
+          <YStack key={week.id} backgroundColor="$surface" borderRadius="$5" marginBottom="$3" overflow="hidden"
+            borderWidth={1} borderColor={isCurrent ? '$accent' : 'transparent'}>
 
+            {/* Week Header */}
+            <XStack justifyContent="space-between" alignItems="center" padding="$3"
+              pressStyle={{ opacity: 0.8 }} onPress={() => toggleWeek(week.week_number)}>
+              <XStack alignItems="center" gap="$2" flexShrink={1}>
+                <H color={isCurrent ? '$accent' : '$color'} fontSize={15} letterSpacing={1}>Week {week.week_number}</H>
+                <YStack paddingHorizontal="$2" paddingVertical={2} borderRadius="$2" backgroundColor={phaseColor + '22'}>
+                  <H color={phaseColor} fontSize={11} textTransform="uppercase" letterSpacing={1}>
+                    {week.phase.charAt(0).toUpperCase() + week.phase.slice(1)}
+                  </H>
+                </YStack>
+                {week.is_cutback && (
+                  <YStack backgroundColor="rgba(174,174,178,0.15)" paddingHorizontal="$1" paddingVertical={2} borderRadius="$1">
+                    <H color="$textTertiary" fontSize={10} textTransform="uppercase" letterSpacing={1}>Cutback</H>
+                  </YStack>
+                )}
+              </XStack>
+              <XStack alignItems="center" gap="$2">
+                <M color="$textSecondary" fontSize={13} fontWeight="700">
+                  {completedVolume > 0 ? `${completedVolume.toFixed(0)}/${week.target_volume.toFixed(0)} mi` : `${week.target_volume.toFixed(0)} mi`}
+                </M>
+                <B color="$textTertiary" fontSize={14}>{isExpanded ? '▾' : '▸'}</B>
+              </XStack>
+            </XStack>
+
+            {/* Expanded Body */}
             {isExpanded && (
-              <View style={styles.workoutList}>
+              <YStack paddingHorizontal="$3" paddingBottom="$3" borderTopWidth={1} borderTopColor="$border">
                 {weekWorkouts.map(workout => {
-                  const today = isToday(workout.date);
-                  const borderColor = workout.status === 'completed' ? COLORS.success : workout.status === 'skipped' ? COLORS.danger : today ? COLORS.accent : 'transparent';
+                  const statusColor = workout.status === 'completed' ? '#34C759' : workout.status === 'skipped' ? '#FF3B30' : '#666666';
+                  const isWToday = isToday(workout.scheduled_date);
 
                   return (
-                    <Pressable
-                      key={workout.id}
-                      onPress={() => workout.workout_type !== 'rest' && router.push(`/workout/${workout.id}`)}
-                      style={[styles.workoutRow, { borderLeftColor: borderColor, borderLeftWidth: 3 }]}
-                    >
-                      <Text style={[styles.dayName, today && { color: COLORS.accent }]}>
-                        {DAY_NAMES[workout.day_of_week]}
-                      </Text>
-                      <Text style={[styles.workoutLabel, workout.workout_type === 'rest' && { color: COLORS.textTertiary }]}>
-                        {WORKOUT_TYPE_LABELS[workout.workout_type]}
-                      </Text>
-                      {workout.workout_type !== 'rest' && (
-                        <Text style={styles.workoutDist}>{displayDistance(workout.distance_miles, units).toFixed(1)}{dl}</Text>
+                    <XStack key={workout.id} alignItems="center" paddingVertical="$3" borderBottomWidth={0.5} borderBottomColor="$border"
+                      backgroundColor={isWToday ? '$surfaceLight' : 'transparent'} marginHorizontal={isWToday ? -14 : 0}
+                      paddingHorizontal={isWToday ? 14 : 0} borderRadius={isWToday ? 8 : 0}
+                      pressStyle={workout.workout_type !== 'rest' ? { opacity: 0.7 } : undefined}
+                      onPress={workout.workout_type !== 'rest' ? () => router.push(`/workout/${workout.id}`) : undefined}>
+
+                      <MaterialCommunityIcons name={getWorkoutIcon(workout.workout_type) as any} size={16} color={statusColor} style={{ marginRight: 8, width: 16 }} />
+
+                      <YStack flex={1}>
+                        <B color="$textTertiary" fontSize={11} fontWeight="600" marginBottom={1}>
+                          {formatDate(workout.scheduled_date)}{isWToday ? '  (Today)' : ''}
+                        </B>
+                        <B color="$color" fontSize={14}>{workout.workout_type === 'rest' ? 'Rest Day' : workout.title}</B>
+                      </YStack>
+
+                      {workout.workout_type !== 'rest' && workout.target_distance_miles != null && (
+                        <M color="$textSecondary" fontSize={13} fontWeight="700" marginLeft="$2">
+                          {workout.target_distance_miles.toFixed(1)} mi
+                        </M>
                       )}
-                      {workout.adjustment_reason && (
-                        <Pressable
-                          onPress={() => Alert.alert(
-                            'AI Adjustment',
-                            `Original: ${workout.original_distance_miles?.toFixed(1) || '?'}mi → Now: ${workout.distance_miles.toFixed(1)}mi\n\n${workout.adjustment_reason}`
-                          )}
-                          style={{ marginLeft: 4, padding: 4 }}
-                        >
-                          <Lightning size={14} color="#FF9500" weight="fill" />
-                        </Pressable>
-                      )}
-                      <Text style={styles.statusIcon}>
-                        {workout.status === 'completed' ? '✓' : workout.status === 'skipped' ? '✕' : workout.workout_type === 'rest' ? '' : '–'}
-                      </Text>
-                    </Pressable>
+                    </XStack>
                   );
                 })}
-              </View>
+
+                {week.ai_notes && (
+                  <YStack paddingTop="$2" marginTop="$1">
+                    <B color="$textTertiary" fontSize={12} fontStyle="italic" lineHeight={17}>{week.ai_notes}</B>
+                  </YStack>
+                )}
+              </YStack>
             )}
-          </View>
+          </YStack>
         );
       })}
+
+      <YStack height={40} />
     </ScrollView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
-  content: { padding: 16, paddingBottom: 40 },
-  statsRow: { flexDirection: 'row', gap: 12, marginBottom: 20 },
-  statBox: { flex: 1, backgroundColor: COLORS.surface, borderRadius: 12, padding: 16, alignItems: 'center' },
-  statValue: { color: COLORS.accent, fontSize: 24, fontWeight: '800', fontFamily: 'Courier' },
-  statLabel: { color: COLORS.textSecondary, fontSize: 11, marginTop: 4, fontWeight: '500' },
-  weekCard: { backgroundColor: COLORS.surface, borderRadius: 12, marginBottom: 8, borderWidth: 0.5, borderColor: COLORS.border, overflow: 'hidden' },
-  weekHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 14 },
-  weekLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  weekNumber: { color: COLORS.text, fontSize: 16, fontWeight: '700', width: 32 },
-  phaseBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8 },
-  phaseBadgeText: { color: '#fff', fontSize: 10, fontWeight: '700', letterSpacing: 0.5 },
-  weekRight: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  volumeText: { color: COLORS.textSecondary, fontSize: 14, fontWeight: '600', fontFamily: 'Courier' },
-  expandIcon: { color: COLORS.textTertiary, fontSize: 12 },
-  workoutList: { borderTopWidth: 0.5, borderTopColor: COLORS.border },
-  workoutRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, paddingHorizontal: 14, borderBottomWidth: 0.5, borderBottomColor: COLORS.border },
-  dayName: { color: COLORS.textSecondary, fontSize: 13, fontWeight: '600', width: 36 },
-  workoutLabel: { color: COLORS.text, fontSize: 14, flex: 1 },
-  workoutDist: { color: COLORS.textSecondary, fontSize: 13, fontFamily: 'Courier', marginRight: 8 },
-  adaptedIcon: { color: COLORS.warning, fontSize: 12, fontWeight: '700', width: 14, textAlign: 'center' },
-  statusIcon: { color: COLORS.textSecondary, fontSize: 14, width: 20, textAlign: 'center' },
-  emptyText: { color: COLORS.textSecondary, fontSize: 16, textAlign: 'center', marginTop: 60 },
-  digestCard: { backgroundColor: COLORS.surface, borderRadius: 16, padding: 20, marginBottom: 16, borderWidth: 1, borderColor: 'rgba(0, 122, 255, 0.25)' },
-  digestHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  digestHeaderLeft: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  digestLabel: { color: COLORS.accent, fontSize: 11, fontWeight: '700', letterSpacing: 1 },
-  digestHeadline: { color: COLORS.text, fontSize: 17, fontWeight: '700', lineHeight: 24, marginBottom: 4 },
-  digestVolume: { color: COLORS.textSecondary, fontSize: 14, fontFamily: 'Courier', marginBottom: 12 },
-  digestSection: { marginBottom: 8 },
-  digestBulletRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, paddingVertical: 3 },
-  digestDot: { width: 7, height: 7, borderRadius: 3.5, marginTop: 5 },
-  digestBulletText: { color: COLORS.text, fontSize: 13, lineHeight: 19, flex: 1 },
-  digestRecovery: { color: COLORS.textSecondary, fontSize: 13, lineHeight: 18, marginBottom: 8 },
-  digestNextWeek: { backgroundColor: COLORS.background, borderRadius: 10, padding: 12, marginBottom: 8 },
-  digestNextWeekLabel: { color: COLORS.textTertiary, fontSize: 10, fontWeight: '700', letterSpacing: 1, marginBottom: 4 },
-  digestNextWeekText: { color: COLORS.text, fontSize: 13, lineHeight: 19 },
-  digestCoachNote: { color: COLORS.accent, fontSize: 13, fontWeight: '600', lineHeight: 18, fontStyle: 'italic', marginBottom: 12 },
-  digestDiscussButton: { alignSelf: 'flex-start', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8, backgroundColor: 'rgba(0, 122, 255, 0.12)' },
-  digestDiscussText: { color: COLORS.accent, fontSize: 13, fontWeight: '600' },
-});

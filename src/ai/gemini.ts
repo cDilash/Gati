@@ -1,114 +1,129 @@
+/**
+ * Gemini API client — centralized Gemini access with retry and error handling.
+ *
+ * All AI modules import from here. Handles:
+ * - Model initialization
+ * - Exponential backoff on 429/5xx
+ * - JSON extraction from markdown-fenced responses
+ * - Rate limit awareness
+ */
+
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import Constants from 'expo-constants';
-import { CoachMessage, TrainingContext, PlanMutation } from '../types';
-import { buildCoachSystemPrompt, CoachPromptOptions } from './coachPrompt';
-import { UnitSystem } from '../utils/units';
-import { getStravaDetailForWorkout } from '../db/client';
-import { canMakeAPICall, incrementAPICallCount } from './rateLimiter';
 
 const API_KEY = Constants.expoConfig?.extra?.geminiApiKey || '';
 const genAI = new GoogleGenerativeAI(API_KEY);
+const MODEL_NAME = 'gemini-2.5-flash';
 
 const MAX_RETRIES = 3;
-const BASE_DELAY = 1000;
+const BASE_DELAY_MS = 1500;
 
-export async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
+// ─── Core API ───────────────────────────────────────────────
+
+/**
+ * Send a single-turn structured message (system + user) and get text back.
+ */
+export async function sendStructuredMessage(
+  systemInstruction: string,
+  userMessage: string,
+): Promise<string> {
+  if (!API_KEY) throw new Error('Gemini API key not configured');
+
+  const model = genAI.getGenerativeModel({
+    model: MODEL_NAME,
+    systemInstruction,
+  });
+
+  const result = await withRetry(() =>
+    model.generateContent(userMessage)
+  );
+
+  return result.response.text();
+}
+
+/**
+ * Send a multi-turn chat message with conversation history.
+ */
+export async function sendChatMessage(
+  systemInstruction: string,
+  history: Array<{ role: 'user' | 'assistant'; content: string }>,
+  userMessage: string,
+): Promise<string> {
+  if (!API_KEY) throw new Error('Gemini API key not configured');
+
+  const model = genAI.getGenerativeModel({
+    model: MODEL_NAME,
+    systemInstruction,
+  });
+
+  // Convert to Gemini format (uses 'model' not 'assistant')
+  const geminiHistory = history.map(msg => ({
+    role: msg.role === 'assistant' ? 'model' as const : 'user' as const,
+    parts: [{ text: msg.content }],
+  }));
+
+  const chat = model.startChat({ history: geminiHistory });
+
+  const result = await withRetry(() =>
+    chat.sendMessage(userMessage)
+  );
+
+  return result.response.text();
+}
+
+// ─── JSON Extraction ────────────────────────────────────────
+
+/**
+ * Extract JSON from a Gemini response that may contain markdown fences,
+ * explanatory text, or other wrapping.
+ */
+export function extractJSON(text: string): any {
+  // Strategy 1: Look for ```json ... ``` blocks
+  const jsonBlockMatch = text.match(/```json\s*([\s\S]*?)\s*```/);
+  if (jsonBlockMatch) {
+    return JSON.parse(jsonBlockMatch[1]);
+  }
+
+  // Strategy 2: Look for ``` ... ``` blocks (no json tag)
+  const codeBlockMatch = text.match(/```\s*([\s\S]*?)\s*```/);
+  if (codeBlockMatch) {
+    return JSON.parse(codeBlockMatch[1]);
+  }
+
+  // Strategy 3: Try parsing the whole response as JSON
+  // Trim any leading/trailing whitespace or BOM
+  const trimmed = text.trim().replace(/^\uFEFF/, '');
+  return JSON.parse(trimmed);
+}
+
+// ─── Retry Logic ────────────────────────────────────────────
+
+async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     try {
       return await fn();
     } catch (error: any) {
-      if (error?.status === 429 && attempt < MAX_RETRIES - 1) {
-        const delay = BASE_DELAY * Math.pow(2, attempt);
-        await new Promise(resolve => setTimeout(resolve, delay));
+      const status = error?.status || error?.code;
+      const message = error?.message || '';
+      const isRateLimit = status === 429 || message.includes('429');
+      const isServerError = status >= 500;
+      const isRetryable = isRateLimit || isServerError;
+
+      if (isRetryable && attempt < MAX_RETRIES - 1) {
+        const delay = Math.min(BASE_DELAY_MS * Math.pow(2, attempt), 30000);
+        const jitter = Math.random() * 500;
+        console.log(`[Gemini] Retry ${attempt + 1}/${MAX_RETRIES} after ${Math.round(delay + jitter)}ms (${isRateLimit ? '429' : status})`);
+        await new Promise(resolve => setTimeout(resolve, delay + jitter));
         continue;
       }
       throw error;
     }
   }
-  throw new Error('Max retries exceeded');
+  throw new Error('Gemini: max retries exceeded');
 }
 
-export async function sendCoachMessage(
-  conversationHistory: CoachMessage[],
-  context: TrainingContext,
-  units: UnitSystem = 'imperial',
-  shoesSummary?: string,
-): Promise<{ response: string; mutation?: PlanMutation }> {
-  if (!canMakeAPICall()) {
-    return { response: "I've reached my daily limit for coaching responses. Please try again tomorrow, or check the pre-workout briefing card for today's guidance." };
-  }
+// ─── Utilities ──────────────────────────────────────────────
 
-  incrementAPICallCount();
-
-  // Gather Strava split data for recent completed workouts
-  const stravaDetails: CoachPromptOptions['stravaDetails'] = [];
-  const recentCompleted = (context.thisWeekWorkouts || [])
-    .filter(w => w.status === 'completed' && w.workout_type !== 'rest')
-    .slice(0, 5);
-  for (const w of recentCompleted) {
-    try {
-      const detail = getStravaDetailForWorkout(w.id);
-      if (detail?.splits?.length) {
-        stravaDetails.push({
-          workoutDate: w.date,
-          workoutType: w.workout_type,
-          splits: detail.splits,
-          elevationGainFt: detail.elevation_gain_ft,
-          cadenceAvg: detail.cadence_avg,
-          sufferScore: detail.suffer_score,
-        });
-      }
-    } catch {
-      // Strava detail not available for this workout
-    }
-  }
-
-  const systemPrompt = buildCoachSystemPrompt(context, { units, stravaDetails, shoesSummary });
-
-  const model = genAI.getGenerativeModel({
-    model: 'gemini-2.5-flash',
-    systemInstruction: systemPrompt,
-  });
-
-  const chatHistory = conversationHistory.map(msg => ({
-    role: msg.role === 'assistant' ? 'model' as const : 'user' as const,
-    parts: [{ text: msg.content }],
-  }));
-
-  // The last message in history is the new user message
-  const lastMessage = chatHistory.pop();
-  if (!lastMessage) throw new Error('No message to send');
-
-  const chat = model.startChat({
-    history: chatHistory,
-  });
-
-  const result = await withRetry(() => chat.sendMessage(lastMessage.parts[0].text));
-  const responseText = result.response.text();
-
-  // Try to parse plan mutation from response
-  const mutation = parsePlanMutation(responseText);
-
-  return { response: responseText, mutation };
-}
-
-function parsePlanMutation(responseText: string): PlanMutation | undefined {
-  try {
-    // Look for JSON block in response
-    const jsonMatch = responseText.match(/```json\s*(\{[\s\S]*?"mutation"[\s\S]*?\})\s*```/);
-    if (!jsonMatch) return undefined;
-
-    const parsed = JSON.parse(jsonMatch[1]);
-    if (parsed.mutation && parsed.mutation.type && parsed.mutation.description) {
-      return {
-        type: parsed.mutation.type,
-        affected_workout_ids: parsed.mutation.affected_workout_ids || [],
-        description: parsed.mutation.description,
-        changes: parsed.mutation.changes,
-      };
-    }
-  } catch {
-    // Malformed JSON — ignore and return text-only response
-  }
-  return undefined;
+export function isGeminiAvailable(): boolean {
+  return !!API_KEY && API_KEY !== 'YOUR_GEMINI_API_KEY';
 }

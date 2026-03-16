@@ -28,13 +28,8 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     'expo-router',
     'expo-sqlite',
     'expo-location',
-    [
-      'react-native-health',
-      {
-        isClinicalDataEnabled: false,
-      },
-    ],
     'react-native-maps',
+    'expo-font',
   ],
   extra: {
     geminiApiKey: process.env.GEMINI_API_KEY || '',

@@ -1,7 +1,9 @@
 /**
- * Strava → SQLite sync pipeline.
+ * Strava → SQLite sync pipeline (v2).
+ *
  * Fetches new running activities, converts to PerformanceMetrics,
  * matches to scheduled workouts, and stores rich Strava detail.
+ * Updated for v2 schema (workout.scheduled_date, performance_metric.duration_minutes, etc.)
  */
 
 import * as Crypto from 'expo-crypto';
@@ -23,19 +25,22 @@ export interface SyncResult {
 // ─── SQLite helpers ────────────────────────────────────────
 
 function getDb() {
-  const SQLite = require('expo-sqlite');
-  return SQLite.openDatabaseSync('marathon_coach.db');
+  const { getDatabase } = require('../db/database');
+  return getDatabase() as import('expo-sqlite').SQLiteDatabase;
 }
 
 function getLastSyncTimestamp(): number | null {
   try {
     const db = getDb();
+    console.log('[Sync] getLastSyncTimestamp - db instance:', !!db);
     const row = db.getFirstSync(
       'SELECT last_sync_at FROM strava_tokens WHERE id = 1'
     ) as { last_sync_at: string | null } | null;
+    console.log('[Sync] last_sync_at:', row?.last_sync_at);
     if (!row?.last_sync_at) return null;
     return Math.floor(new Date(row.last_sync_at).getTime() / 1000);
-  } catch {
+  } catch (e) {
+    console.warn('[Sync] getLastSyncTimestamp failed:', e);
     return null;
   }
 }
@@ -48,19 +53,6 @@ function updateLastSyncTimestamp(): void {
     );
   } catch {
     // Non-critical
-  }
-}
-
-function metricExistsForDate(date: string, source: string): boolean {
-  try {
-    const db = getDb();
-    const row = db.getFirstSync(
-      'SELECT id FROM performance_metric WHERE date = ? AND source = ?',
-      date, source
-    );
-    return row !== null;
-  } catch {
-    return false;
   }
 }
 
@@ -80,43 +72,41 @@ function stravaActivityAlreadyImported(stravaActivityId: number): boolean {
 function getScheduledWorkoutsInRange(startDate: string, endDate: string): Workout[] {
   try {
     const db = getDb();
-    const rows = db.getAllSync(
-      'SELECT * FROM workout WHERE date >= ? AND date <= ? ORDER BY date',
+    return db.getAllSync<Workout>(
+      `SELECT * FROM workout
+       WHERE scheduled_date >= ? AND scheduled_date <= ?
+       AND plan_id IN (SELECT id FROM training_plan WHERE status = 'active')
+       ORDER BY scheduled_date`,
       startDate, endDate
-    ) as any[];
-    return rows.map(parseWorkoutRow);
+    );
   } catch {
     return [];
   }
 }
 
-function parseWorkoutRow(row: any): Workout {
-  return {
-    ...row,
-    is_cutback: !!row.is_cutback,
-    intervals: row.intervals_json ? JSON.parse(row.intervals_json) : undefined,
-  };
-}
-
-function saveMetric(metric: PerformanceMetric): void {
+function saveMetric(metric: Omit<PerformanceMetric, 'created_at'>): void {
   const db = getDb();
   db.runSync(
     `INSERT OR REPLACE INTO performance_metric
-     (id, workout_id, date, source, distance_miles, duration_seconds, avg_pace_per_mile, avg_hr, max_hr, calories, route_json, rpe_score, synced_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     (id, workout_id, strava_activity_id, date, distance_miles, duration_minutes,
+      avg_pace_sec_per_mile, avg_hr, max_hr, splits_json, best_efforts_json,
+      perceived_exertion, gear_name, strava_workout_type, source)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     metric.id,
-    metric.workout_id || null,
+    metric.workout_id ?? null,
+    metric.strava_activity_id ?? null,
     metric.date,
-    metric.source,
     metric.distance_miles,
-    metric.duration_seconds,
-    metric.avg_pace_per_mile,
-    metric.avg_hr || null,
-    metric.max_hr || null,
-    metric.calories || null,
-    metric.route_json || null,
-    metric.rpe_score ?? null,
-    metric.synced_at,
+    metric.duration_minutes,
+    metric.avg_pace_sec_per_mile ?? null,
+    metric.avg_hr ?? null,
+    metric.max_hr ?? null,
+    metric.splits_json ?? null,
+    metric.best_efforts_json ?? null,
+    metric.perceived_exertion ?? null,
+    metric.gear_name ?? null,
+    metric.strava_workout_type ?? null,
+    metric.source,
   );
 }
 
@@ -129,7 +119,6 @@ function saveStravaDetail(
   const id = Crypto.randomUUID();
 
   // Subsample streams to ~1 point per minute to save space
-  // All streams use the same interval so indices stay aligned
   const streamLength = streams?.heartrate?.data?.length
     ?? streams?.velocity_smooth?.data?.length
     ?? streams?.distance?.data?.length
@@ -153,6 +142,8 @@ function saveStravaDetail(
   const paceStream = subsampleAt(streams?.velocity_smooth?.data);
   const distanceStream = subsampleAt(streams?.distance?.data);
   const elevationStream = subsampleAt(streams?.altitude?.data);
+  const cadenceStream = subsampleAt(streams?.cadence?.data);
+  const timeStream = subsampleAt(streams?.time?.data);
 
   db.runSync(
     `INSERT OR REPLACE INTO strava_activity_detail
@@ -162,8 +153,11 @@ function saveStravaDetail(
       best_efforts_json, gear_id, gear_name, perceived_exertion,
       strava_workout_type, moving_time_sec, elapsed_time_sec,
       polyline_encoded, summary_polyline_encoded,
-      distance_stream_json, elevation_stream_json)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      distance_stream_json, elevation_stream_json,
+      cadence_stream_json, time_stream_json,
+      segment_efforts_json, timezone, utc_offset,
+      activity_name, activity_type, description)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     id,
     metricId,
     detail.id,
@@ -187,77 +181,82 @@ function saveStravaDetail(
     detail.summaryPolylineEncoded,
     distanceStream ? JSON.stringify(distanceStream) : null,
     elevationStream ? JSON.stringify(elevationStream) : null,
+    cadenceStream ? JSON.stringify(cadenceStream) : null,
+    timeStream ? JSON.stringify(timeStream) : null,
+    detail.segmentEfforts.length > 0 ? JSON.stringify(detail.segmentEfforts) : null,
+    detail.timezone,
+    detail.utcOffset,
+    detail.name || null,
+    detail.type || 'Run',
+    detail.description || null,
   );
 }
 
-function markWorkoutCompleted(workoutId: string): void {
+function markWorkoutCompleted(workoutId: string, stravaActivityId: number): void {
   try {
     const db = getDb();
     db.runSync(
-      "UPDATE workout SET status = 'completed', updated_at = datetime('now') WHERE id = ? AND status = 'scheduled'",
-      workoutId
+      "UPDATE workout SET status = 'completed', strava_activity_id = ? WHERE id = ? AND status = 'upcoming'",
+      stravaActivityId,
+      workoutId,
     );
   } catch {
     // Non-critical
   }
 }
 
-// ─── Stream Subsampling ────────────────────────────────────
-
-
-
 // ─── Activity → PerformanceMetric Conversion ───────────────
 
 function stravaActivityToMetric(
   detail: StravaActivityDetail,
   matchedWorkoutId: string | null,
-): PerformanceMetric {
+): Omit<PerformanceMetric, 'created_at'> {
   const distanceMiles = metersToMiles(detail.distance);
   const avgPacePerMile = Math.round(mpsToSecondsPerMile(detail.averageSpeed));
+  const durationMinutes = Math.round(detail.movingTime / 60 * 100) / 100;
 
   return {
     id: Crypto.randomUUID(),
-    workout_id: matchedWorkoutId || undefined,
-    date: detail.startDate.split('T')[0], // ISO date only
+    workout_id: matchedWorkoutId,
+    strava_activity_id: detail.id,
+    date: detail.startDate.split('T')[0],
     source: 'strava',
-    distance_miles: Math.round(distanceMiles * 100) / 100, // 2 decimal places
-    duration_seconds: detail.movingTime,
-    avg_pace_per_mile: avgPacePerMile,
-    avg_hr: detail.averageHeartrate || undefined,
-    max_hr: detail.maxHeartrate || undefined,
-    calories: detail.calories || undefined,
-    rpe_score: detail.perceivedExertion ?? null,
-    synced_at: new Date().toISOString(),
+    distance_miles: Math.round(distanceMiles * 100) / 100,
+    duration_minutes: durationMinutes,
+    avg_pace_sec_per_mile: avgPacePerMile,
+    avg_hr: detail.averageHeartrate ?? null,
+    max_hr: detail.maxHeartrate ?? null,
+    splits_json: detail.splitsStandard.length > 0 ? JSON.stringify(detail.splitsStandard) : null,
+    best_efforts_json: detail.bestEfforts.length > 0 ? JSON.stringify(detail.bestEfforts) : null,
+    perceived_exertion: detail.perceivedExertion ?? null,
+    gear_name: detail.gearName ?? null,
+    strava_workout_type: detail.stravaWorkoutType ?? null,
   };
 }
 
 // ─── Workout Matching ──────────────────────────────────────
 
-/**
- * Match a Strava activity to a scheduled workout by date and distance proximity.
- * Returns the workout_id or null if no match.
- */
 function matchToScheduledWorkout(
   activityDate: string,
   activityDistanceMiles: number,
   scheduledWorkouts: Workout[],
 ): string | null {
-  // Find workouts on the same date that aren't rest days
+  // Find workouts on the same date that aren't rest days and aren't already completed
   const sameDayWorkouts = scheduledWorkouts.filter(
-    w => w.date === activityDate && w.workout_type !== 'rest'
+    w => w.scheduled_date === activityDate &&
+         w.workout_type !== 'rest' &&
+         w.status === 'upcoming'
   );
 
   if (sameDayWorkouts.length === 0) return null;
-
   if (sameDayWorkouts.length === 1) return sameDayWorkouts[0].id;
 
-  // Multiple workouts on same date (e.g., AM easy + PM intervals):
-  // match by closest distance
+  // Multiple workouts: match by closest distance
   let bestMatch = sameDayWorkouts[0];
-  let bestDiff = Math.abs(sameDayWorkouts[0].distance_miles - activityDistanceMiles);
+  let bestDiff = Math.abs((sameDayWorkouts[0].target_distance_miles ?? 0) - activityDistanceMiles);
 
   for (let i = 1; i < sameDayWorkouts.length; i++) {
-    const diff = Math.abs(sameDayWorkouts[i].distance_miles - activityDistanceMiles);
+    const diff = Math.abs((sameDayWorkouts[i].target_distance_miles ?? 0) - activityDistanceMiles);
     if (diff < bestDiff) {
       bestDiff = diff;
       bestMatch = sameDayWorkouts[i];
@@ -269,29 +268,25 @@ function matchToScheduledWorkout(
 
 // ─── Main Sync Function ───────────────────────────────────
 
-/**
- * Sync recent Strava activities to SQLite.
- * Fetches new runs, converts to PerformanceMetrics, matches to workouts.
- */
 export async function syncStravaActivities(options?: {
   afterTimestamp?: number;
   perPage?: number;
 }): Promise<SyncResult> {
   const result: SyncResult = { newActivities: 0, matched: 0, unmatched: 0 };
 
-  // Get the timestamp to sync from (use override for historical sync)
+  console.log('[Sync] Starting syncStravaActivities...');
   const lastSync = options?.afterTimestamp ?? getLastSyncTimestamp();
+  console.log('[Sync] Last sync timestamp:', lastSync);
 
-  // Fetch recent activities (runs only)
+  // Fetch recent running activities
   const activities = await getRecentActivities(lastSync ?? undefined, options?.perPage);
   if (activities.length === 0) {
     updateLastSyncTimestamp();
-    await backfillPolylines();
     rematchOrphanedMetrics();
     return result;
   }
 
-  // Get all scheduled workouts in the date range for matching
+  // Get scheduled workouts in the date range for matching
   const dates = activities.map(a => a.startDate.split('T')[0]);
   const minDate = dates.reduce((a, b) => (a < b ? a : b));
   const maxDate = dates.reduce((a, b) => (a > b ? a : b));
@@ -301,34 +296,28 @@ export async function syncStravaActivities(options?: {
     // Skip if already imported (dedup by strava_activity_id)
     if (stravaActivityAlreadyImported(activity.id)) continue;
 
-    // Fetch detailed data
+    // Fetch detailed data + streams
     const detail = await getActivityDetail(activity.id);
     if (!detail) continue;
 
-    // Fetch streams
     const streams = await getActivityStreams(activity.id);
 
-    // Convert to PerformanceMetric
+    // Convert and match
     const activityDate = detail.startDate.split('T')[0];
     const distanceMiles = metersToMiles(detail.distance);
 
-    // Match to scheduled workout
     const matchedWorkoutId = matchToScheduledWorkout(
-      activityDate,
-      distanceMiles,
-      scheduledWorkouts,
+      activityDate, distanceMiles, scheduledWorkouts,
     );
 
-    // Create and save the metric
+    // Save metric + detail
     const metric = stravaActivityToMetric(detail, matchedWorkoutId);
     saveMetric(metric);
-
-    // Save the rich Strava detail
     saveStravaDetail(metric.id, detail, streams);
 
     // Auto-mark matched workout as completed
     if (matchedWorkoutId) {
-      markWorkoutCompleted(matchedWorkoutId);
+      markWorkoutCompleted(matchedWorkoutId, detail.id);
       result.matched++;
     } else {
       result.unmatched++;
@@ -338,87 +327,14 @@ export async function syncStravaActivities(options?: {
   }
 
   updateLastSyncTimestamp();
-
-  // Backfill polylines for activities synced before the 10A migration
-  await backfillPolylines();
-
-  // Re-match unmatched metrics to current plan workouts
   rematchOrphanedMetrics();
+  await backfillPolylines();
 
   return result;
 }
 
-// ─── Polyline Backfill ────────────────────────────────────
-
-/**
- * Re-fetch detail for activities missing polyline data.
- * These were synced before the MIGRATE_STRAVA_DETAIL_10A migration
- * added the polyline_encoded column.
- */
-async function backfillPolylines(): Promise<void> {
-  try {
-    const db = getDb();
-    const rows = db.getAllSync<{ strava_activity_id: number; id: string }>(
-      `SELECT id, strava_activity_id FROM strava_activity_detail
-       WHERE polyline_encoded IS NULL AND strava_activity_id IS NOT NULL
-       LIMIT 10`
-    );
-
-    if (rows.length === 0) return;
-    console.log(`[Backfill] ${rows.length} activities missing polyline — re-fetching`);
-
-    for (const row of rows) {
-      const detail = await getActivityDetail(row.strava_activity_id);
-      if (!detail?.polylineEncoded) continue;
-
-      const streams = await getActivityStreams(row.strava_activity_id);
-
-      // Subsample streams consistently
-      const streamLength = streams?.heartrate?.data?.length
-        ?? streams?.velocity_smooth?.data?.length
-        ?? streams?.distance?.data?.length
-        ?? 0;
-      const interval = streamLength > 60 ? Math.ceil(streamLength / 60) : 1;
-
-      function subsample(data: number[] | undefined): string | null {
-        if (!data || data.length === 0) return null;
-        if (data.length <= 60) return JSON.stringify(data);
-        const result: number[] = [];
-        for (let i = 0; i < data.length; i += interval) result.push(data[i]);
-        if (result[result.length - 1] !== data[data.length - 1]) result.push(data[data.length - 1]);
-        return JSON.stringify(result);
-      }
-
-      db.runSync(
-        `UPDATE strava_activity_detail SET
-           polyline_encoded = ?,
-           summary_polyline_encoded = ?,
-           distance_stream_json = COALESCE(distance_stream_json, ?),
-           elevation_stream_json = COALESCE(elevation_stream_json, ?)
-         WHERE id = ?`,
-        detail.polylineEncoded,
-        detail.summaryPolylineEncoded,
-        subsample(streams?.distance?.data),
-        subsample(streams?.altitude?.data),
-        row.id,
-      );
-    }
-
-    console.log(`[Backfill] Done — updated ${rows.length} activities`);
-  } catch (e) {
-    console.warn('[Backfill] Failed:', e);
-  }
-}
-
 // ─── Re-match Orphaned Metrics ────────────────────────────
 
-/**
- * Find performance_metric rows with no workout_id and try to match them
- * against the current training plan by date + distance proximity.
- *
- * This handles the case where activities were imported before the plan existed,
- * or when the plan was regenerated with new workout IDs.
- */
 function rematchOrphanedMetrics(): void {
   try {
     const db = getDb();
@@ -435,7 +351,6 @@ function rematchOrphanedMetrics(): void {
 
     if (orphans.length === 0) return;
 
-    // Get all scheduled (unmatched) workouts in the date range
     const dates = orphans.map(o => o.date);
     const minDate = dates.reduce((a, b) => (a < b ? a : b));
     const maxDate = dates.reduce((a, b) => (a > b ? a : b));
@@ -444,25 +359,24 @@ function rematchOrphanedMetrics(): void {
     let matched = 0;
     for (const orphan of orphans) {
       const workoutId = matchToScheduledWorkout(
-        orphan.date,
-        orphan.distance_miles,
-        scheduledWorkouts,
+        orphan.date, orphan.distance_miles, scheduledWorkouts,
       );
       if (!workoutId) continue;
 
-      // Check this workout isn't already matched to another metric
+      // Check this workout isn't already matched
       const existing = db.getFirstSync<{ id: string }>(
         'SELECT id FROM performance_metric WHERE workout_id = ?',
         workoutId,
       );
       if (existing) continue;
 
-      // Link the metric to the workout
+      db.runSync('UPDATE performance_metric SET workout_id = ? WHERE id = ?', workoutId, orphan.id);
+
+      // Also mark the workout completed if it's still upcoming
       db.runSync(
-        'UPDATE performance_metric SET workout_id = ? WHERE id = ?',
-        workoutId, orphan.id,
+        "UPDATE workout SET status = 'completed' WHERE id = ? AND status = 'upcoming'",
+        workoutId,
       );
-      markWorkoutCompleted(workoutId);
       matched++;
     }
 
@@ -471,5 +385,38 @@ function rematchOrphanedMetrics(): void {
     }
   } catch (e) {
     console.warn('[Rematch] Failed:', e);
+  }
+}
+
+// ─── Polyline Backfill ────────────────────────────────────
+
+async function backfillPolylines(): Promise<void> {
+  try {
+    const db = getDb();
+    const rows = db.getAllSync<{ strava_activity_id: number; id: string }>(
+      `SELECT id, strava_activity_id FROM strava_activity_detail
+       WHERE polyline_encoded IS NULL AND strava_activity_id IS NOT NULL
+       LIMIT 10`
+    );
+
+    if (rows.length === 0) return;
+    console.log(`[Backfill] ${rows.length} activities missing polyline — re-fetching`);
+
+    for (const row of rows) {
+      const detail = await getActivityDetail(row.strava_activity_id);
+      if (!detail?.polylineEncoded) continue;
+
+      db.runSync(
+        `UPDATE strava_activity_detail SET
+           polyline_encoded = ?,
+           summary_polyline_encoded = ?
+         WHERE id = ?`,
+        detail.polylineEncoded,
+        detail.summaryPolylineEncoded,
+        row.id,
+      );
+    }
+  } catch (e) {
+    console.warn('[Backfill] Failed:', e);
   }
 }

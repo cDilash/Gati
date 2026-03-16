@@ -24,21 +24,27 @@ export const PHASE_COLORS: Record<string, string> = {
 
 export const WORKOUT_TYPE_LABELS: Record<string, string> = {
   easy: 'Easy Run',
-  long: 'Long Run',
+  long_run: 'Long Run',
+  threshold: 'Threshold',
+  intervals: 'Intervals',
   tempo: 'Tempo',
-  interval: 'Intervals',
-  recovery: 'Recovery',
+  hill_repeats: 'Hill Repeats',
+  fartlek: 'Fartlek',
   marathon_pace: 'Marathon Pace',
+  recovery: 'Recovery',
   rest: 'Rest Day',
 };
 
 export const WORKOUT_TYPE_ICONS: Record<string, string> = {
   easy: 'person-simple-run',
-  long: 'mountains',
-  tempo: 'lightning',
-  interval: 'timer',
-  recovery: 'heart',
+  long_run: 'mountains',
+  threshold: 'lightning',
+  intervals: 'timer',
+  tempo: 'speedometer',
+  hill_repeats: 'mountains',
+  fartlek: 'shuffle',
   marathon_pace: 'flag',
+  recovery: 'heart',
   rest: 'moon',
 };
 

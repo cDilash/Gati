@@ -14,8 +14,8 @@ import { Shoe, ShoeAlert } from '../types';
 // ─── SQLite helpers ────────────────────────────────────────
 
 function getDb() {
-  const SQLite = require('expo-sqlite');
-  return SQLite.openDatabaseSync('marathon_coach.db');
+  const { getDatabase } = require('../db/database');
+  return getDatabase();
 }
 
 function upsertShoe(shoe: Shoe): void {

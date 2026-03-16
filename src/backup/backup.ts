@@ -1,13 +1,12 @@
 /**
- * backup.ts — Cloud save/restore for Marathon Coach
+ * backup.ts — Cloud save/restore for Marathon Coach v2
  *
  * Architecture:
- * - SQLite is ALWAYS primary. This module is only touched during explicit backup/restore.
- * - serializeDatabase() reads all tables and produces a JSON snapshot
- * - uploadBackup() upserts that snapshot to Supabase (one row per user, overwritten each time)
- * - getBackupInfo() fetches just the metadata (timestamp, device) without downloading all data
- *
- * Security: Strava access_token and refresh_token are NEVER included in the backup.
+ * - SQLite is ALWAYS primary. Cloud is a mirror for recovery.
+ * - serializeDatabase() reads all v2 tables → JSON snapshot
+ * - uploadBackup() upserts to Supabase (one row per user)
+ * - restoreDatabase() writes snapshot back to SQLite
+ * - Auto-backup fires after plan generation and profile saves
  */
 
 import * as Device from 'expo-device';
@@ -17,42 +16,24 @@ import { supabase } from './supabase';
 import { getCurrentUserId } from './auth';
 import { BackupData, BackupInfo } from '../types';
 
-// Current schema version — bump this when the schema changes in a breaking way
-export const BACKUP_SCHEMA_VERSION = 1;
+export const BACKUP_SCHEMA_VERSION = 2;
 
-// ─── Serialization ───────────────────────────────────────────
+// ─── Serialization (v2 schema) ──────────────────────────────
 
-/**
- * Reads all SQLite tables and produces a single BackupData object.
- * Strava access_token and refresh_token are stripped for security.
- */
 export function serializeDatabase(): BackupData {
   const db = getDatabase();
 
-  // Read all tables
   const userProfiles = db.getAllSync<any>('SELECT * FROM user_profile');
   const trainingPlans = db.getAllSync<any>('SELECT * FROM training_plan');
   const trainingWeeks = db.getAllSync<any>('SELECT * FROM training_week');
   const workouts = db.getAllSync<any>('SELECT * FROM workout');
   const performanceMetrics = db.getAllSync<any>('SELECT * FROM performance_metric');
   const coachMessages = db.getAllSync<any>('SELECT * FROM coach_message');
-  const adaptiveLogs = db.getAllSync<any>('SELECT * FROM adaptive_log');
-  const strava_activity_details = db.getAllSync<any>('SELECT * FROM strava_activity_detail');
-  const briefingCache = db.getAllSync<any>('SELECT * FROM ai_briefing_cache');
+  const stravaDetails = db.getAllSync<any>('SELECT * FROM strava_activity_detail');
+  const shoes = db.getAllSync<any>('SELECT * FROM shoes');
 
-  // Health snapshots — last 30 days only (keeps backup size manageable)
-  const thirtyDaysAgo = new Date();
-  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-  const healthSnapshots = db.getAllSync<any>(
-    'SELECT * FROM health_snapshot WHERE date >= ? ORDER BY date DESC',
-    thirtyDaysAgo.toISOString().split('T')[0]
-  );
-
-  // Strava tokens — include full tokens for seamless restore
+  // Strava tokens for seamless restore
   const stravaRow = db.getFirstSync<any>('SELECT * FROM strava_tokens LIMIT 1');
-  const stravaReference = stravaRow
-    ? { athleteId: stravaRow.athlete_id, athleteName: stravaRow.athlete_name }
-    : null;
   const stravaTokens = stravaRow
     ? {
         access_token: stravaRow.access_token,
@@ -64,7 +45,7 @@ export function serializeDatabase(): BackupData {
     : null;
 
   const deviceName = Device.modelName || Device.deviceName || 'Unknown Device';
-  const appVersion = Constants.expoConfig?.version || '1.0.0';
+  const appVersion = Constants.expoConfig?.version || '2.0.0';
 
   return {
     version: BACKUP_SCHEMA_VERSION,
@@ -77,64 +58,64 @@ export function serializeDatabase(): BackupData {
     workouts,
     performanceMetrics,
     coachMessages,
-    adaptiveLogs,
-    healthSnapshots,
-    stravaReference,
+    shoes,
+    appSettings: null,
+    // Legacy fields (empty in v2, kept for type compat)
+    adaptiveLogs: [],
+    healthSnapshots: [],
+    briefingCache: [],
+    stravaDetails,
     stravaTokens,
-    appSettings: null, // reserved for future settings store
-    briefingCache,
-    stravaDetails: strava_activity_details,
   };
 }
 
-// ─── Upload ──────────────────────────────────────────────────
+// ─── Upload ─────────────────────────────────────────────────
 
-/**
- * Uploads a BackupData object to Supabase.
- * Upserts — overwrites the previous backup for this user.
- */
 export async function uploadBackup(
-  data: BackupData
+  data?: BackupData,
 ): Promise<{ success: boolean; error?: string }> {
   const userId = await getCurrentUserId();
   if (!userId) {
-    return { success: false, error: 'Not signed in to cloud backup.' };
+    return { success: false, error: 'Not signed in.' };
   }
+
+  const backup = data ?? serializeDatabase();
 
   const { error } = await supabase.from('backups').upsert(
     {
       user_id: userId,
-      backup_data: data,
-      app_version: data.appVersion,
-      device_name: data.deviceName,
+      backup_data: backup,
+      app_version: backup.appVersion,
+      device_name: backup.deviceName,
       created_at: new Date().toISOString(),
     },
-    { onConflict: 'user_id' }
+    { onConflict: 'user_id' },
   );
 
   if (error) {
-    console.error('Backup upload error:', error);
-    if (error.message.includes('network') || error.message.includes('fetch')) {
-      return { success: false, error: 'Network error. Check your connection and try again.' };
-    }
-    if (error.message.includes('JWT') || error.message.includes('auth')) {
-      return { success: false, error: 'Session expired. Please sign in again.' };
-    }
-    if (error.message.includes('too large') || error.code === '54000') {
-      return { success: false, error: 'Backup too large. Contact support.' };
-    }
+    console.error('[Backup] Upload error:', error);
     return { success: false, error: error.message };
   }
 
+  console.log('[Backup] Upload successful');
   return { success: true };
 }
 
-// ─── Backup Info ─────────────────────────────────────────────
-
 /**
- * Fetches just the backup metadata (timestamp, device name, app version)
- * without downloading the full backup_data payload.
+ * Silent auto-backup — fire-and-forget, never throws.
  */
+export async function autoBackup(): Promise<void> {
+  try {
+    const userId = await getCurrentUserId();
+    if (!userId) return; // Not logged in, skip silently
+    await uploadBackup();
+  } catch (e) {
+    console.warn('[Backup] Auto-backup failed:', e);
+  }
+}
+
+// ─── Backup Info ────────────────────────────────────────────
+
 export async function getBackupInfo(): Promise<BackupInfo> {
   const userId = await getCurrentUserId();
   if (!userId) {
@@ -159,12 +140,8 @@ export async function getBackupInfo(): Promise<BackupInfo> {
   };
 }
 
-// ─── Download ────────────────────────────────────────────────
+// ─── Download ───────────────────────────────────────────────
 
-/**
- * Downloads the full backup from Supabase.
- * Returns the BackupData object, or null if no backup exists.
- */
 export async function downloadBackup(): Promise<BackupData | null> {
   const userId = await getCurrentUserId();
   if (!userId) return null;
@@ -179,234 +156,226 @@ export async function downloadBackup(): Promise<BackupData | null> {
   return data.backup_data as BackupData;
 }
 
-// ─── Validation ──────────────────────────────────────────────
+// ─── Restore (v2 schema) ───────────────────────────────────
 
-/**
- * Validates a BackupData object before writing it to SQLite.
- * Catches obviously malformed or incompatible backups early.
- */
-export function validateBackupData(data: BackupData): { valid: boolean; errors: string[] } {
-  const errors: string[] = [];
-
-  if (!data || typeof data !== 'object') {
-    return { valid: false, errors: ['Backup data is missing or malformed.'] };
-  }
-
-  // Schema version check
-  if (typeof data.version !== 'number') {
-    errors.push('Missing schema version.');
-  } else if (data.version > BACKUP_SCHEMA_VERSION) {
-    errors.push(`Backup was created with a newer app version (schema v${data.version}). Please update the app first.`);
-  }
-
-  // Required fields
-  if (!data.userProfile || typeof data.userProfile !== 'object') {
-    errors.push('Missing user profile.');
-  }
-  if (!Array.isArray(data.trainingWeeks)) {
-    errors.push('Missing training weeks array.');
-  }
-  if (!Array.isArray(data.workouts)) {
-    errors.push('Missing workouts array.');
-  }
-  if (!Array.isArray(data.performanceMetrics)) {
-    errors.push('Missing performance metrics array.');
-  }
-
-  // Sanity checks on sizes (catch obviously corrupt data)
-  if (data.workouts && data.workouts.length > 10000) {
-    errors.push('Backup contains an implausible number of workouts.');
-  }
-
-  return { valid: errors.length === 0, errors };
-}
-
-// ─── Restore ────────────────────────────────────────────────
-
-/**
- * Restores all SQLite tables from a BackupData object.
- *
- * CRITICAL: The entire restore is wrapped in a SQLite transaction.
- * If anything fails mid-restore, the transaction rolls back and
- * local data is completely untouched.
- *
- * After restore, call store.initializeApp() to reload Zustand state.
- * Strava: user must re-authenticate (tokens were excluded from backup).
- */
 export async function restoreDatabase(
-  data: BackupData
+  data: BackupData,
 ): Promise<{ success: boolean; error?: string }> {
-  const validation = validateBackupData(data);
-  if (!validation.valid) {
-    return { success: false, error: validation.errors.join(' ') };
+  if (!data || !data.userProfile) {
+    return { success: false, error: 'Invalid backup: missing user profile.' };
   }
 
   const db = getDatabase();
 
   try {
+    // Disable FK checks during restore — v1 backup data may have different FK relationships
+    db.execSync('PRAGMA foreign_keys = OFF;');
+
     db.withTransactionSync(() => {
-      // Clear all tables in reverse foreign-key order to avoid constraint errors
+      // Clear all tables
       db.execSync('DELETE FROM strava_activity_detail');
       db.execSync('DELETE FROM performance_metric');
       db.execSync('DELETE FROM workout');
       db.execSync('DELETE FROM training_week');
       db.execSync('DELETE FROM training_plan');
       db.execSync('DELETE FROM coach_message');
-      db.execSync('DELETE FROM adaptive_log');
-      db.execSync('DELETE FROM health_snapshot');
-      db.execSync('DELETE FROM ai_briefing_cache');
-      db.execSync('DELETE FROM strava_tokens');
+      db.execSync('DELETE FROM ai_cache');
+      db.execSync('DELETE FROM shoes');
       db.execSync('DELETE FROM user_profile');
 
-      // Restore user profile
-      if (data.userProfile) {
-        const p = data.userProfile;
+      // Restore user profile (handle both v1 and v2 column names)
+      const p = data.userProfile;
+      if (p) {
         db.runSync(
           `INSERT OR REPLACE INTO user_profile
-           (id, name, age, weight_lbs, resting_hr, max_hr, vdot, current_weekly_mileage,
-            race_date, race_distance, recent_race_distance, recent_race_time_seconds,
-            level, available_days, preferred_long_run_day, longest_recent_run,
-            goal_marathon_time_seconds, created_at, updated_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-          p.id, p.name, p.age, p.weight_lbs, p.resting_hr, p.max_hr, p.vdot,
-          p.current_weekly_mileage, p.race_date, p.race_distance, p.recent_race_distance,
-          p.recent_race_time_seconds, p.level, p.available_days, p.preferred_long_run_day,
-          p.longest_recent_run, p.goal_marathon_time_seconds || null,
-          p.created_at, p.updated_at
+           (id, name, age, gender, weight_kg, vdot_score, max_hr, rest_hr,
+            current_weekly_miles, longest_recent_run, experience_level,
+            race_date, race_name, race_course_profile, race_goal_type,
+            target_finish_time_sec, injury_history, known_weaknesses,
+            scheduling_notes, available_days, long_run_day, updated_at)
+           VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+          p.name ?? null,
+          p.age ?? 30,
+          p.gender ?? 'male',
+          p.weight_kg ?? p.weight_lbs ?? null,
+          p.vdot_score ?? p.vdot ?? 40,
+          p.max_hr ?? null,
+          p.rest_hr ?? p.resting_hr ?? null,
+          p.current_weekly_miles ?? p.current_weekly_mileage ?? 20,
+          p.longest_recent_run ?? 8,
+          p.experience_level ?? p.level ?? 'intermediate',
+          p.race_date ?? '',
+          p.race_name ?? null,
+          p.race_course_profile ?? 'unknown',
+          p.race_goal_type ?? 'finish',
+          p.target_finish_time_sec ?? p.goal_marathon_time_seconds ?? null,
+          typeof p.injury_history === 'string' ? p.injury_history : JSON.stringify(p.injury_history ?? []),
+          typeof p.known_weaknesses === 'string' ? p.known_weaknesses : JSON.stringify(p.known_weaknesses ?? []),
+          p.scheduling_notes ?? null,
+          typeof p.available_days === 'string' ? p.available_days : JSON.stringify(p.available_days ?? [1,2,3,4,5,6]),
+          p.long_run_day ?? p.preferred_long_run_day ?? 0,
         );
       }
 
       // Restore training plan
       if (data.trainingPlan) {
-        const p = data.trainingPlan;
+        const t = data.trainingPlan;
         db.runSync(
           `INSERT OR REPLACE INTO training_plan
-           (id, start_date, race_date, total_weeks, peak_weekly_mileage, vdot_at_creation, created_at, updated_at)
-           VALUES (?,?,?,?,?,?,?,?)`,
-          p.id, p.start_date, p.race_date, p.total_weeks, p.peak_weekly_mileage,
-          p.vdot_at_creation, p.created_at, p.updated_at
+           (id, plan_json, coaching_notes, key_principles, warnings,
+            vdot_at_generation, status, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          t.id,
+          t.plan_json ?? JSON.stringify({}),
+          t.coaching_notes ?? null,
+          t.key_principles ?? null,
+          t.warnings ?? null,
+          t.vdot_at_generation ?? t.vdot_at_creation ?? 40,
+          t.status ?? 'active',
+          t.created_at ?? new Date().toISOString(),
+          t.updated_at ?? new Date().toISOString(),
         );
       }
 
       // Restore training weeks
-      for (const w of data.trainingWeeks || []) {
+      for (const w of data.trainingWeeks ?? []) {
         db.runSync(
           `INSERT OR REPLACE INTO training_week
-           (id, plan_id, week_number, phase, is_cutback, target_volume_miles, actual_volume_miles, start_date, end_date)
-           VALUES (?,?,?,?,?,?,?,?,?)`,
-          w.id, w.plan_id, w.week_number, w.phase, w.is_cutback,
-          w.target_volume_miles, w.actual_volume_miles, w.start_date, w.end_date
+           (id, plan_id, week_number, phase, target_volume, actual_volume, is_cutback, ai_notes)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          w.id, w.plan_id, w.week_number, w.phase,
+          w.target_volume ?? w.target_volume_miles ?? 0,
+          w.actual_volume ?? w.actual_volume_miles ?? 0,
+          w.is_cutback ? 1 : 0,
+          w.ai_notes ?? null,
         );
       }
 
       // Restore workouts
-      for (const w of data.workouts || []) {
+      for (const w of data.workouts ?? []) {
         db.runSync(
           `INSERT OR REPLACE INTO workout
-           (id, week_id, date, day_of_week, workout_type, distance_miles, target_pace_zone,
-            intervals_json, status, notes, created_at, updated_at,
-            original_distance_miles, adjustment_reason)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-          w.id, w.week_id, w.date, w.day_of_week, w.workout_type, w.distance_miles,
-          w.target_pace_zone, w.intervals_json || null, w.status, w.notes || null,
-          w.created_at, w.updated_at,
-          w.original_distance_miles || null, w.adjustment_reason || null
+           (id, plan_id, week_number, day_of_week, scheduled_date, workout_type,
+            title, description, target_distance_miles, target_pace_zone,
+            intervals_json, status, original_distance_miles, modification_reason,
+            strava_activity_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          w.id,
+          w.plan_id ?? w.week_id ?? '',
+          w.week_number ?? 1,
+          w.day_of_week ?? 0,
+          w.scheduled_date ?? w.date ?? '',
+          w.workout_type ?? 'easy',
+          w.title ?? w.workout_type ?? 'Run',
+          w.description ?? w.notes ?? '',
+          w.target_distance_miles ?? w.distance_miles ?? null,
+          w.target_pace_zone ?? null,
+          w.intervals_json ?? null,
+          w.status === 'scheduled' ? 'upcoming' : (w.status ?? 'upcoming'),
+          w.original_distance_miles ?? null,
+          w.modification_reason ?? w.adjustment_reason ?? null,
+          w.strava_activity_id ?? null,
         );
       }
 
       // Restore performance metrics
-      for (const m of data.performanceMetrics || []) {
+      for (const m of data.performanceMetrics ?? []) {
         db.runSync(
           `INSERT OR REPLACE INTO performance_metric
-           (id, workout_id, date, source, distance_miles, duration_seconds,
-            avg_pace_per_mile, avg_hr, max_hr, calories, route_json, synced_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
-          m.id, m.workout_id || null, m.date, m.source, m.distance_miles,
-          m.duration_seconds, m.avg_pace_per_mile, m.avg_hr || null,
-          m.max_hr || null, m.calories || null, m.route_json || null, m.synced_at
+           (id, workout_id, strava_activity_id, date, distance_miles, duration_minutes,
+            avg_pace_sec_per_mile, avg_hr, max_hr, splits_json, best_efforts_json,
+            perceived_exertion, gear_name, strava_workout_type, source)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          m.id,
+          m.workout_id ?? null,
+          m.strava_activity_id ?? null,
+          m.date,
+          m.distance_miles ?? 0,
+          m.duration_minutes ?? (m.duration_seconds ? m.duration_seconds / 60 : 0),
+          m.avg_pace_sec_per_mile ?? m.avg_pace_per_mile ?? null,
+          m.avg_hr ?? null,
+          m.max_hr ?? null,
+          m.splits_json ?? null,
+          m.best_efforts_json ?? null,
+          m.perceived_exertion ?? m.rpe_score ?? null,
+          m.gear_name ?? null,
+          m.strava_workout_type ?? null,
+          m.source ?? 'strava',
         );
       }
 
-      // Restore Strava activity details
-      for (const d of data.stravaDetails || []) {
+      // Restore strava details
+      for (const d of data.stravaDetails ?? []) {
         db.runSync(
           `INSERT OR REPLACE INTO strava_activity_detail
            (id, performance_metric_id, strava_activity_id, splits_json, laps_json,
             hr_stream_json, pace_stream_json, elevation_gain_ft, calories,
-            cadence_avg, suffer_score, device_name)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+            cadence_avg, suffer_score, device_name, best_efforts_json,
+            gear_id, gear_name, perceived_exertion, strava_workout_type,
+            moving_time_sec, elapsed_time_sec, polyline_encoded, summary_polyline_encoded,
+            distance_stream_json, elevation_stream_json,
+            activity_name, activity_type, description)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           d.id, d.performance_metric_id, d.strava_activity_id,
-          d.splits_json || null, d.laps_json || null,
-          d.hr_stream_json || null, d.pace_stream_json || null,
-          d.elevation_gain_ft || null, d.calories || null,
-          d.cadence_avg || null, d.suffer_score || null, d.device_name || null
+          d.splits_json ?? null, d.laps_json ?? null,
+          d.hr_stream_json ?? null, d.pace_stream_json ?? null,
+          d.elevation_gain_ft ?? null, d.calories ?? null,
+          d.cadence_avg ?? null, d.suffer_score ?? null, d.device_name ?? null,
+          d.best_efforts_json ?? null, d.gear_id ?? null, d.gear_name ?? null,
+          d.perceived_exertion ?? null, d.strava_workout_type ?? null,
+          d.moving_time_sec ?? null, d.elapsed_time_sec ?? null,
+          d.polyline_encoded ?? null, d.summary_polyline_encoded ?? null,
+          d.distance_stream_json ?? null, d.elevation_stream_json ?? null,
+          d.activity_name ?? null, d.activity_type ?? null, d.description ?? null,
         );
       }
 
       // Restore coach messages
-      for (const m of data.coachMessages || []) {
+      for (const m of data.coachMessages ?? []) {
         db.runSync(
           `INSERT OR REPLACE INTO coach_message
-           (id, role, content, structured_action_json, action_applied, created_at, conversation_id)
-           VALUES (?,?,?,?,?,?,?)`,
-          m.id, m.role, m.content, m.structured_action_json || null,
-          m.action_applied || 0, m.created_at, m.conversation_id
+           (id, role, content, message_type, metadata_json)
+           VALUES (?, ?, ?, ?, ?)`,
+          m.id, m.role, m.content,
+          m.message_type ?? 'chat',
+          m.metadata_json ?? m.structured_action_json ?? null,
         );
       }
 
-      // Restore adaptive logs
-      for (const l of data.adaptiveLogs || []) {
+      // Restore shoes
+      for (const s of data.shoes ?? []) {
         db.runSync(
-          `INSERT OR REPLACE INTO adaptive_log
-           (id, timestamp, type, summary, adjustments_json, metadata_json, acknowledged)
-           VALUES (?,?,?,?,?,?,?)`,
-          l.id, l.timestamp, l.type, l.summary,
-          l.adjustments_json || '[]', l.metadata_json || '{}', l.acknowledged || 0
+          `INSERT OR REPLACE INTO shoes
+           (id, strava_gear_id, name, brand, total_miles, max_miles, retired)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          s.id, s.strava_gear_id ?? s.stravaGearId ?? null,
+          s.name, s.brand ?? null,
+          s.total_miles ?? s.totalMiles ?? 0,
+          s.max_miles ?? s.maxMiles ?? 500,
+          (s.retired ? 1 : 0),
         );
       }
 
-      // Restore health snapshots
-      for (const s of data.healthSnapshots || []) {
-        db.runSync(
-          `INSERT OR REPLACE INTO health_snapshot
-           (id, date, resting_hr, hrv_sdnn, hrv_trend_7d_json, sleep_hours,
-            sleep_quality, weight_lbs, steps, recovery_score, signal_count, cached_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
-          s.id, s.date, s.resting_hr || null, s.hrv_sdnn || null,
-          s.hrv_trend_7d_json || null, s.sleep_hours || null,
-          s.sleep_quality || null, s.weight_lbs || null, s.steps || null,
-          s.recovery_score || null, s.signal_count || 0, s.cached_at
-        );
-      }
-
-      // Restore AI briefing cache
-      for (const b of data.briefingCache || []) {
-        db.runSync(
-          `INSERT OR REPLACE INTO ai_briefing_cache
-           (id, type, date, context_hash, content, created_at)
-           VALUES (?,?,?,?,?,?)`,
-          b.id, b.type, b.date, b.context_hash, b.content, b.created_at
-        );
-      }
-
-      // Restore Strava tokens if included in backup (seamless reconnection)
+      // Restore Strava tokens
       if (data.stravaTokens) {
         const t = data.stravaTokens;
         db.runSync(
           `INSERT OR REPLACE INTO strava_tokens
            (id, access_token, refresh_token, expires_at, athlete_id, athlete_name, connected_at)
            VALUES (1, ?, ?, ?, ?, ?, datetime('now'))`,
-          t.access_token, t.refresh_token, t.expires_at, t.athlete_id, t.athlete_name || null
+          t.access_token, t.refresh_token, t.expires_at, t.athlete_id, t.athlete_name ?? null,
         );
       }
     });
 
+    // Re-enable FK checks
+    db.execSync('PRAGMA foreign_keys = ON;');
+    console.log('[Backup] Restore successful');
     return { success: true };
   } catch (e: any) {
-    console.error('Restore failed, transaction rolled back:', e);
-    return {
-      success: false,
-      error: `Restore failed: ${e?.message || 'Unknown error'}. Your local data was not changed.`,
-    };
+    // Re-enable FK checks even on failure
+    try { db.execSync('PRAGMA foreign_keys = ON;'); } catch {}
+    console.error('[Backup] Restore failed:', e);
+    return { success: false, error: e.message || 'Restore failed' };
   }
 }
