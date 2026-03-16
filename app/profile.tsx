@@ -27,7 +27,7 @@ const GOAL_LABELS: Record<string, string> = { finish: 'Just Finish', time_goal: 
 
 export default function ProfileScreen() {
   const router = useRouter();
-  const { userProfile, paceZones, saveProfile } = useAppStore();
+  const { userProfile, paceZones, saveProfile, lastSyncTime } = useAppStore();
   const units = useSettingsStore(s => s.units);
   const isMetric = units === 'metric';
   const [editing, setEditing] = useState(false);
@@ -165,10 +165,10 @@ export default function ProfileScreen() {
         <YStack backgroundColor={COLORS.surface} borderRadius={14} overflow="hidden">
           <LiveInfoRow label="Weekly Mileage" value={
             isMetric ? `${(userProfile.current_weekly_miles * 1.60934).toFixed(1)} km` : `${userProfile.current_weekly_miles} mi`
-          } />
+          } lastSync={lastSyncTime} />
           <LiveInfoRow label="Longest Recent Run" value={
             isMetric ? `${(userProfile.longest_recent_run * 1.60934).toFixed(1)} km` : `${userProfile.longest_recent_run} mi`
-          } />
+          } lastSync={lastSyncTime} />
           <InfoRow label="Available Days" value={userProfile.available_days.map(d => DAY_LABELS[d]).join(', ')} />
           <InfoRow label="Long Run Day" value={DAY_LABELS[userProfile.long_run_day]} />
         </YStack>
@@ -350,14 +350,31 @@ function InfoRow({ label, value, accent }: { label: string; value: string; accen
   );
 }
 
-function LiveInfoRow({ label, value }: { label: string; value: string }) {
+function LiveInfoRow({ label, value, lastSync }: { label: string; value: string; lastSync?: string | null }) {
+  const syncLabel = lastSync ? formatSyncDate(lastSync) : '';
   return (
     <YStack paddingVertical={12} paddingHorizontal={16} borderBottomWidth={0.5} borderBottomColor={COLORS.border}>
       <XStack justifyContent="space-between" alignItems="center">
         <B fontSize={15} color={COLORS.textSecondary} flex={1}>{label}</B>
         <M fontSize={15} color={COLORS.text} fontWeight="700">{value}</M>
       </XStack>
-      <B fontSize={10} color={COLORS.accent} marginTop={2}>auto-updated from Strava</B>
+      <B fontSize={10} color={COLORS.accent} marginTop={2}>auto-updated from Strava{syncLabel ? ` · ${syncLabel}` : ''}</B>
     </YStack>
   );
+}
+
+function formatSyncDate(iso: string): string {
+  try {
+    const d = new Date(iso);
+    const now = new Date();
+    const diffMs = now.getTime() - d.getTime();
+    const diffMin = Math.floor(diffMs / 60000);
+    if (diffMin < 1) return 'just now';
+    if (diffMin < 60) return `${diffMin}m ago`;
+    const diffHr = Math.floor(diffMin / 60);
+    if (diffHr < 24) return `${diffHr}h ago`;
+    const diffDay = Math.floor(diffHr / 24);
+    if (diffDay < 7) return `${diffDay}d ago`;
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  } catch { return ''; }
 }
