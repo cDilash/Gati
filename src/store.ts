@@ -611,6 +611,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       });
       set({ coachMessages: getCoachMessages() });
 
+      // Auto-backup after plan adaptation
+      (async () => { try { const { autoBackup } = require('./backup/backup'); await autoBackup(); } catch {} })();
+
       return { success: true, summary: result.changesSummary };
     } catch (error: any) {
       console.error('[Store] Adaptation failed:', error);
@@ -644,6 +647,9 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       set({ weeklyDigest: review });
       setSetting(lastReviewedKey, String(currentWeekNumber));
+
+      // Auto-backup at end of week (natural checkpoint)
+      (async () => { try { const { autoBackup } = require('./backup/backup'); await autoBackup(); } catch {} })();
 
       // If adaptation needed, auto-trigger
       if (review.adaptationNeeded && review.adaptationReason) {
@@ -684,6 +690,8 @@ export const useAppStore = create<AppState>((set, get) => ({
                 vdotNotification: { oldVDOT: profileUpdate.oldVDOT, newVDOT: profileUpdate.newVDOT, source: src },
               });
               try { setSetting('pending_vdot_notification', JSON.stringify({ oldVDOT: profileUpdate.oldVDOT, newVDOT: profileUpdate.newVDOT, source: src })); } catch {}
+              // Auto-backup after VDOT change
+              (async () => { try { const { autoBackup } = require('./backup/backup'); await autoBackup(); } catch {} })();
             }
           }
         }

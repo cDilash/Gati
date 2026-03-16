@@ -6,7 +6,11 @@
  * - serializeDatabase() reads all v2 tables → JSON snapshot
  * - uploadBackup() upserts to Supabase (one row per user)
  * - restoreDatabase() writes snapshot back to SQLite
- * - Auto-backup fires after plan generation and profile saves
+ * - Auto-backup fires after significant state changes
+ *
+ * Tables NOT backed up (regenerate on demand):
+ * - ai_cache (regenerates from Gemini)
+ * - health_snapshot (regenerates from HealthKit)
  */
 
 import * as Device from 'expo-device';
@@ -16,9 +20,9 @@ import { supabase } from './supabase';
 import { getCurrentUserId } from './auth';
 import { BackupData, BackupInfo } from '../types';
 
-export const BACKUP_SCHEMA_VERSION = 2;
+export const BACKUP_SCHEMA_VERSION = 3; // Bumped: includes all new columns + app_settings
 
-// ─── Serialization (v2 schema) ──────────────────────────────
+// ─── Serialization ──────────────────────────────────────────
 
 export function serializeDatabase(): BackupData {
   const db = getDatabase();
@@ -31,8 +35,12 @@ export function serializeDatabase(): BackupData {
   const coachMessages = db.getAllSync<any>('SELECT * FROM coach_message');
   const stravaDetails = db.getAllSync<any>('SELECT * FROM strava_activity_detail');
   const shoes = db.getAllSync<any>('SELECT * FROM shoes');
+
   let crossTraining: any[] = [];
   try { crossTraining = db.getAllSync<any>('SELECT * FROM cross_training'); } catch {}
+
+  let appSettings: any[] = [];
+  try { appSettings = db.getAllSync<any>('SELECT * FROM app_settings'); } catch {}
 
   // Strava tokens for seamless restore
   const stravaRow = db.getFirstSync<any>('SELECT * FROM strava_tokens LIMIT 1');
@@ -61,8 +69,8 @@ export function serializeDatabase(): BackupData {
     performanceMetrics,
     coachMessages,
     shoes,
-    appSettings: null,
-    // Legacy fields (empty in v2, kept for type compat)
+    appSettings,
+    // Legacy fields (empty in v2+, kept for type compat)
     adaptiveLogs: [],
     healthSnapshots: [],
     briefingCache: [],
@@ -159,7 +167,7 @@ export async function downloadBackup(): Promise<BackupData | null> {
   return data.backup_data as BackupData;
 }
 
-// ─── Restore (v2 schema) ───────────────────────────────────
+// ─── Restore (v2+ schema) ──────────────────────────────────
 
 export async function restoreDatabase(
   data: BackupData,
@@ -171,7 +179,7 @@ export async function restoreDatabase(
   const db = getDatabase();
 
   try {
-    // Disable FK checks during restore — v1 backup data may have different FK relationships
+    // Disable FK checks during restore
     db.execSync('PRAGMA foreign_keys = OFF;');
 
     db.withTransactionSync(() => {
@@ -184,24 +192,30 @@ export async function restoreDatabase(
       db.execSync('DELETE FROM coach_message');
       db.execSync('DELETE FROM ai_cache');
       db.execSync('DELETE FROM shoes');
-      try { db.execSync('DELETE FROM cross_training'); } catch {}
       db.execSync('DELETE FROM user_profile');
+      try { db.execSync('DELETE FROM cross_training'); } catch {}
+      try { db.execSync('DELETE FROM app_settings'); } catch {}
 
-      // Restore user profile (handle both v1 and v2 column names)
+      // ── Restore user profile (all columns, with ?? fallbacks for old backups)
       const p = data.userProfile;
       if (p) {
         db.runSync(
           `INSERT OR REPLACE INTO user_profile
-           (id, name, age, gender, weight_kg, vdot_score, max_hr, rest_hr,
+           (id, name, age, gender, weight_kg, height_cm, vdot_score, max_hr, rest_hr,
             current_weekly_miles, longest_recent_run, experience_level,
             race_date, race_name, race_course_profile, race_goal_type,
             target_finish_time_sec, injury_history, known_weaknesses,
-            scheduling_notes, available_days, long_run_day, updated_at)
-           VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+            scheduling_notes, available_days, long_run_day,
+            weight_source, weight_updated_at,
+            vdot_source, vdot_updated_at, vdot_confidence,
+            max_hr_source, does_strength_training, leg_day_weekday,
+            updated_at)
+           VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
           p.name ?? null,
           p.age ?? 30,
           p.gender ?? 'male',
           p.weight_kg ?? p.weight_lbs ?? null,
+          p.height_cm ?? null,
           p.vdot_score ?? p.vdot ?? 40,
           p.max_hr ?? null,
           p.rest_hr ?? p.resting_hr ?? null,
@@ -218,10 +232,18 @@ export async function restoreDatabase(
           p.scheduling_notes ?? null,
           typeof p.available_days === 'string' ? p.available_days : JSON.stringify(p.available_days ?? [1,2,3,4,5,6]),
           p.long_run_day ?? p.preferred_long_run_day ?? 0,
+          p.weight_source ?? 'manual',
+          p.weight_updated_at ?? null,
+          p.vdot_source ?? 'manual',
+          p.vdot_updated_at ?? null,
+          p.vdot_confidence ?? 'moderate',
+          p.max_hr_source ?? 'formula',
+          p.does_strength_training ? 1 : 0,
+          p.leg_day_weekday ?? null,
         );
       }
 
-      // Restore training plan
+      // ── Restore training plan
       if (data.trainingPlan) {
         const t = data.trainingPlan;
         db.runSync(
@@ -241,7 +263,7 @@ export async function restoreDatabase(
         );
       }
 
-      // Restore training weeks
+      // ── Restore training weeks
       for (const w of data.trainingWeeks ?? []) {
         db.runSync(
           `INSERT OR REPLACE INTO training_week
@@ -255,15 +277,15 @@ export async function restoreDatabase(
         );
       }
 
-      // Restore workouts
+      // ── Restore workouts (with execution_quality)
       for (const w of data.workouts ?? []) {
         db.runSync(
           `INSERT OR REPLACE INTO workout
            (id, plan_id, week_number, day_of_week, scheduled_date, workout_type,
             title, description, target_distance_miles, target_pace_zone,
             intervals_json, status, original_distance_miles, modification_reason,
-            strava_activity_id)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            strava_activity_id, execution_quality)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           w.id,
           w.plan_id ?? w.week_id ?? '',
           w.week_number ?? 1,
@@ -279,10 +301,11 @@ export async function restoreDatabase(
           w.original_distance_miles ?? null,
           w.modification_reason ?? w.adjustment_reason ?? null,
           w.strava_activity_id ?? null,
+          w.execution_quality ?? 'on_target',
         );
       }
 
-      // Restore performance metrics
+      // ── Restore performance metrics
       for (const m of data.performanceMetrics ?? []) {
         db.runSync(
           `INSERT OR REPLACE INTO performance_metric
@@ -308,7 +331,7 @@ export async function restoreDatabase(
         );
       }
 
-      // Restore strava details
+      // ── Restore strava details (with new stream columns)
       for (const d of data.stravaDetails ?? []) {
         db.runSync(
           `INSERT OR REPLACE INTO strava_activity_detail
@@ -318,8 +341,10 @@ export async function restoreDatabase(
             gear_id, gear_name, perceived_exertion, strava_workout_type,
             moving_time_sec, elapsed_time_sec, polyline_encoded, summary_polyline_encoded,
             distance_stream_json, elevation_stream_json,
+            cadence_stream_json, time_stream_json, segment_efforts_json,
+            timezone, utc_offset,
             activity_name, activity_type, description)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           d.id, d.performance_metric_id, d.strava_activity_id,
           d.splits_json ?? null, d.laps_json ?? null,
           d.hr_stream_json ?? null, d.pace_stream_json ?? null,
@@ -330,11 +355,13 @@ export async function restoreDatabase(
           d.moving_time_sec ?? null, d.elapsed_time_sec ?? null,
           d.polyline_encoded ?? null, d.summary_polyline_encoded ?? null,
           d.distance_stream_json ?? null, d.elevation_stream_json ?? null,
+          d.cadence_stream_json ?? null, d.time_stream_json ?? null, d.segment_efforts_json ?? null,
+          d.timezone ?? null, d.utc_offset ?? null,
           d.activity_name ?? null, d.activity_type ?? null, d.description ?? null,
         );
       }
 
-      // Restore coach messages
+      // ── Restore coach messages
       for (const m of data.coachMessages ?? []) {
         db.runSync(
           `INSERT OR REPLACE INTO coach_message
@@ -346,7 +373,7 @@ export async function restoreDatabase(
         );
       }
 
-      // Restore shoes
+      // ── Restore shoes
       for (const s of data.shoes ?? []) {
         db.runSync(
           `INSERT OR REPLACE INTO shoes
@@ -360,8 +387,8 @@ export async function restoreDatabase(
         );
       }
 
-      // Restore cross-training
-      for (const ct of (data as any).crossTraining ?? []) {
+      // ── Restore cross-training
+      for (const ct of data.crossTraining ?? []) {
         try {
           db.runSync(
             `INSERT OR REPLACE INTO cross_training (id, date, type, impact, notes, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
@@ -370,7 +397,17 @@ export async function restoreDatabase(
         } catch {}
       }
 
-      // Restore Strava tokens
+      // ── Restore app settings
+      for (const s of data.appSettings ?? []) {
+        try {
+          db.runSync(
+            'INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)',
+            s.key, s.value,
+          );
+        } catch {}
+      }
+
+      // ── Restore Strava tokens
       if (data.stravaTokens) {
         const t = data.stravaTokens;
         db.runSync(
@@ -387,7 +424,6 @@ export async function restoreDatabase(
     console.log('[Backup] Restore successful');
     return { success: true };
   } catch (e: any) {
-    // Re-enable FK checks even on failure
     try { db.execSync('PRAGMA foreign_keys = ON;'); } catch {}
     console.error('[Backup] Restore failed:', e);
     return { success: false, error: e.message || 'Restore failed' };

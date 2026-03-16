@@ -332,7 +332,7 @@ export interface BackupData {
   performanceMetrics: any[];
   coachMessages: any[];
   shoes?: any[];
-  appSettings: any;
+  appSettings: any[] | any;
   // Legacy fields kept for backward compatibility with existing backups
   adaptiveLogs: any[];
   healthSnapshots: any[];
