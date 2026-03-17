@@ -1,4 +1,4 @@
-import React, { useEffect, useCallback, useState } from 'react';
+import React, { useEffect, useCallback, useState, useMemo } from 'react';
 import { RefreshControl } from 'react-native';
 import { ScrollView, YStack, XStack, Text, View, Spinner, Button } from 'tamagui';
 import { useRouter } from 'expo-router';
@@ -71,6 +71,16 @@ export default function TodayScreen() {
   const markWorkoutSkipped = useAppStore(s => s.markWorkoutSkipped);
   const syncAll = useAppStore(s => s.syncAll);
 
+  // Get actual metric for today's workout if completed
+  const todaysMetric = useMemo(() => {
+    if (!todaysWorkout || todaysWorkout.status !== 'completed') return null;
+    try {
+      const { getMetricsForWorkout } = require('../../src/db/database');
+      const metrics = getMetricsForWorkout(todaysWorkout.id);
+      return metrics.length > 0 ? metrics[0] : null;
+    } catch { return null; }
+  }, [todaysWorkout?.id, todaysWorkout?.status]);
+
   const totalWeeks = weeks.length;
 
   useEffect(() => {
@@ -86,7 +96,15 @@ export default function TodayScreen() {
 
   const handleSkip = useCallback(() => {
     if (!todaysWorkout) return;
-    markWorkoutSkipped(todaysWorkout.id);
+    const { Alert } = require('react-native');
+    Alert.alert(
+      'Skip today\'s workout?',
+      `This will mark ${todaysWorkout.title} (${todaysWorkout.target_distance_miles?.toFixed(1) ?? '?'} mi) as skipped.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Skip Workout', style: 'destructive', onPress: () => markWorkoutSkipped(todaysWorkout.id) },
+      ]
+    );
   }, [todaysWorkout?.id]);
 
   const onRefresh = useCallback(() => {
@@ -454,6 +472,42 @@ export default function TodayScreen() {
           {todaysWorkout.status === 'completed' && (
             <YStack backgroundColor="$successMuted" paddingVertical="$3" borderRadius="$4" alignItems="center" marginTop="$1">
               <B color="$color" fontSize={14} fontWeight="600">Completed</B>
+            </YStack>
+          )}
+
+          {/* Actual run data from Strava */}
+          {todaysWorkout.status === 'completed' && todaysMetric && (
+            <YStack marginTop="$3" paddingTop="$3" borderTopWidth={1} borderTopColor="$border">
+              <H color={colors.cyan} fontSize={11} textTransform="uppercase" letterSpacing={1.5} marginBottom="$2">Actual Performance</H>
+              <XStack gap="$4" flexWrap="wrap">
+                <YStack>
+                  <M color="$color" fontSize={18} fontWeight="800">{todaysMetric.distance_miles.toFixed(1)} mi</M>
+                  <B color="$textTertiary" fontSize={10}>Distance</B>
+                </YStack>
+                {todaysMetric.avg_pace_sec_per_mile && (
+                  <YStack>
+                    <M color="$color" fontSize={18} fontWeight="800">{formatPace(todaysMetric.avg_pace_sec_per_mile)}</M>
+                    <B color="$textTertiary" fontSize={10}>Avg Pace</B>
+                  </YStack>
+                )}
+                {todaysMetric.duration_minutes && (
+                  <YStack>
+                    <M color="$color" fontSize={18} fontWeight="800">{Math.floor(todaysMetric.duration_minutes)}:{String(Math.round((todaysMetric.duration_minutes % 1) * 60)).padStart(2, '0')}</M>
+                    <B color="$textTertiary" fontSize={10}>Duration</B>
+                  </YStack>
+                )}
+                {todaysMetric.avg_hr && (
+                  <YStack>
+                    <M color={colors.orange} fontSize={18} fontWeight="800">{todaysMetric.avg_hr}</M>
+                    <B color="$textTertiary" fontSize={10}>Avg HR</B>
+                  </YStack>
+                )}
+              </XStack>
+              {todaysWorkout.target_distance_miles && todaysMetric.distance_miles !== todaysWorkout.target_distance_miles && (
+                <B color="$textTertiary" fontSize={11} marginTop="$2">
+                  Target was {todaysWorkout.target_distance_miles.toFixed(1)} mi — ran {Math.round((todaysMetric.distance_miles / todaysWorkout.target_distance_miles) * 100)}% of target
+                </B>
+              )}
             </YStack>
           )}
           {todaysWorkout.status === 'skipped' && (

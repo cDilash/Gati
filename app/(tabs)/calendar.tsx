@@ -179,9 +179,7 @@ export default function CalendarScreen() {
         const isCurrent = week.week_number === currentWeekNumber;
         const weekWorkouts = workoutsByWeek.get(week.week_number) ?? [];
         const phaseColor = (phaseColors as any)[week.phase] ?? colors.textTertiary;
-        const completedVolume = weekWorkouts
-          .filter(w => w.status === 'completed' && w.target_distance_miles != null)
-          .reduce((sum, w) => sum + (w.target_distance_miles ?? 0), 0);
+        const completedVolume = week.actual_volume;
 
         return (
           <YStack key={week.id} backgroundColor="$surface" borderRadius="$5" marginBottom="$3" overflow="hidden"
