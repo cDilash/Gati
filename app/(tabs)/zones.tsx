@@ -11,10 +11,13 @@ import {
 } from '../../src/engine/vdot';
 import { PaceZoneName, PaceZones, HRZones, Shoe, RecoveryStatus, HealthSnapshot, SleepResult, RestingHRResult } from '../../src/types';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { colors, semantic, zoneColors } from '../../src/theme/colors';
+import { GradientText } from '../../src/theme/GradientText';
+import { GradientBorder } from '../../src/theme/GradientBorder';
 
 const ZONE_NAMES: PaceZoneName[] = ['E', 'M', 'T', 'I', 'R'];
 const ZONE_FULL_NAMES: Record<PaceZoneName, string> = { E: 'Easy', M: 'Marathon', T: 'Threshold', I: 'Interval', R: 'Repetition' };
-const ZONE_COLORS: Record<PaceZoneName, string> = { E: '#34C759', M: '#007AFF', T: '#FF9500', I: '#FF3B30', R: '#AF52DE' };
+const ZONE_COLORS: Record<PaceZoneName, string> = { E: zoneColors[0], M: zoneColors[1], T: zoneColors[2], I: zoneColors[3], R: zoneColors[4] };
 
 const H = (props: any) => <Text fontFamily="$heading" {...props} />;
 const B = (props: any) => <Text fontFamily="$body" {...props} />;
@@ -69,12 +72,12 @@ function RecoveryHero({ recovery, snapshot }: { recovery: RecoveryStatus | null;
 
     return (
       <YStack backgroundColor="$surface" borderRadius="$6" padding="$6" alignItems="center">
-        <MaterialCommunityIcons name="heart-pulse" size={40} color="#666666" />
+        <MaterialCommunityIcons name="heart-pulse" size={40} color={colors.textTertiary} />
         <H color="$color" fontSize={20} letterSpacing={1} marginTop="$3">Recovery Tracking</H>
         <B color="$textSecondary" fontSize={14} textAlign="center" lineHeight={20} marginTop="$2" marginBottom="$4">
           Connect Apple Health to track resting heart rate, HRV, and sleep for daily recovery scoring.
         </B>
-        <YStack backgroundColor="$accent" borderRadius="$5" paddingHorizontal="$8" paddingVertical="$3"
+        <YStack backgroundColor={colors.cyan} borderRadius="$5" paddingHorizontal="$8" paddingVertical="$3"
           pressStyle={{ opacity: 0.8 }} onPress={handleConnect}>
           {connecting ? <Spinner size="small" color="white" /> : <B color="white" fontSize={16} fontWeight="700">Connect Apple Health</B>}
         </YStack>
@@ -82,10 +85,10 @@ function RecoveryHero({ recovery, snapshot }: { recovery: RecoveryStatus | null;
     );
   }
 
-  const color = recovery.score >= 80 ? '#34C759'
-    : recovery.score >= 60 ? '#FF9500'
-    : recovery.score >= 40 ? '#FF9500'
-    : '#FF3B30';
+  const color = recovery.score >= 80 ? colors.cyan
+    : recovery.score >= 60 ? colors.orange
+    : recovery.score >= 40 ? colors.orange
+    : colors.error;
   const label = recovery.level.charAt(0).toUpperCase() + recovery.level.slice(1);
 
   return (
@@ -179,7 +182,7 @@ function RestingHRCard({ signal, trendData }: {
   trendData: RestingHRResult[];
 }) {
   const [width, setWidth] = useState(0);
-  const statusColor = signal.status === 'good' ? '#34C759' : signal.status === 'fair' ? '#FF9500' : '#FF3B30';
+  const statusColor = signal.status === 'good' ? colors.cyan : signal.status === 'fair' ? colors.orange : colors.error;
 
   const data = trendData.slice(0, 14).reverse(); // oldest → newest
   const values = data.map(d => d.value);
@@ -232,8 +235,8 @@ function RestingHRCard({ signal, trendData }: {
                     <Stop offset="1" stopColor={statusColor} stopOpacity="0.02" />
                   </LinearGradient>
                   <LinearGradient id="rhrDanger" x1="0" y1="0" x2="0" y2="1">
-                    <Stop offset="0" stopColor="#FF3B30" stopOpacity="0.12" />
-                    <Stop offset="1" stopColor="#FF3B30" stopOpacity="0.03" />
+                    <Stop offset="0" stopColor={colors.error} stopOpacity="0.12" />
+                    <Stop offset="1" stopColor={colors.error} stopOpacity="0.03" />
                   </LinearGradient>
                 </Defs>
 
@@ -247,12 +250,12 @@ function RestingHRCard({ signal, trendData }: {
 
                 {/* Baseline dashed */}
                 <Line x1={0} y1={baselineY} x2={chartW} y2={baselineY}
-                  stroke="#666666" strokeWidth={1} strokeDasharray="4,4" />
+                  stroke={colors.textTertiary} strokeWidth={1} strokeDasharray="4,4" />
 
                 {/* Scrubber vertical line */}
                 {activeIdx !== null && points[activeIdx] && (
                   <Line x1={points[activeIdx].x} y1={padT} x2={points[activeIdx].x} y2={padT + chartH}
-                    stroke="#FFFFFF" strokeWidth={1} strokeOpacity={0.4} />
+                    stroke={colors.textPrimary} strokeWidth={1} strokeOpacity={0.4} />
                 )}
 
                 {/* Main line */}
@@ -261,14 +264,14 @@ function RestingHRCard({ signal, trendData }: {
                 {/* Dots */}
                 {points.map((p, i) => {
                   const v = data[i].value;
-                  const dotColor = v >= dangerThreshold ? '#FF3B30' : v > baseline + 2 ? '#FF9500' : statusColor;
+                  const dotColor = v >= dangerThreshold ? colors.error : v > baseline + 2 ? colors.orange : statusColor;
                   const isActive = activeIdx === i;
                   const isLast = i === points.length - 1 && activeIdx === null;
                   const r = isActive ? 7 : isLast ? 4 : 2.5;
                   return (
                     <Circle key={i} cx={p.x} cy={p.y} r={r}
                       fill={isActive || isLast ? dotColor : dotColor + '66'}
-                      stroke={isActive ? '#FFFFFF' : isLast ? '#1E1E1E' : 'none'}
+                      stroke={isActive ? colors.textPrimary : isLast ? colors.surface : 'none'}
                       strokeWidth={isActive ? 2 : isLast ? 2 : 0} />
                   );
                 })}
@@ -280,8 +283,8 @@ function RestingHRCard({ signal, trendData }: {
                   position: 'absolute',
                   left: Math.max(0, Math.min(points[activeIdx].x - 44, width - 88)),
                   top: 0,
-                  backgroundColor: '#2A2A2A', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5,
-                  borderWidth: 0.5, borderColor: '#555',
+                  backgroundColor: colors.surfaceHover, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5,
+                  borderWidth: 0.5, borderColor: colors.border,
                 }}>
                   <XStack alignItems="center" gap={6}>
                     <M color="$color" fontSize={15} fontWeight="800">{data[activeIdx].value} bpm</M>
@@ -331,7 +334,7 @@ function SignalCard({ signal, trendData }: {
   signal: { type: string; value: number | null; baseline: number | null; status: string; score: number; detail: string };
   trendData: number[];
 }) {
-  const statusColor = signal.status === 'good' ? '#34C759' : signal.status === 'fair' ? '#FF9500' : '#FF3B30';
+  const statusColor = signal.status === 'good' ? colors.cyan : signal.status === 'fair' ? colors.orange : colors.error;
   const typeLabels: Record<string, string> = { hrv: 'Heart Rate Variability' };
   const typeUnits: Record<string, string> = { hrv: 'ms' };
   const typeIcons: Record<string, string> = { hrv: 'wave' };
@@ -381,7 +384,7 @@ function SignalNotAvailable({ type }: { type: string }) {
   return (
     <YStack backgroundColor="$surface" borderRadius="$6" padding="$4" borderLeftWidth={3} borderLeftColor="$border" opacity={0.6}>
       <XStack alignItems="center" gap="$2">
-        <MaterialCommunityIcons name={icons[type] as any} size={18} color="#666666" />
+        <MaterialCommunityIcons name={icons[type] as any} size={18} color={colors.textTertiary} />
         <B color="$textSecondary" fontSize={14} fontWeight="600">{labels[type]}</B>
         <B color="$textTertiary" fontSize={12} flex={1} textAlign="right">Not available from your device</B>
       </XStack>
@@ -417,10 +420,10 @@ function formatNightLabel(dateStr: string): string {
 }
 
 const STAGE_COLORS = {
-  deep: '#1A3A8F',     // dark blue
-  light: '#5B9BD5',    // light blue
-  rem: '#9B59B6',      // purple
-  awake: '#666666',    // gray
+  deep: '#006090',     // dark cyan
+  light: colors.cyan,
+  rem: '#9966FF',      // purple blend
+  awake: colors.textTertiary,
 };
 
 function SleepCard({ signal, sleepTrend }: {
@@ -428,11 +431,11 @@ function SleepCard({ signal, sleepTrend }: {
   sleepTrend: SleepResult[];
 }) {
   const [sleepGraphW, setSleepGraphW] = useState(0);
-  const statusColor = signal.status === 'good' ? '#34C759' : signal.status === 'fair' ? '#FF9500' : '#FF3B30';
+  const statusColor = signal.status === 'good' ? colors.cyan : signal.status === 'fair' ? colors.orange : colors.error;
   const latest = sleepTrend.length > 0 ? sleepTrend[0] : null; // newest first
   const recentNights = sleepTrend.slice(0, 7).reverse(); // oldest→newest
 
-  const sleepHoursColor = (hrs: number) => hrs >= 7 ? '#34C759' : hrs >= 6 ? '#FF9500' : '#FF3B30';
+  const sleepHoursColor = (hrs: number) => hrs >= 7 ? colors.cyan : hrs >= 6 ? colors.orange : colors.error;
 
   // Sleep line graph dimensions
   const sGraphH = 120;
@@ -547,12 +550,12 @@ function SleepCard({ signal, sleepTrend }: {
 
                   {/* Good sleep threshold */}
                   <Line x1={0} y1={goodLineY} x2={sChartW} y2={goodLineY}
-                    stroke="#34C759" strokeWidth={1} strokeDasharray="4,4" strokeOpacity={0.4} />
+                    stroke={colors.cyan} strokeWidth={1} strokeDasharray="4,4" strokeOpacity={0.4} />
 
                   {/* Scrubber vertical line */}
                   {sleepSelIdx !== null && sleepPoints[sleepSelIdx] && (
                     <Line x1={sleepPoints[sleepSelIdx].x} y1={sPadT} x2={sleepPoints[sleepSelIdx].x} y2={sPadT + sChartH}
-                      stroke="#FFFFFF" strokeWidth={1} strokeOpacity={0.4} />
+                      stroke={colors.textPrimary} strokeWidth={1} strokeOpacity={0.4} />
                   )}
 
                   {/* Fill + line */}
@@ -569,7 +572,7 @@ function SleepCard({ signal, sleepTrend }: {
                     return (
                       <Circle key={i} cx={p.x} cy={p.y} r={r}
                         fill={isActive || isLast ? dotColor : dotColor + '66'}
-                        stroke={isActive ? '#FFFFFF' : isLast ? '#1E1E1E' : 'none'}
+                        stroke={isActive ? colors.textPrimary : isLast ? colors.surface : 'none'}
                         strokeWidth={isActive ? 2 : isLast ? 2 : 0} />
                     );
                   })}
@@ -581,8 +584,8 @@ function SleepCard({ signal, sleepTrend }: {
                     position: 'absolute',
                     left: Math.max(0, Math.min(sleepPoints[sleepSelIdx].x - 50, sleepGraphW - 100)),
                     top: 0,
-                    backgroundColor: '#2A2A2A', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5,
-                    borderWidth: 0.5, borderColor: '#555',
+                    backgroundColor: colors.surfaceHover, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5,
+                    borderWidth: 0.5, borderColor: colors.border,
                   }}>
                     <XStack alignItems="center" gap={6}>
                       <M color="$color" fontSize={15} fontWeight="800">{sleepHours[sleepSelIdx].toFixed(1)} hrs</M>
@@ -644,7 +647,7 @@ function PaceZoneRow({ zone, paceZones }: { zone: PaceZoneName; paceZones: PaceZ
 }
 
 function HRZoneRow({ label, name, min, max, index }: { label: string; name: string; min: number; max: number; index: number }) {
-  const hrColors = ['#34C759', '#007AFF', '#FF9500', '#FF3B30', '#AF52DE'];
+  const hrColors = [zoneColors[0], zoneColors[1], zoneColors[2], zoneColors[3], zoneColors[4]];
   return (
     <XStack alignItems="center" paddingVertical={11} paddingHorizontal="$3" borderBottomWidth={0.5} borderBottomColor="$border">
       <View width={4} height={28} borderRadius={2} marginRight="$3" backgroundColor={hrColors[index]} />
@@ -662,7 +665,7 @@ function ShoeCard({ shoe }: { shoe: Shoe }) {
   const clampedPercent = Math.min(percent, 1);
   const isWarning = percent >= 0.8;
   const isCritical = percent >= 1.0;
-  const barColor = isCritical ? '#FF3B30' : isWarning ? '#FF9500' : '#34C759';
+  const barColor = isCritical ? colors.error : isWarning ? colors.orange : colors.cyan;
 
   return (
     <YStack backgroundColor="$surface" borderRadius="$6" padding="$3" marginBottom="$3" opacity={shoe.retired ? 0.6 : 1}>
@@ -751,10 +754,10 @@ export default function RecoveryScreen() {
           )}
           {hasResp && (
             <YStack backgroundColor="$surface" borderRadius="$6" padding="$4" borderLeftWidth={3}
-              borderLeftColor={recoveryStatus.signals.find(s => s.type === 'respiratory_rate')!.status === 'good' ? '#34C759' : recoveryStatus.signals.find(s => s.type === 'respiratory_rate')!.status === 'fair' ? '#FF9500' : '#FF3B30'}>
+              borderLeftColor={recoveryStatus.signals.find(s => s.type === 'respiratory_rate')!.status === 'good' ? colors.cyan : recoveryStatus.signals.find(s => s.type === 'respiratory_rate')!.status === 'fair' ? colors.orange : colors.error}>
               <XStack alignItems="center" justifyContent="space-between">
                 <XStack alignItems="center" gap="$2">
-                  <MaterialCommunityIcons name="lungs" size={18} color={recoveryStatus.signals.find(s => s.type === 'respiratory_rate')!.status === 'good' ? '#34C759' : '#FF9500'} />
+                  <MaterialCommunityIcons name="lungs" size={18} color={recoveryStatus.signals.find(s => s.type === 'respiratory_rate')!.status === 'good' ? colors.cyan : colors.orange} />
                   <B color="$color" fontSize={14} fontWeight="600">Respiratory Rate</B>
                 </XStack>
                 <XStack alignItems="center" gap="$2">
@@ -764,7 +767,7 @@ export default function RecoveryScreen() {
               </XStack>
               <XStack marginTop="$2" justifyContent="space-between" alignItems="center">
                 <B color="$textTertiary" fontSize={12}>{recoveryStatus.signals.find(s => s.type === 'respiratory_rate')!.detail}</B>
-                <M color={recoveryStatus.signals.find(s => s.type === 'respiratory_rate')!.status === 'good' ? '#34C759' : '#FF9500'} fontSize={12} fontWeight="700">
+                <M color={recoveryStatus.signals.find(s => s.type === 'respiratory_rate')!.status === 'good' ? colors.cyan : colors.orange} fontSize={12} fontWeight="700">
                   {recoveryStatus.signals.find(s => s.type === 'respiratory_rate')!.score}/25
                 </M>
               </XStack>
@@ -779,7 +782,7 @@ export default function RecoveryScreen() {
           {healthSnapshot.spo2 !== null && (
             <XStack alignItems="center" justifyContent="space-between">
               <XStack alignItems="center" gap="$2">
-                <MaterialCommunityIcons name="water-percent" size={16} color={healthSnapshot.spo2 < 94 ? '#FF3B30' : '#A0A0A0'} />
+                <MaterialCommunityIcons name="water-percent" size={16} color={healthSnapshot.spo2 < 94 ? colors.error : colors.textSecondary} />
                 <B color="$textSecondary" fontSize={13}>Blood Oxygen (SpO2)</B>
               </XStack>
               <M color={healthSnapshot.spo2 < 94 ? '$danger' : '$color'} fontSize={15} fontWeight="700">{healthSnapshot.spo2}%</M>
@@ -788,7 +791,7 @@ export default function RecoveryScreen() {
           {healthSnapshot.steps !== null && (
             <XStack alignItems="center" justifyContent="space-between">
               <XStack alignItems="center" gap="$2">
-                <MaterialCommunityIcons name="shoe-print" size={16} color="#A0A0A0" />
+                <MaterialCommunityIcons name="shoe-print" size={16} color={colors.textSecondary} />
                 <B color="$textSecondary" fontSize={13}>Steps Today</B>
               </XStack>
               <M color="$color" fontSize={15} fontWeight="700">{healthSnapshot.steps.toLocaleString()}</M>
@@ -800,7 +803,7 @@ export default function RecoveryScreen() {
       {/* SECTION 3: Today's Recommendation */}
       {recoveryStatus && recoveryStatus.level !== 'unknown' && (
         <YStack backgroundColor="$surface" borderRadius="$6" padding="$4" marginTop="$4" borderLeftWidth={3}
-          borderLeftColor={recoveryStatus.score >= 80 ? '#34C759' : recoveryStatus.score >= 60 ? '#FF9500' : '#FF3B30'}>
+          borderLeftColor={recoveryStatus.score >= 80 ? colors.cyan : recoveryStatus.score >= 60 ? colors.orange : colors.error}>
           <H color="$textSecondary" fontSize={12} textTransform="uppercase" letterSpacing={1.5} marginBottom="$2">
             Today's Recommendation
           </H>

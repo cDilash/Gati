@@ -11,6 +11,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { getWorkoutIcon } from '../../src/utils/workoutIcons';
 import { WeightCheckin } from '../../src/components/WeightCheckin';
 import { RecoveryStatus } from '../../src/types';
+import { colors, semantic } from '../../src/theme/colors';
 
 const H = (props: any) => <Text fontFamily="$heading" {...props} />;
 const B = (props: any) => <Text fontFamily="$body" {...props} />;
@@ -18,10 +19,10 @@ const M = (props: any) => <Text fontFamily="$mono" {...props} />;
 
 function RecoveryBadge({ recovery }: { recovery: RecoveryStatus }) {
   const router = useRouter();
-  const color = recovery.score >= 80 ? '#34C759'
-    : recovery.score >= 60 ? '#FF9500'
-    : recovery.score >= 40 ? '#FF9500'
-    : '#FF3B30';
+  const color = recovery.score >= 80 ? colors.cyan
+    : recovery.score >= 60 ? colors.orange
+    : recovery.score >= 40 ? colors.orange
+    : colors.error;
   const label = recovery.level.charAt(0).toUpperCase() + recovery.level.slice(1);
 
   return (
@@ -34,7 +35,7 @@ function RecoveryBadge({ recovery }: { recovery: RecoveryStatus }) {
         <H color={color} fontSize={13} letterSpacing={1} textTransform="uppercase">{label}</H>
         <B color="$textSecondary" fontSize={12}>{recovery.recommendation}</B>
       </YStack>
-      <MaterialCommunityIcons name="chevron-right" size={18} color="#666666" />
+      <MaterialCommunityIcons name="chevron-right" size={18} color={colors.textTertiary} />
     </XStack>
   );
 }
@@ -206,7 +207,7 @@ export default function TodayScreen() {
     <ScrollView
       flex={1} backgroundColor="$background"
       contentContainerStyle={{ padding: 16, paddingBottom: 40 }}
-      refreshControl={<RefreshControl refreshing={isSyncing} onRefresh={onRefresh} tintColor="#FF6B35" />}
+      refreshControl={<RefreshControl refreshing={isSyncing} onRefresh={onRefresh} tintColor={colors.cyan} />}
     >
       {/* Sync Indicator */}
       {isSyncing && (
@@ -217,7 +218,7 @@ export default function TodayScreen() {
       )}
       {!isSyncing && showSyncDone && (
         <XStack alignItems="center" justifyContent="center" gap="$2" marginBottom="$2">
-          <MaterialCommunityIcons name="check-circle-outline" size={14} color="#34C759" />
+          <MaterialCommunityIcons name="check-circle-outline" size={14} color={colors.cyan} />
           <B color="$textTertiary" fontSize={12}>Updated</B>
         </XStack>
       )}
@@ -254,7 +255,7 @@ export default function TodayScreen() {
           <XStack justifyContent="space-between" alignItems="flex-start">
             <XStack alignItems="center" gap="$2" marginBottom="$2">
               <MaterialCommunityIcons name="lightbulb-outline" size={18}
-                color={proactiveSuggestion.ctSuggestion?.severity === 'strong' ? '#FF3B30' : '#FF9500'} />
+                color={proactiveSuggestion.ctSuggestion?.severity === 'strong' ? colors.error : colors.orange} />
               <H color={proactiveSuggestion.ctSuggestion?.severity === 'strong' ? '$danger' : '$warning'}
                 fontSize={13} letterSpacing={1} textTransform="uppercase">Coach Suggestion</H>
             </XStack>
@@ -371,14 +372,14 @@ export default function TodayScreen() {
           {/* Meta row */}
           <XStack alignItems="center" marginBottom="$3" gap="$3">
             <XStack alignItems="center" backgroundColor="$surfaceLight" paddingHorizontal="$3" paddingVertical="$1" borderRadius="$2">
-              <MaterialCommunityIcons name={getWorkoutIcon(todaysWorkout.workout_type) as any} size={14} color="#FF6B35" style={{ marginRight: 4 }} />
+              <MaterialCommunityIcons name={getWorkoutIcon(todaysWorkout.workout_type) as any} size={14} color={colors.cyan} style={{ marginRight: 4 }} />
               <H color="$accent" fontSize={12} letterSpacing={1}>
                 {WORKOUT_TYPE_LABELS[todaysWorkout.workout_type] ?? todaysWorkout.workout_type}
               </H>
             </XStack>
             {todaysWorkout.target_distance_miles != null && (
               <XStack alignItems="center" gap="$1">
-                <MaterialCommunityIcons name="map-marker-distance" size={16} color="#FFFFFF" />
+                <MaterialCommunityIcons name="map-marker-distance" size={16} color={colors.textPrimary} />
                 <M color="$color" fontSize={20} fontWeight="700">{todaysWorkout.target_distance_miles.toFixed(1)} mi</M>
               </XStack>
             )}
@@ -484,9 +485,9 @@ export default function TodayScreen() {
             ]);
           }}>
           <View width={32} height={32} borderRadius={16} alignItems="center" justifyContent="center" marginRight="$3"
-            backgroundColor={todayCrossTraining.impact === 'high' ? '#FF3B3022' : todayCrossTraining.impact === 'moderate' ? '#FF950022' : todayCrossTraining.impact === 'positive' ? '#34C75922' : '#66666622'}>
+            backgroundColor={todayCrossTraining.impact === 'high' ? colors.error + '22' : todayCrossTraining.impact === 'moderate' ? colors.orange + '22' : todayCrossTraining.impact === 'positive' ? colors.cyan + '22' : colors.textTertiary + '22'}>
             <MaterialCommunityIcons name="dumbbell" size={16}
-              color={todayCrossTraining.impact === 'high' ? '#FF3B30' : todayCrossTraining.impact === 'moderate' ? '#FF9500' : todayCrossTraining.impact === 'positive' ? '#34C759' : '#666666'} />
+              color={todayCrossTraining.impact === 'high' ? colors.error : todayCrossTraining.impact === 'moderate' ? colors.orange : todayCrossTraining.impact === 'positive' ? colors.cyan : colors.textTertiary} />
           </View>
           <YStack flex={1}>
             <B color="$color" fontSize={13} fontWeight="600">{CROSS_TRAINING_LABELS[todayCrossTraining.type]}</B>
@@ -497,7 +498,7 @@ export default function TodayScreen() {
         <XStack backgroundColor="$surface" borderRadius="$6" padding="$3" marginBottom="$4" alignItems="center"
           pressStyle={{ opacity: 0.8 }} onPress={() => setShowCTModal(true)}>
           <View width={32} height={32} borderRadius={16} backgroundColor="$surfaceLight" alignItems="center" justifyContent="center" marginRight="$3">
-            <MaterialCommunityIcons name="dumbbell" size={16} color="#A0A0A0" />
+            <MaterialCommunityIcons name="dumbbell" size={16} color={colors.textSecondary} />
           </View>
           <B color="$textSecondary" fontSize={13} fontWeight="500">Log Cross-Training</B>
         </XStack>
@@ -506,9 +507,9 @@ export default function TodayScreen() {
       {/* Cross-Training Modal */}
       {showCTModal && (
         <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end', zIndex: 100 }}>
-          <View style={{ backgroundColor: '#1E1E1E', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, paddingBottom: 40 }}>
+          <View style={{ backgroundColor: colors.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, paddingBottom: 40 }}>
             {/* Drag handle */}
-            <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: '#555', alignSelf: 'center', marginBottom: 16 }} />
+            <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginBottom: 16 }} />
             <XStack justifyContent="space-between" alignItems="center" marginBottom="$4">
               <H color="$color" fontSize={18} letterSpacing={1}>LOG CROSS-TRAINING</H>
               <B color="$textTertiary" fontSize={18} onPress={() => { setShowCTModal(false); setCTNotes(''); }}>✕</B>
@@ -516,16 +517,16 @@ export default function TodayScreen() {
 
             {/* Options grid */}
             {([
-              { type: 'leg_day' as CrossTrainingType, icon: 'weight-lifter', color: '#FF3B30' },
-              { type: 'upper_body' as CrossTrainingType, icon: 'arm-flex', color: '#666666' },
-              { type: 'full_body' as CrossTrainingType, icon: 'dumbbell', color: '#FF9500' },
-              { type: 'cycling' as CrossTrainingType, icon: 'bicycle', color: '#FF9500' },
-              { type: 'swimming' as CrossTrainingType, icon: 'swim', color: '#FF9500' },
-              { type: 'yoga_mobility' as CrossTrainingType, icon: 'meditation', color: '#34C759' },
-              { type: 'other' as CrossTrainingType, icon: 'pencil', color: '#666666' },
+              { type: 'leg_day' as CrossTrainingType, icon: 'weight-lifter', color: colors.error },
+              { type: 'upper_body' as CrossTrainingType, icon: 'arm-flex', color: colors.textTertiary },
+              { type: 'full_body' as CrossTrainingType, icon: 'dumbbell', color: colors.orange },
+              { type: 'cycling' as CrossTrainingType, icon: 'bicycle', color: colors.orange },
+              { type: 'swimming' as CrossTrainingType, icon: 'swim', color: colors.orange },
+              { type: 'yoga_mobility' as CrossTrainingType, icon: 'meditation', color: colors.cyan },
+              { type: 'other' as CrossTrainingType, icon: 'pencil', color: colors.textTertiary },
             ] as const).map(({ type, icon, color }) => (
-              <XStack key={type} backgroundColor="#2A2A2A" borderRadius={12} padding="$3" marginBottom="$2" alignItems="center"
-                pressStyle={{ opacity: 0.7, backgroundColor: '#333' }}
+              <XStack key={type} backgroundColor={colors.surfaceHover} borderRadius={12} padding="$3" marginBottom="$2" alignItems="center"
+                pressStyle={{ opacity: 0.7, backgroundColor: colors.border }}
                 onPress={() => {
                   logCrossTraining(type, ctNotes);
                   setShowCTModal(false);

@@ -13,6 +13,7 @@ import { UserProfile } from '../src/types';
 import { calculateVDOTFrom5K, calculateVDOTFrom10K, calculateVDOTFromHalf, formatTime } from '../src/engine/vdot';
 import { PlanGenerationLoader } from '../src/components/common/PlanGenerationLoader';
 import type { StravaProfileData } from '../src/strava/profileImport';
+import { colors } from '../src/theme/colors';
 
 const H = (props: any) => <Text fontFamily="$heading" {...props} />;
 const B = (props: any) => <Text fontFamily="$body" {...props} />;
@@ -143,14 +144,14 @@ export default function SetupScreen() {
   const DurationPickerModal = ({visible,onClose,onConfirm,title}:{visible:boolean;onClose:()=>void;onConfirm:()=>void;title:string}) => (
     <Modal visible={visible} transparent animationType="slide">
       <Pressable style={{flex:1,backgroundColor:'rgba(0,0,0,0.6)',justifyContent:'flex-end'}} onPress={onClose}>
-        <Pressable style={{backgroundColor:'#1E1E1E',borderTopLeftRadius:20,borderTopRightRadius:20,padding:24,paddingBottom:40}} onPress={e=>e.stopPropagation()}>
+        <Pressable style={{backgroundColor:colors.surface,borderTopLeftRadius:20,borderTopRightRadius:20,padding:24,paddingBottom:40}} onPress={e=>e.stopPropagation()}>
           <H color="$color" fontSize={22} textAlign="center" marginBottom="$5" letterSpacing={1}>{title}</H>
           <DateTimePicker value={new Date(2000,0,1,Math.floor(pickerDuration/3600),Math.floor((pickerDuration%3600)/60),0)} mode="countdown" display="spinner" minuteInterval={1} themeVariant="dark" onChange={(_,d)=>{if(d)setPickerDuration(d.getHours()*3600+d.getMinutes()*60);}} />
           <YStack marginTop="$1" marginBottom="$2">
             <H color="$textSecondary" fontSize={13} textTransform="uppercase" letterSpacing={1} marginBottom="$2" textAlign="center">Seconds</H>
             <RNScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{paddingHorizontal:8,gap:6}}>
               {SECONDS_OPTIONS.map(sec=>(
-                <Pressable key={sec} onPress={()=>setPickerSeconds(sec)} style={{width:40,height:36,borderRadius:8,backgroundColor:pickerSeconds===sec?'#FF6B35':'#2A2A2A',justifyContent:'center',alignItems:'center',borderWidth:1,borderColor:pickerSeconds===sec?'#FF6B35':'#333'}}>
+                <Pressable key={sec} onPress={()=>setPickerSeconds(sec)} style={{width:40,height:36,borderRadius:8,backgroundColor:pickerSeconds===sec?colors.cyan:colors.surfaceHover,justifyContent:'center',alignItems:'center',borderWidth:1,borderColor:pickerSeconds===sec?colors.cyan:colors.border}}>
                   <M color={pickerSeconds===sec?'white':'$textSecondary'} fontSize={15} fontWeight="600">{String(sec).padStart(2,'0')}</M>
                 </Pressable>
               ))}
@@ -240,7 +241,7 @@ export default function SetupScreen() {
       <FieldLabel text="Race Name (optional)" /><Input size="$8" backgroundColor="$surface" borderColor="$border" color="$color" fontSize={16} fontFamily="$body" placeholder="e.g. Chicago Marathon" placeholderTextColor="$textTertiary" value={raceName} onChangeText={setRaceName} />
       <FieldLabel text="Race Date *" />
       <YStack backgroundColor="$surface" borderRadius="$4" borderWidth={1} borderColor="$border" paddingHorizontal="$4" paddingVertical="$4" height={52} pressStyle={{opacity:0.8}} onPress={()=>setShowDatePicker(true)}><B color={raceDate?'$color':'$textTertiary'} fontSize={16}>{raceDate||'Tap to select race date'}</B></YStack>
-      {showDatePicker&&(<Modal visible transparent animationType="slide"><Pressable style={{flex:1,backgroundColor:'rgba(0,0,0,0.6)',justifyContent:'flex-end'}} onPress={()=>setShowDatePicker(false)}><Pressable style={{backgroundColor:'#1E1E1E',borderTopLeftRadius:20,borderTopRightRadius:20,padding:24,paddingBottom:40}} onPress={e=>e.stopPropagation()}><H color="$color" fontSize={22} textAlign="center" marginBottom="$5" letterSpacing={1}>Race Date</H><DateTimePicker value={raceDate?new Date(raceDate+'T00:00:00'):new Date(Date.now()+120*86400000)} mode="date" display="spinner" minimumDate={new Date()} themeVariant="dark" onChange={(_,d)=>{if(d){setRaceDate(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`);}}} /><YStack backgroundColor="$accent" borderRadius="$5" paddingVertical="$3" alignItems="center" marginTop="$5" pressStyle={{opacity:0.8}} onPress={()=>setShowDatePicker(false)}><B color="white" fontSize={16} fontWeight="700">Done</B></YStack></Pressable></Pressable></Modal>)}
+      {showDatePicker&&(<Modal visible transparent animationType="slide"><Pressable style={{flex:1,backgroundColor:'rgba(0,0,0,0.6)',justifyContent:'flex-end'}} onPress={()=>setShowDatePicker(false)}><Pressable style={{backgroundColor:colors.surface,borderTopLeftRadius:20,borderTopRightRadius:20,padding:24,paddingBottom:40}} onPress={e=>e.stopPropagation()}><H color="$color" fontSize={22} textAlign="center" marginBottom="$5" letterSpacing={1}>Race Date</H><DateTimePicker value={raceDate?new Date(raceDate+'T00:00:00'):new Date(Date.now()+120*86400000)} mode="date" display="spinner" minimumDate={new Date()} themeVariant="dark" onChange={(_,d)=>{if(d){setRaceDate(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`);}}} /><YStack backgroundColor="$accent" borderRadius="$5" paddingVertical="$3" alignItems="center" marginTop="$5" pressStyle={{opacity:0.8}} onPress={()=>setShowDatePicker(false)}><B color="white" fontSize={16} fontWeight="700">Done</B></YStack></Pressable></Pressable></Modal>)}
       <FieldLabel text="Course Profile" /><SegmentedControl options={COURSE_PROFILES} selected={courseProfile} onSelect={setCourseProfile} />
       <FieldLabel text="Goal Type" /><SegmentedControl options={GOAL_TYPES} selected={goalType} onSelect={setGoalType} />
       {(goalType==='Time Goal'||goalType==='BQ')&&(<><FieldLabel text="Target Finish Time" /><YStack backgroundColor="$surface" borderRadius="$4" borderWidth={1} borderColor="$border" paddingHorizontal="$4" paddingVertical="$4" height={52} pressStyle={{opacity:0.8}} onPress={()=>openDurationPicker(targetFinishTime,'finish')}><B color={targetFinishTime?'$color':'$textTertiary'} fontSize={16}>{targetFinishTime||'Tap to set (e.g. 3:30:00)'}</B></YStack><DurationPickerModal visible={showFinishTimePicker} onClose={()=>setShowFinishTimePicker(false)} onConfirm={()=>confirmDurationPicker('finish')} title="Target Finish Time" /></>)}
@@ -306,7 +307,7 @@ export default function SetupScreen() {
   const showNav = step >= 3 && step <= 6;
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: '#121212' }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: colors.background }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       {/* Step indicator */}
       {step >= 1 && step <= 6 && (
         <XStack justifyContent="center" alignItems="center" paddingTop={60} paddingBottom="$3" gap="$2">

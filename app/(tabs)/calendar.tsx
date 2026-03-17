@@ -3,11 +3,12 @@ import { RefreshControl, Pressable } from 'react-native';
 import { ScrollView, YStack, XStack, Text, View, Spinner } from 'tamagui';
 import { useRouter } from 'expo-router';
 import { useAppStore } from '../../src/store';
-import { PHASE_COLORS, WORKOUT_TYPE_LABELS } from '../../src/utils/constants';
+import { WORKOUT_TYPE_LABELS } from '../../src/utils/constants';
 import { formatDate, isToday } from '../../src/utils/dateUtils';
 import { Workout, CrossTraining, CROSS_TRAINING_LABELS } from '../../src/types';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { getWorkoutIcon } from '../../src/utils/workoutIcons';
+import { colors, semantic, phaseColors } from '../../src/theme/colors';
 
 const H = (props: any) => <Text fontFamily="$heading" {...props} />;
 const B = (props: any) => <Text fontFamily="$body" {...props} />;
@@ -74,7 +75,7 @@ export default function CalendarScreen() {
 
   return (
     <ScrollView flex={1} backgroundColor="$background" contentContainerStyle={{ padding: 16 }}
-      refreshControl={<RefreshControl refreshing={false} onRefresh={refreshState} tintColor="#FF6B35" />}>
+      refreshControl={<RefreshControl refreshing={false} onRefresh={refreshState} tintColor={colors.cyan} />}>
 
       {/* Summary Bar */}
       <XStack backgroundColor="$surface" borderRadius="$6" padding="$4" marginBottom="$4" alignItems="center">
@@ -99,7 +100,7 @@ export default function CalendarScreen() {
         <YStack backgroundColor="$surface" borderRadius="$6" padding="$3" marginBottom="$4">
           <XStack justifyContent="space-between" alignItems="center">
             <XStack alignItems="center" gap="$2">
-              <MaterialCommunityIcons name="calendar-check" size={14} color="#A0A0A0" />
+              <MaterialCommunityIcons name="calendar-check" size={14} color={colors.textSecondary} />
               <B color="$textTertiary" fontSize={12}>
                 Generated {(() => {
                   const d = new Date(activePlan.created_at);
@@ -177,7 +178,7 @@ export default function CalendarScreen() {
         const isExpanded = expandedWeeks.has(week.week_number);
         const isCurrent = week.week_number === currentWeekNumber;
         const weekWorkouts = workoutsByWeek.get(week.week_number) ?? [];
-        const phaseColor = PHASE_COLORS[week.phase] ?? '#666666';
+        const phaseColor = (phaseColors as any)[week.phase] ?? colors.textTertiary;
         const completedVolume = weekWorkouts
           .filter(w => w.status === 'completed' && w.target_distance_miles != null)
           .reduce((sum, w) => sum + (w.target_distance_miles ?? 0), 0);
@@ -215,7 +216,7 @@ export default function CalendarScreen() {
             {isExpanded && (
               <YStack paddingHorizontal="$3" paddingBottom="$3" borderTopWidth={1} borderTopColor="$border">
                 {weekWorkouts.map(workout => {
-                  const statusColor = workout.status === 'completed' ? '#34C759' : workout.status === 'skipped' ? '#FF3B30' : workout.status === 'partial' ? '#F59E0B' : '#666666';
+                  const statusColor = workout.status === 'completed' ? colors.success : workout.status === 'skipped' ? colors.error : workout.status === 'partial' ? colors.orangeDim : colors.textTertiary;
                   const isWToday = isToday(workout.scheduled_date);
                   const dayCT = crossTrainingByDate.get(workout.scheduled_date);
 
@@ -246,7 +247,7 @@ export default function CalendarScreen() {
                       {dayCT && (
                         <XStack alignItems="center" paddingVertical={6} paddingLeft={24} borderBottomWidth={0.5} borderBottomColor="$border">
                           <MaterialCommunityIcons name="dumbbell" size={12}
-                            color={dayCT.impact === 'high' ? '#FF3B30' : dayCT.impact === 'moderate' ? '#FF9500' : dayCT.impact === 'positive' ? '#34C759' : '#666666'}
+                            color={dayCT.impact === 'high' ? colors.error : dayCT.impact === 'moderate' ? colors.orange : dayCT.impact === 'positive' ? colors.cyan : colors.textTertiary}
                             style={{ marginRight: 8 }} />
                           <B color="$textTertiary" fontSize={12}>{CROSS_TRAINING_LABELS[dayCT.type] ?? dayCT.type}</B>
                           <B color="$textTertiary" fontSize={10} marginLeft="$2">({dayCT.impact})</B>

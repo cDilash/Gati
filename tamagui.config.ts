@@ -67,40 +67,43 @@ const tokens = createTokens({
     0: 0, 1: 100, 2: 200, 3: 300, 4: 400, 5: 500,
   },
   color: {
-    // Dark theme palette
-    background: '#121212',
-    surface: '#1E1E1E',
-    surfaceLight: '#2A2A2A',
-    surfaceHover: '#333333',
-    border: '#333333',
-    borderLight: '#444444',
+    // Dark theme palette (blue-tinted, NOT pure gray)
+    background: '#0A0A0F',
+    surface: '#141420',
+    surfaceLight: '#1A1A2E',
+    surfaceHover: '#1A1A2E',
+    border: '#1E2A3A',
+    borderLight: '#1E2A3A60',
 
-    // Brand
+    // Brand — cyan + orange
     accent: '#FF6B35',
     accentLight: '#FF8A5C',
     accentMuted: 'rgba(255,107,53,0.15)',
-    primary: '#007AFF',
-    primaryMuted: 'rgba(0,122,255,0.15)',
+    cyan: '#00D4FF',
+    cyanDim: '#00D4FF80',
+    cyanGhost: '#00D4FF10',
+    primary: '#00D4FF',
+    primaryMuted: 'rgba(0,212,255,0.15)',
 
     // Status
-    success: '#34C759',
-    successMuted: 'rgba(52,199,89,0.15)',
-    warning: '#FF9500',
-    warningMuted: 'rgba(255,149,0,0.15)',
-    danger: '#FF3B30',
-    dangerMuted: 'rgba(255,59,48,0.15)',
+    success: '#00E676',
+    successMuted: 'rgba(0,230,118,0.15)',
+    warning: '#FF6B35',
+    warningMuted: 'rgba(255,107,53,0.15)',
+    danger: '#FF5252',
+    dangerMuted: 'rgba(255,82,82,0.15)',
 
-    // Text
+    // Text (blue-gray, NOT pure gray)
     text: '#FFFFFF',
-    textSecondary: '#A0A0A0',
-    textTertiary: '#666666',
-    textMuted: '#4A4A4A',
+    textSecondary: '#8899AA',
+    textTertiary: '#556677',
+    textMuted: '#3A4A5A',
 
     // Phases
-    phaseBase: '#007AFF',
+    phaseBase: '#00D4FF',
     phaseBuild: '#FF9500',
-    phasePeak: '#FF3B30',
-    phaseTaper: '#34C759',
+    phasePeak: '#FF6B35',
+    phaseTaper: '#00D4FF',
 
     // Strava
     strava: '#FC4C02',
@@ -128,7 +131,7 @@ const darkTheme = {
   borderColor: tokens.color.border,
   borderColorHover: tokens.color.borderLight,
   borderColorPress: tokens.color.border,
-  borderColorFocus: tokens.color.accent,
+  borderColorFocus: tokens.color.cyan,
   placeholderColor: tokens.color.textTertiary,
   shadowColor: tokens.color.black,
 

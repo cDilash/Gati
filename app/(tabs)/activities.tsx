@@ -14,6 +14,7 @@ import { formatPace, formatTime } from '../../src/engine/vdot';
 import { PerformanceMetric } from '../../src/types';
 import { RouteMap } from '../../src/components/RouteMap';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { colors } from '../../src/theme/colors';
 
 const H = (props: any) => <Text fontFamily="$heading" {...props} />;
 const B = (props: any) => <Text fontFamily="$body" {...props} />;
@@ -202,7 +203,7 @@ export default function ActivitiesScreen() {
             onPress={handleSync}
             opacity={isSyncing ? 0.6 : 1}
           >
-            <B color="#fff" fontSize={15} fontWeight="700">{isSyncing ? 'Syncing...' : 'Sync Now'}</B>
+            <B color={colors.textPrimary} fontSize={15} fontWeight="700">{isSyncing ? 'Syncing...' : 'Sync Now'}</B>
           </YStack>
         )}
       </YStack>
@@ -238,7 +239,7 @@ export default function ActivitiesScreen() {
               <B
                 fontSize={13}
                 fontWeight="600"
-                color={activeFilter === opt ? '#fff' : '$textSecondary'}
+                color={activeFilter === opt ? colors.textPrimary : '$textSecondary'}
               >
                 {opt}{opt !== 'All' ? ` (${metrics.filter(m => runTypes[m.id] === opt).length})` : ''}
               </B>
@@ -301,7 +302,7 @@ export default function ActivitiesScreen() {
                     justifyContent="center"
                     alignItems="center"
                   >
-                    <MaterialCommunityIcons name="run" size={24} color="#666666" />
+                    <MaterialCommunityIcons name="run" size={24} color={colors.textTertiary} />
                   </YStack>
                 )}
               </View>

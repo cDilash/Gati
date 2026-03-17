@@ -3,6 +3,7 @@ import { Tabs, useRouter } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Settings, User } from '@tamagui/lucide-icons';
 import { useAppStore } from '../../src/store';
+import { colors, semantic } from '../../src/theme/colors';
 
 const ICON_SIZE = 24;
 
@@ -15,11 +16,11 @@ export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: '#FF6B35',
-        tabBarInactiveTintColor: '#707070',
+        tabBarActiveTintColor: semantic.tabActive,
+        tabBarInactiveTintColor: semantic.tabInactive,
         tabBarStyle: {
-          backgroundColor: '#1A1A1A',
-          borderTopColor: '#2A2A2A',
+          backgroundColor: colors.surface,
+          borderTopColor: colors.border,
           borderTopWidth: 0.5,
           height: 88,
           paddingBottom: 28,
@@ -33,8 +34,8 @@ export default function TabLayout() {
           fontSize: 10,
           letterSpacing: 0.5,
         },
-        headerStyle: { backgroundColor: '#121212' },
-        headerTintColor: '#FFFFFF',
+        headerStyle: { backgroundColor: colors.background },
+        headerTintColor: colors.textPrimary,
         headerTitleStyle: { fontFamily: 'BebasNeue_400Regular', fontSize: 22, letterSpacing: 1.5 },
       }}
     >
@@ -45,15 +46,15 @@ export default function TabLayout() {
           title: 'Today',
           tabBarIcon: ({ color }) => <MaterialCommunityIcons name="run-fast" size={ICON_SIZE} color={color} />,
           tabBarBadge: (vdotNotification || proactiveSuggestion) ? '' : undefined,
-          tabBarBadgeStyle: { backgroundColor: '#FF6B35', minWidth: 8, maxHeight: 8, borderRadius: 4, top: 2 },
+          tabBarBadgeStyle: { backgroundColor: colors.cyan, minWidth: 8, maxHeight: 8, borderRadius: 4, top: 2 },
           headerLeft: () => (
             <Pressable onPress={() => router.push('/profile')} hitSlop={12} style={{ marginLeft: 16 }}>
-              <User size={22} color="#A0A0A0" />
+              <User size={22} color={colors.textSecondary} />
             </Pressable>
           ),
           headerRight: () => (
             <Pressable onPress={() => router.push('/(tabs)/settings')} hitSlop={12} style={{ marginRight: 16 }}>
-              <Settings size={22} color="#A0A0A0" />
+              <Settings size={22} color={colors.textSecondary} />
             </Pressable>
           ),
         }}
@@ -66,7 +67,7 @@ export default function TabLayout() {
           title: 'Plan',
           tabBarIcon: ({ color }) => <MaterialCommunityIcons name="calendar-month-outline" size={ICON_SIZE} color={color} />,
           tabBarBadge: (weeklyDigest?.adaptationNeeded) ? '' : undefined,
-          tabBarBadgeStyle: { backgroundColor: '#FF9500', minWidth: 8, maxHeight: 8, borderRadius: 4, top: 2 },
+          tabBarBadgeStyle: { backgroundColor: colors.orange, minWidth: 8, maxHeight: 8, borderRadius: 4, top: 2 },
         }}
       />
 
@@ -105,7 +106,7 @@ export default function TabLayout() {
           title: 'Settings',
           headerLeft: () => (
             <Pressable onPress={() => router.back()} hitSlop={12} style={{ marginLeft: 16 }}>
-              <MaterialCommunityIcons name="chevron-left" size={28} color="#FFFFFF" />
+              <MaterialCommunityIcons name="chevron-left" size={28} color={colors.textPrimary} />
             </Pressable>
           ),
         }}

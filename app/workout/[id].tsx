@@ -6,7 +6,8 @@ import { Alert } from 'react-native';
 import { ScrollView, YStack, XStack, Text, View } from 'tamagui';
 import { useLocalSearchParams } from 'expo-router';
 import { useAppStore } from '../../src/store';
-import { WORKOUT_TYPE_LABELS, PHASE_COLORS } from '../../src/utils/constants';
+import { WORKOUT_TYPE_LABELS } from '../../src/utils/constants';
+import { colors, phaseColors } from '../../src/theme/colors';
 import { formatDateLong } from '../../src/utils/dateUtils';
 import { formatPace } from '../../src/engine/vdot';
 import { PerformanceMetric, IntervalStep } from '../../src/types';
@@ -23,7 +24,7 @@ function StatBox({ label, value }: { label: string; value: string }) {
   const icon = STAT_ICON_MAP[label];
   return (
     <YStack minWidth={80} backgroundColor="$surfaceLight" borderRadius="$4" padding="$3" alignItems="center">
-      {icon && <MaterialCommunityIcons name={icon as any} size={14} color="#FF6B35" style={{ marginBottom: 2 }} />}
+      {icon && <MaterialCommunityIcons name={icon as any} size={14} color={colors.cyan} style={{ marginBottom: 2 }} />}
       <M color="$color" fontSize={16} fontWeight="700">{value}</M>
       <H color="$textSecondary" fontSize={11} letterSpacing={1} marginTop={2}>{label}</H>
     </YStack>
@@ -77,7 +78,7 @@ export default function WorkoutDetailScreen() {
       <YStack marginBottom="$5">
         {week && (
           <XStack alignItems="center" gap="$1" marginBottom="$1">
-            <View width={8} height={8} borderRadius={4} backgroundColor={PHASE_COLORS[week.phase] || '#666'} />
+            <View width={8} height={8} borderRadius={4} backgroundColor={(phaseColors as any)[week.phase] || colors.textTertiary} />
             <B color="$textSecondary" fontSize={13} textTransform="capitalize">Week {week.week_number} — {week.phase}</B>
           </XStack>
         )}

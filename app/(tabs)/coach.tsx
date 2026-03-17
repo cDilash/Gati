@@ -3,6 +3,7 @@ import { FlatList, KeyboardAvoidingView, Platform, Alert, ScrollView as RNScroll
 import { YStack, XStack, Text, View, Input, Spinner } from 'tamagui';
 import { useAppStore } from '../../src/store';
 import { CoachMessage } from '../../src/types';
+import { colors } from '../../src/theme/colors';
 
 const H = (props: any) => <Text fontFamily="$heading" {...props} />;
 const B = (props: any) => <Text fontFamily="$body" {...props} />;
@@ -122,7 +123,7 @@ export default function CoachScreen() {
   }
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: '#121212' }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={90}>
+    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: colors.background }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={90}>
       {coachMessages.length === 0 ? (
         <YStack flex={1} justifyContent="center" alignItems="center" padding="$8">
           <H color="$color" fontSize={32} letterSpacing={1.5} marginBottom="$3">AI Coach</H>

@@ -16,12 +16,7 @@ import {
 import { X, ChevronLeft } from '@tamagui/lucide-icons';
 import config from '../tamagui.config';
 import { useAppStore } from '../src/store';
-
-const COLORS = {
-  background: '#121212',
-  accent: '#FF6B35',
-  text: '#FFFFFF',
-};
+import { colors } from '../src/theme/colors';
 
 export default function RootLayout() {
   const router = useRouter();
@@ -57,8 +52,8 @@ export default function RootLayout() {
   // Loading state — fonts or app data
   if (!fontsLoaded || isLoading) {
     return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#121212' }}>
-        <ActivityIndicator size="large" color="#FF6B35" />
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background }}>
+        <ActivityIndicator size="large" color={colors.cyan} />
         <StatusBar style="light" />
       </View>
     );
@@ -69,10 +64,10 @@ export default function RootLayout() {
         <StatusBar style="light" />
         <Stack
           screenOptions={{
-            headerStyle: { backgroundColor: '#121212' },
-            headerTintColor: '#FFFFFF',
+            headerStyle: { backgroundColor: colors.background },
+            headerTintColor: colors.textPrimary,
             headerTitleStyle: { fontFamily: 'Exo2_600SemiBold' },
-            contentStyle: { backgroundColor: '#121212' },
+            contentStyle: { backgroundColor: colors.background },
             headerBackVisible: false,
           }}
         >
@@ -87,7 +82,7 @@ export default function RootLayout() {
               headerLeft: () => null,
               headerRight: () => (
                 <Pressable onPress={() => navigation.goBack()} hitSlop={12} style={{ marginRight: 8 }}>
-                  <X size={22} color="#A0A0A0" />
+                  <X size={22} color={colors.textSecondary} />
                 </Pressable>
               ),
             })}
@@ -101,7 +96,7 @@ export default function RootLayout() {
               headerLeft: () => null,
               headerRight: () => (
                 <Pressable onPress={() => navigation.goBack()} hitSlop={12} style={{ marginRight: 8 }}>
-                  <X size={22} color="#A0A0A0" />
+                  <X size={22} color={colors.textSecondary} />
                 </Pressable>
               ),
             })}
@@ -112,7 +107,7 @@ export default function RootLayout() {
               title: 'Profile',
               headerLeft: () => (
                 <Pressable onPress={() => navigation.goBack()} hitSlop={12} style={{ marginLeft: 4 }}>
-                  <ChevronLeft size={24} color="#FFFFFF" />
+                  <ChevronLeft size={24} color={colors.textPrimary} />
                 </Pressable>
               ),
             })}

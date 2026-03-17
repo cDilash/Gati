@@ -10,6 +10,7 @@ import { useRouter } from 'expo-router';
 import { useAppStore } from '../src/store';
 import { useSettingsStore } from '../src/stores/settingsStore';
 import { COLORS } from '../src/utils/constants';
+import { colors } from '../src/theme/colors';
 import { formatPace } from '../src/engine/vdot';
 import { formatPaceRange, calculateHRZones } from '../src/engine/paceZones';
 import { predictMarathonTime, formatTime } from '../src/engine/vdot';
@@ -198,7 +199,7 @@ export default function ProfileScreen() {
         {/* Edit button */}
         <YStack backgroundColor={COLORS.accent} borderRadius={12} paddingVertical={14} alignItems="center" marginTop={24}
           pressStyle={{ opacity: 0.8 }} onPress={() => setEditing(true)}>
-          <B color="#fff" fontSize={16} fontWeight="700">Edit Profile</B>
+          <B color={colors.textPrimary} fontSize={16} fontWeight="700">Edit Profile</B>
         </YStack>
 
         {/* Account */}
@@ -282,7 +283,7 @@ export default function ProfileScreen() {
             pressStyle={{ opacity: 0.8 }}
             onPress={handleSave}
           >
-            <B color="#fff" fontSize={16} fontWeight="700">Save Changes</B>
+            <B color={colors.textPrimary} fontSize={16} fontWeight="700">Save Changes</B>
           </YStack>
           <YStack
             backgroundColor={COLORS.surface}
