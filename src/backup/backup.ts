@@ -28,7 +28,7 @@ export function serializeDatabase(): BackupData {
   const db = getDatabase();
 
   const userProfiles = db.getAllSync<any>('SELECT * FROM user_profile');
-  const trainingPlans = db.getAllSync<any>('SELECT * FROM training_plan');
+  const trainingPlans = db.getAllSync<any>("SELECT * FROM training_plan ORDER BY CASE WHEN status = 'active' THEN 0 ELSE 1 END, created_at DESC");
   const trainingWeeks = db.getAllSync<any>('SELECT * FROM training_week');
   const workouts = db.getAllSync<any>('SELECT * FROM workout');
   const performanceMetrics = db.getAllSync<any>('SELECT * FROM performance_metric');
@@ -63,7 +63,8 @@ export function serializeDatabase(): BackupData {
     deviceName,
     appVersion,
     userProfile: userProfiles[0] || null,
-    trainingPlan: trainingPlans[0] || null,
+    trainingPlan: trainingPlans[0] || null,  // primary plan (active or most recent)
+    trainingPlans: trainingPlans,             // ALL plans (for FK integrity)
     trainingWeeks,
     workouts,
     performanceMetrics,
@@ -243,9 +244,9 @@ export async function restoreDatabase(
         );
       }
 
-      // ── Restore training plan
-      if (data.trainingPlan) {
-        const t = data.trainingPlan;
+      // ── Restore training plans (all of them for FK integrity)
+      const allPlans = (data as any).trainingPlans ?? (data.trainingPlan ? [data.trainingPlan] : []);
+      for (const t of allPlans) {
         db.runSync(
           `INSERT OR REPLACE INTO training_plan
            (id, plan_json, coaching_notes, key_principles, warnings,

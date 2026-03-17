@@ -327,6 +327,7 @@ export interface BackupData {
   appVersion: string;
   userProfile: any;
   trainingPlan: any;
+  trainingPlans?: any[];
   trainingWeeks: any[];
   workouts: any[];
   performanceMetrics: any[];
