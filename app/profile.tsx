@@ -9,7 +9,6 @@ import { Text, YStack, XStack, ScrollView, Spinner, View, Input } from 'tamagui'
 import { useRouter } from 'expo-router';
 import { useAppStore } from '../src/store';
 import { useSettingsStore } from '../src/stores/settingsStore';
-import { COLORS } from '../src/utils/constants';
 import { colors } from '../src/theme/colors';
 import { formatPace } from '../src/engine/vdot';
 import { formatPaceRange, calculateHRZones } from '../src/engine/paceZones';
@@ -129,8 +128,8 @@ export default function ProfileScreen() {
 
   if (!userProfile) {
     return (
-      <YStack flex={1} backgroundColor={COLORS.background} justifyContent="center" alignItems="center">
-        <B color={COLORS.textSecondary} fontSize={16}>No profile set up yet.</B>
+      <YStack flex={1} backgroundColor={colors.background} justifyContent="center" alignItems="center">
+        <B color={colors.textSecondary} fontSize={16}>No profile set up yet.</B>
       </YStack>
     );
   }
@@ -141,10 +140,10 @@ export default function ProfileScreen() {
 
   if (!editing) {
     return (
-      <ScrollView flex={1} backgroundColor={COLORS.background} contentContainerStyle={{ padding: 16 }}>
+      <ScrollView flex={1} backgroundColor={colors.background} contentContainerStyle={{ padding: 16 }}>
         {/* Personal */}
         <SectionTitle title="Personal" />
-        <YStack backgroundColor={COLORS.surface} borderRadius={14} overflow="hidden">
+        <YStack backgroundColor={colors.surface} borderRadius={14} overflow="hidden">
           <InfoRow label="Name" value={userProfile.name || '—'} />
           <InfoRow label="Age" value={String(userProfile.age)} />
           <InfoRow label="Gender" value={userProfile.gender === 'male' ? 'Male' : 'Female'} />
@@ -163,7 +162,7 @@ export default function ProfileScreen() {
 
         {/* Running */}
         <SectionTitle title="Running" />
-        <YStack backgroundColor={COLORS.surface} borderRadius={14} overflow="hidden">
+        <YStack backgroundColor={colors.surface} borderRadius={14} overflow="hidden">
           <LiveInfoRow label="Weekly Mileage" value={
             isMetric ? `${(userProfile.current_weekly_miles * 1.60934).toFixed(1)} km` : `${userProfile.current_weekly_miles} mi`
           } lastSync={lastSyncTime} />
@@ -176,7 +175,7 @@ export default function ProfileScreen() {
 
         {/* Race */}
         <SectionTitle title="Race" />
-        <YStack backgroundColor={COLORS.surface} borderRadius={14} overflow="hidden">
+        <YStack backgroundColor={colors.surface} borderRadius={14} overflow="hidden">
           {userProfile.race_name && <InfoRow label="Race" value={userProfile.race_name} />}
           <InfoRow label="Date" value={userProfile.race_date} />
           <InfoRow label="Course" value={userProfile.race_course_profile} />
@@ -188,7 +187,7 @@ export default function ProfileScreen() {
         {(userProfile.injury_history.length > 0 || userProfile.known_weaknesses.length > 0 || userProfile.scheduling_notes) && (
           <>
             <SectionTitle title="Coaching Context" />
-            <YStack backgroundColor={COLORS.surface} borderRadius={14} overflow="hidden">
+            <YStack backgroundColor={colors.surface} borderRadius={14} overflow="hidden">
               {userProfile.injury_history.length > 0 && <InfoRow label="Injuries" value={userProfile.injury_history.join(', ')} />}
               {userProfile.known_weaknesses.length > 0 && <InfoRow label="Weaknesses" value={userProfile.known_weaknesses.join(', ')} />}
               {userProfile.scheduling_notes && <InfoRow label="Schedule Notes" value={userProfile.scheduling_notes} />}
@@ -197,14 +196,14 @@ export default function ProfileScreen() {
         )}
 
         {/* Edit button */}
-        <YStack backgroundColor={COLORS.accent} borderRadius={12} paddingVertical={14} alignItems="center" marginTop={24}
+        <YStack backgroundColor={colors.cyan} borderRadius={12} paddingVertical={14} alignItems="center" marginTop={24}
           pressStyle={{ opacity: 0.8 }} onPress={() => setEditing(true)}>
           <B color={colors.textPrimary} fontSize={16} fontWeight="700">Edit Profile</B>
         </YStack>
 
         {/* Account */}
         <SectionTitle title="Account" />
-        <YStack backgroundColor={COLORS.surface} borderRadius={14} overflow="hidden">
+        <YStack backgroundColor={colors.surface} borderRadius={14} overflow="hidden">
           {accountEmail ? (
             <>
               <InfoRow label={accountEmail} value="Signed in" accent />
@@ -240,8 +239,8 @@ export default function ProfileScreen() {
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView flex={1} backgroundColor={COLORS.background} contentContainerStyle={{ padding: 16 }}>
-        <H fontSize={28} color={COLORS.text} marginBottom={20} letterSpacing={1}>Edit Profile</H>
+      <ScrollView flex={1} backgroundColor={colors.background} contentContainerStyle={{ padding: 16 }}>
+        <H fontSize={28} color={colors.textPrimary} marginBottom={20} letterSpacing={1}>Edit Profile</H>
 
         <Label text="Name" />
         <Input size="$8" backgroundColor="$surface" borderColor="$border" color="$color" fontSize={16} fontFamily="$body" placeholderTextColor="$textTertiary" value={name} onChangeText={setName} />
@@ -276,7 +275,7 @@ export default function ProfileScreen() {
         {/* Save / Cancel */}
         <YStack marginTop={24} gap={10}>
           <YStack
-            backgroundColor={COLORS.accent}
+            backgroundColor={colors.cyan}
             borderRadius={12}
             paddingVertical={14}
             alignItems="center"
@@ -286,16 +285,16 @@ export default function ProfileScreen() {
             <B color={colors.textPrimary} fontSize={16} fontWeight="700">Save Changes</B>
           </YStack>
           <YStack
-            backgroundColor={COLORS.surface}
+            backgroundColor={colors.surface}
             borderRadius={12}
             paddingVertical={12}
             alignItems="center"
             borderWidth={1}
-            borderColor={COLORS.border}
+            borderColor={colors.border}
             pressStyle={{ opacity: 0.7 }}
             onPress={() => setEditing(false)}
           >
-            <B color={COLORS.textSecondary} fontSize={15} fontWeight="600">Cancel</B>
+            <B color={colors.textSecondary} fontSize={15} fontWeight="600">Cancel</B>
           </YStack>
         </YStack>
 
@@ -311,7 +310,7 @@ function SectionTitle({ title }: { title: string }) {
   return (
     <H
       fontSize={14}
-      color={COLORS.textSecondary}
+      color={colors.textSecondary}
       textTransform="uppercase"
       letterSpacing={1.5}
       marginTop={20}
@@ -325,7 +324,7 @@ function SectionTitle({ title }: { title: string }) {
 
 function Label({ text }: { text: string }) {
   return (
-    <B fontSize={14} color={COLORS.textSecondary} marginTop={14} marginBottom={6} fontWeight="600">
+    <B fontSize={14} color={colors.textSecondary} marginTop={14} marginBottom={6} fontWeight="600">
       {text}
     </B>
   );
@@ -339,13 +338,13 @@ function InfoRow({ label, value, accent }: { label: string; value: string; accen
       paddingVertical={12}
       paddingHorizontal={16}
       borderBottomWidth={0.5}
-      borderBottomColor={COLORS.border}
+      borderBottomColor={colors.border}
     >
-      <B fontSize={15} color={COLORS.textSecondary} flex={1}>{label}</B>
+      <B fontSize={15} color={colors.textSecondary} flex={1}>{label}</B>
       {accent ? (
-        <M fontSize={15} color={COLORS.accent} textAlign="right" flex={1} fontWeight="700">{value}</M>
+        <M fontSize={15} color={colors.cyan} textAlign="right" flex={1} fontWeight="700">{value}</M>
       ) : (
-        <B fontSize={15} color={COLORS.text} textAlign="right" flex={1} fontWeight="600">{value}</B>
+        <B fontSize={15} color={colors.textPrimary} textAlign="right" flex={1} fontWeight="600">{value}</B>
       )}
     </XStack>
   );
@@ -354,12 +353,12 @@ function InfoRow({ label, value, accent }: { label: string; value: string; accen
 function LiveInfoRow({ label, value, lastSync }: { label: string; value: string; lastSync?: string | null }) {
   const syncLabel = lastSync ? formatSyncDate(lastSync) : '';
   return (
-    <YStack paddingVertical={12} paddingHorizontal={16} borderBottomWidth={0.5} borderBottomColor={COLORS.border}>
+    <YStack paddingVertical={12} paddingHorizontal={16} borderBottomWidth={0.5} borderBottomColor={colors.border}>
       <XStack justifyContent="space-between" alignItems="center">
-        <B fontSize={15} color={COLORS.textSecondary} flex={1}>{label}</B>
-        <M fontSize={15} color={COLORS.text} fontWeight="700">{value}</M>
+        <B fontSize={15} color={colors.textSecondary} flex={1}>{label}</B>
+        <M fontSize={15} color={colors.textPrimary} fontWeight="700">{value}</M>
       </XStack>
-      <B fontSize={10} color={COLORS.accent} marginTop={2}>auto-updated from Strava{syncLabel ? ` · ${syncLabel}` : ''}</B>
+      <B fontSize={10} color={colors.cyan} marginTop={2}>auto-updated from Strava{syncLabel ? ` · ${syncLabel}` : ''}</B>
     </YStack>
   );
 }
