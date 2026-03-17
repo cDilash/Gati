@@ -57,14 +57,20 @@ export default function PostRunModal() {
     } catch {}
   }, [summary?.workoutId]);
 
+  // Save on unmount — covers both button tap AND swipe-to-dismiss
+  useEffect(() => {
+    return () => {
+      if (summary) {
+        try {
+          const { setSetting } = require('../src/db/database');
+          setSetting('last_shown_summary_workout_id', summary.workoutId);
+        } catch {}
+        useAppStore.setState({ pendingPostRunSummary: null });
+      }
+    };
+  }, [summary?.workoutId]);
+
   const handleDismiss = () => {
-    if (summary) {
-      try {
-        const { setSetting } = require('../src/db/database');
-        setSetting('last_shown_summary_workout_id', summary.workoutId);
-      } catch {}
-      useAppStore.setState({ pendingPostRunSummary: null });
-    }
     router.back();
   };
 
