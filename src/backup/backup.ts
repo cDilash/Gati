@@ -419,6 +419,19 @@ export async function restoreDatabase(
       }
     });
 
+    // Ensure at least one plan is active after restore
+    // (if user had abandoned a plan before backup, they still want it back on a new device)
+    try {
+      const activePlan = db.getFirstSync("SELECT id FROM training_plan WHERE status = 'active'");
+      if (!activePlan) {
+        const anyPlan = db.getFirstSync<any>("SELECT id FROM training_plan ORDER BY created_at DESC LIMIT 1");
+        if (anyPlan) {
+          db.runSync("UPDATE training_plan SET status = 'active' WHERE id = ?", [anyPlan.id]);
+          console.log('[Backup] Reactivated most recent plan after restore');
+        }
+      }
+    } catch {}
+
     // Re-enable FK checks
     db.execSync('PRAGMA foreign_keys = ON;');
     console.log('[Backup] Restore successful');
