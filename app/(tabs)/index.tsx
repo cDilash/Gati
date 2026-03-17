@@ -323,15 +323,73 @@ export default function TodayScreen() {
         </YStack>
       )}
 
-      {/* Header */}
-      <YStack marginBottom="$5">
-        <H color="$color" fontSize={24} letterSpacing={1} textTransform="uppercase">
-          Week {currentWeekNumber} of {totalWeeks} — {currentPhase.charAt(0).toUpperCase() + currentPhase.slice(1)} Phase
-        </H>
-        <M color="$accent" fontSize={15} fontWeight="600" marginTop="$1">
-          {daysUntilRace > 0 ? `${daysUntilRace} day${daysUntilRace !== 1 ? 's' : ''} to race`
-            : daysUntilRace === 0 ? 'Race day!' : 'Post-race'}
-        </M>
+      {/* Race Countdown + Readiness */}
+      <YStack marginBottom="$4">
+        {/* Race countdown */}
+        {userProfile?.race_name && daysUntilRace > 0 && (
+          <YStack backgroundColor="$surface" borderRadius="$6" padding="$4" marginBottom="$3">
+            <XStack alignItems="center" justifyContent="space-between">
+              <YStack flex={1}>
+                <M color={colors.cyan} fontSize={32} fontWeight="800">{daysUntilRace}</M>
+                <B color="$textSecondary" fontSize={12}>days to {userProfile.race_name}</B>
+              </YStack>
+              <YStack alignItems="flex-end">
+                <H color="$color" fontSize={14} letterSpacing={1} textTransform="uppercase">
+                  Week {currentWeekNumber}/{totalWeeks}
+                </H>
+                <H color={colors.cyan} fontSize={11} letterSpacing={1} textTransform="uppercase" marginTop={2}>
+                  {currentPhase} phase
+                </H>
+              </YStack>
+            </XStack>
+            {/* Readiness indicator */}
+            {(() => {
+              // Calculate readiness from recent weeks
+              const recentWeeks = weeks.slice(Math.max(0, weeks.findIndex(w => w.week_number === currentWeekNumber) - 2));
+              const pastWorkouts = workouts.filter(w => w.workout_type !== 'rest' && (w.status === 'completed' || w.status === 'skipped' || w.status === 'partial'));
+              const completedCount = pastWorkouts.filter(w => w.status === 'completed' || w.status === 'partial').length;
+              const adherence = pastWorkouts.length > 0 ? completedCount / pastWorkouts.length : 1;
+
+              const volumeOnTrack = recentWeeks.length > 0 && recentWeeks.every(w => w.actual_volume >= w.target_volume * 0.7);
+
+              let readiness: 'on_track' | 'attention' | 'behind';
+              let label: string;
+              let readinessColor: string;
+
+              if (adherence >= 0.8 && volumeOnTrack) {
+                readiness = 'on_track';
+                label = 'You\'re on track';
+                readinessColor = colors.cyan;
+              } else if (adherence >= 0.6) {
+                readiness = 'attention';
+                label = 'Needs attention';
+                readinessColor = colors.orange;
+              } else {
+                readiness = 'behind';
+                label = 'You\'re behind';
+                readinessColor = colors.error;
+              }
+
+              return (
+                <XStack marginTop="$3" paddingTop="$3" borderTopWidth={0.5} borderTopColor="$border" alignItems="center" gap="$2">
+                  <View width={10} height={10} borderRadius={5} backgroundColor={readinessColor} />
+                  <B color={readinessColor} fontSize={13} fontWeight="600">{label}</B>
+                  <B color="$textTertiary" fontSize={11}> · {Math.round(adherence * 100)}% adherence</B>
+                </XStack>
+              );
+            })()}
+          </YStack>
+        )}
+        {/* Fallback header when no race name */}
+        {(!userProfile?.race_name || daysUntilRace <= 0) && (
+          <YStack marginBottom="$2">
+            <H color="$color" fontSize={24} letterSpacing={1} textTransform="uppercase">
+              Week {currentWeekNumber} of {totalWeeks} — {currentPhase.charAt(0).toUpperCase() + currentPhase.slice(1)} Phase
+            </H>
+            {daysUntilRace === 0 && <M color={colors.orange} fontSize={18} fontWeight="800" marginTop="$1">Race Day!</M>}
+            {daysUntilRace < 0 && <B color="$textSecondary" fontSize={14} marginTop="$1">Post-race</B>}
+          </YStack>
+        )}
       </YStack>
 
       {/* Recovery Badge */}
