@@ -448,6 +448,12 @@ function SleepCard({ signal, sleepTrend }: {
   const latest = sleepTrend.length > 0 ? sleepTrend[0] : null; // newest first
   const recentNights = sleepTrend.slice(0, 7).reverse(); // oldest→newest
 
+  // Check if sleep data is stale (older than last night)
+  const today = new Date().toISOString().split('T')[0];
+  const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+  const isStale = latest ? (latest.date !== today && latest.date !== yesterday) : false;
+  const daysAgo = latest ? Math.floor((Date.now() - new Date(latest.date + 'T12:00:00').getTime()) / 86400000) : 0;
+
   const sleepHoursColor = (hrs: number) => hrs >= 7 ? colors.cyan : hrs >= 6 ? colors.orange : colors.error;
 
   // Sleep line graph dimensions
@@ -478,7 +484,11 @@ function SleepCard({ signal, sleepTrend }: {
         <XStack alignItems="center" gap="$2">
           <MaterialCommunityIcons name="sleep" size={18} color={statusColor} />
           <B color="$color" fontSize={14} fontWeight="600">Sleep</B>
-          {latest && <B color="$textTertiary" fontSize={12}>— {formatNightLabel(latest.date)}</B>}
+          {latest && (
+            <B color={isStale ? colors.orange : '$textTertiary'} fontSize={12}>
+              — {formatNightLabel(latest.date)}{isStale ? ` (${daysAgo}d ago)` : ''}
+            </B>
+          )}
         </XStack>
         <M color={statusColor} fontSize={12} fontWeight="700">{signal.score}/33</M>
       </XStack>
@@ -491,6 +501,9 @@ function SleepCard({ signal, sleepTrend }: {
             {formatTime12h(latest.bedStart)} → {formatTime12h(latest.bedEnd)}
           </B>
         </XStack>
+      )}
+      {isStale && (
+        <B color={colors.orange} fontSize={11} marginBottom="$2">No sleep data last night — showing most recent</B>
       )}
 
       {/* Sleep stage bar + breakdown */}
