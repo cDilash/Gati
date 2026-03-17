@@ -217,8 +217,8 @@ export default function SettingsScreen() {
           const data = await downloadBackup();
           if (!data) { Alert.alert('No Backup', 'No backup found.'); setIsRestoring(false); return; }
           await restoreDatabase(data);
-          Alert.alert('Restored', 'Restarting...');
           await useAppStore.getState().initializeApp();
+          Alert.alert('Restored', 'All data restored successfully.');
         } catch (e: any) { Alert.alert('Failed', e.message ?? 'Error.'); }
         finally { setIsRestoring(false); }
       }},
