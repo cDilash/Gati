@@ -1,5 +1,4 @@
 import { getHealthKit } from "./availability";
-import { getHealthKitConstants } from "./availability";
 
 export interface DailySteps {
   date: string; // YYYY-MM-DD
@@ -39,24 +38,22 @@ export async function getStepHistory(daysBack: number = 7): Promise<DailySteps[]
   startDate.setDate(startDate.getDate() - daysBack);
   startDate.setHours(0, 0, 0, 0);
 
-  // Use getSamples to fetch raw step samples, then aggregate by day
-  // This is more reliable than getStepCount which may ignore date params
+  // Use getDailyStepCountSamples — this returns Apple's deduplicated daily totals
+  // Unlike getSamples which returns raw overlapping samples from multiple sources
   return new Promise((resolve) => {
     try {
-      AppleHealthKit.getSamples(
+      AppleHealthKit.getDailyStepCountSamples(
         {
           startDate: startDate.toISOString(),
           endDate: new Date().toISOString(),
-          type: 'StepCount',
         },
         (error: string, results: any[]) => {
           if (error || !results?.length) {
-            console.log("[HealthKit] Step samples error:", error);
-            // Fallback to single today value
+            console.log("[HealthKit] getDailyStepCountSamples error:", error, "— trying fallback");
+            // Fallback: just use today's step count
             getStepCount(new Date()).then(today => {
               if (today) {
-                const todayStr = new Date().toISOString().split('T')[0];
-                resolve([{ date: todayStr, steps: today }]);
+                resolve([{ date: new Date().toISOString().split('T')[0], steps: today }]);
               } else {
                 resolve([]);
               }
@@ -64,16 +61,19 @@ export async function getStepHistory(daysBack: number = 7): Promise<DailySteps[]
             return;
           }
 
-          console.log("[HealthKit] Step samples raw:", results.length);
+          console.log("[HealthKit] Daily steps:", results.length, "entries");
 
-          // Group by day and sum
+          // getDailyStepCountSamples returns objects with { startDate, value }
+          // Group by date (in case multiple entries per day) and take MAX (not sum — already deduplicated)
           const dayMap = new Map<string, number>();
-          for (const sample of results) {
-            const date = (sample.startDate ?? sample.start ?? '').split('T')[0];
+          for (const r of results) {
+            const date = (r.startDate ?? r.date ?? '').split('T')[0];
             if (!date) continue;
-            const value = Math.round(sample.value ?? sample.quantity ?? 0);
+            const value = Math.round(r.value ?? r.quantity ?? 0);
             if (value > 0) {
-              dayMap.set(date, (dayMap.get(date) ?? 0) + value);
+              // Take the MAX per day (getDailyStepCountSamples may return partial day entries)
+              const existing = dayMap.get(date) ?? 0;
+              dayMap.set(date, Math.max(existing, value));
             }
           }
 
@@ -88,8 +88,15 @@ export async function getStepHistory(daysBack: number = 7): Promise<DailySteps[]
         }
       );
     } catch (e) {
-      console.log("[HealthKit] Step samples call failed:", e);
-      resolve([]);
+      console.log("[HealthKit] getDailyStepCountSamples failed:", e);
+      // Fallback to today only
+      getStepCount(new Date()).then(today => {
+        if (today) {
+          resolve([{ date: new Date().toISOString().split('T')[0], steps: today }]);
+        } else {
+          resolve([]);
+        }
+      });
     }
   });
 }
