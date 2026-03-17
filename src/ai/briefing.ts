@@ -143,6 +143,34 @@ export async function generatePostRunAnalysis(
       } catch {}
     }
 
+    // Detect HR drift from Strava streams (long runs)
+    let hrDriftInfo = '';
+    try {
+      const isLongish = (workout.target_distance_miles ?? 0) >= 8 || metric.distance_miles >= 8;
+      if (isLongish && metric.strava_activity_id) {
+        const { getDatabase } = require('../db/database');
+        const detail = getDatabase().getFirstSync(
+          'SELECT hr_stream_json, pace_stream_json FROM strava_activity_detail WHERE strava_activity_id = ?',
+          [metric.strava_activity_id]
+        ) as any;
+        if (detail?.hr_stream_json) {
+          const hrStream: number[] = JSON.parse(detail.hr_stream_json);
+          if (hrStream.length >= 20) {
+            // Compare first quarter avg HR vs last quarter avg HR at similar effort
+            const q = Math.floor(hrStream.length / 4);
+            const firstQHR = hrStream.slice(0, q).reduce((s, v) => s + v, 0) / q;
+            const lastQHR = hrStream.slice(-q).reduce((s, v) => s + v, 0) / q;
+            const drift = Math.round(lastQHR - firstQHR);
+            if (drift >= 15) {
+              hrDriftInfo = `\nHR DRIFT DETECTED: HR climbed from avg ${Math.round(firstQHR)} bpm (first quarter) to ${Math.round(lastQHR)} bpm (last quarter) — a ${drift} bpm drift. This suggests dehydration or overheating. Mention this in your analysis.`;
+            } else if (drift >= 10) {
+              hrDriftInfo = `\nMILD HR DRIFT: HR rose ${drift} bpm from first to last quarter (${Math.round(firstQHR)} → ${Math.round(lastQHR)} bpm). Normal for long runs but worth noting.`;
+            }
+          }
+        }
+      }
+    } catch {}
+
     // Check yesterday's cross-training for context
     let ctContext = '';
     try {
@@ -165,7 +193,7 @@ PLANNED: ${workout.title} — ${workout.target_distance_miles}mi at ${workout.ta
 ACTUAL: ${metric.distance_miles.toFixed(1)}mi in ${metric.duration_minutes.toFixed(0)}min
 Avg pace: ${metric.avg_pace_sec_per_mile ? formatPace(metric.avg_pace_sec_per_mile) : '?'}/mi
 ${metric.avg_hr ? `Avg HR: ${metric.avg_hr}` : ''}${metric.max_hr ? ` | Max HR: ${metric.max_hr}` : ''}
-${metric.perceived_exertion ? `RPE: ${metric.perceived_exertion}/10` : ''}${splitsInfo}${ctContext}
+${metric.perceived_exertion ? `RPE: ${metric.perceived_exertion}/10` : ''}${splitsInfo}${hrDriftInfo}${ctContext}
 
 Respond with ONLY the analysis text. No JSON, no formatting.`;
 

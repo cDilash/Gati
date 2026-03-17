@@ -148,7 +148,7 @@ Keep responses to 2-4 paragraphs max unless the athlete asks for detailed analys
     try {
       const { getDatabase } = require('../db/database');
       const details = getDatabase().getAllSync(
-        `SELECT strava_activity_id, elevation_gain_ft, cadence_avg, suffer_score, splits_json
+        `SELECT strava_activity_id, elevation_gain_ft, cadence_avg, suffer_score, splits_json, hr_stream_json
          FROM strava_activity_detail WHERE strava_activity_id IN (${recentMetrics.filter(m => m.strava_activity_id).map(m => m.strava_activity_id).join(',') || '0'})`
       );
       for (const d of details) detailMap.set(d.strava_activity_id, d);
@@ -186,6 +186,24 @@ Keep responses to 2-4 paragraphs max unless the athlete asks for detailed analys
                 return '?';
               });
               parts.push(`    Splits: ${splitPaces.join(' | ')}`);
+            }
+          } catch {}
+        }
+
+        // HR drift detection for runs 8+ miles
+        if (mi < 3 && m.distance_miles >= 8 && detail?.hr_stream_json) {
+          try {
+            const hrStream: number[] = JSON.parse(detail.hr_stream_json);
+            if (hrStream.length >= 20) {
+              const q = Math.floor(hrStream.length / 4);
+              const firstQ = Math.round(hrStream.slice(0, q).reduce((s: number, v: number) => s + v, 0) / q);
+              const lastQ = Math.round(hrStream.slice(-q).reduce((s: number, v: number) => s + v, 0) / q);
+              const drift = lastQ - firstQ;
+              if (drift >= 15) {
+                parts.push(`    ⚠️ HR DRIFT: ${firstQ} → ${lastQ} bpm (+${drift}) — likely dehydration/overheating`);
+              } else if (drift >= 10) {
+                parts.push(`    HR drift: ${firstQ} → ${lastQ} bpm (+${drift}) — mild, normal for distance`);
+              }
             }
           } catch {}
         }
