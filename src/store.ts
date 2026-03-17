@@ -550,9 +550,24 @@ export const useAppStore = create<AppState>((set, get) => ({
   // ─── AI Briefings ─────────────────────────────────────────
 
   fetchBriefing: async () => {
-    const { todaysWorkout, paceZones, userProfile, currentWeek, daysUntilRace, recoveryStatus } = get();
-    if (!todaysWorkout || !paceZones || !userProfile) return;
-    if (todaysWorkout.workout_type === 'rest') return;
+    const { todaysWorkout, paceZones, userProfile, currentWeek, daysUntilRace, recoveryStatus, workouts } = get();
+    if (!paceZones || !userProfile) return;
+
+    // Check if tomorrow is a long run — show prep reminder on rest days / easy days
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrowStr = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(tomorrow.getDate()).padStart(2, '0')}`;
+    const tomorrowWorkout = workouts.find(w => w.scheduled_date === tomorrowStr);
+    const tomorrowIsLongRun = tomorrowWorkout && (tomorrowWorkout.workout_type === 'long' || tomorrowWorkout.workout_type === 'long_run' || (tomorrowWorkout.target_distance_miles ?? 0) >= 10);
+
+    if (tomorrowIsLongRun && (!todaysWorkout || todaysWorkout.workout_type === 'rest')) {
+      // Show night-before prep briefing
+      const dist = tomorrowWorkout!.target_distance_miles?.toFixed(1) ?? '?';
+      set({ preWorkoutBriefing: `Tomorrow's long run: ${tomorrowWorkout!.title} (${dist} mi). Tonight, eat a carb-rich dinner — pasta, rice, or potatoes. Hydrate well. Lay out your gear, charge your watch, and get to bed early. You've got this.` });
+      return;
+    }
+
+    if (!todaysWorkout || todaysWorkout.workout_type === 'rest') return;
 
     try {
       const recentMetrics = getRecentMetrics(7);

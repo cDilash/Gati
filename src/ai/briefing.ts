@@ -57,9 +57,29 @@ export async function generateBriefing(
   if (cached) return cached;
 
   try {
-    const prompt = `You are a running coach giving a quick pre-workout briefing. 2-3 sentences max. Be specific, reference the workout details and recent performance. Encouraging but practical.
+    const dist = workout.target_distance_miles ?? 0;
+    const isLongRun = workout.workout_type === 'long' || workout.workout_type === 'long_run' || dist >= 10;
 
-TODAY'S WORKOUT: ${workout.title} — ${workout.target_distance_miles}mi
+    // Build fueling plan for long runs
+    let fuelingSection = '';
+    if (isLongRun && dist >= 10) {
+      const gelMiles: number[] = [];
+      for (let m = 5; m < dist; m += 4) gelMiles.push(m);
+      fuelingSection = `
+FUELING PLAN (long run ${dist}mi):
+- Pre-run: light carbs 2 hours before (banana, toast, oatmeal)
+- During: take a gel or chew at mile ${gelMiles.join(' and mile ')}
+- Hydration: drink every 15-20 minutes (4-6 oz per stop)
+- Post-run: protein + carbs within 30 minutes
+Include specific fueling advice in your briefing — runners forget to fuel and bonk.`;
+    } else if (isLongRun || dist >= 8) {
+      fuelingSection = `
+FUELING NOTE: ${dist}mi run — bring water. Consider a gel if you tend to fade in the last miles.`;
+    }
+
+    const prompt = `You are a running coach giving a quick pre-workout briefing. ${isLongRun ? '3-5 sentences — include fueling and pacing strategy.' : '2-3 sentences max.'} Be specific, reference the workout details and recent performance. Encouraging but practical.
+
+TODAY'S WORKOUT: ${workout.title} — ${dist}mi
 Description: ${workout.description}
 Week ${currentWeek?.week_number || '?'}, ${currentWeek?.phase || '?'} phase. ${daysUntilRace} days to race.
 
@@ -70,8 +90,8 @@ PACE ZONES: E ${formatPaceRange(paceZones.E)}, M ${formatPaceRange(paceZones.M)}
 ${recoveryInfo || 'Recovery data: not available'}
 
 ${weatherInfo || 'Weather: not available'}
-
-If weather data is provided, mention it in your briefing — adjust pace recommendations for heat, cold, rain, or wind. This is what real coaches do.
+${fuelingSection}
+If weather data is provided, mention it — adjust pace recommendations for heat, cold, rain, or wind. This is what real coaches do.
 
 Respond with ONLY the briefing text. No JSON, no formatting.`;
 
