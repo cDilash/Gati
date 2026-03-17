@@ -42,6 +42,10 @@ export function serializeDatabase(): BackupData {
   let appSettings: any[] = [];
   try { appSettings = db.getAllSync<any>('SELECT * FROM app_settings'); } catch {}
 
+  // Health snapshot — latest recovery data for devices without HealthKit
+  let healthSnapshots: any[] = [];
+  try { healthSnapshots = db.getAllSync<any>('SELECT * FROM health_snapshot ORDER BY date DESC LIMIT 1'); } catch {}
+
   // Strava tokens for seamless restore
   const stravaRow = db.getFirstSync<any>('SELECT * FROM strava_tokens LIMIT 1');
   const stravaTokens = stravaRow
@@ -71,9 +75,9 @@ export function serializeDatabase(): BackupData {
     coachMessages,
     shoes,
     appSettings,
-    // Legacy fields (empty in v2+, kept for type compat)
+    // Legacy fields
     adaptiveLogs: [],
-    healthSnapshots: [],
+    healthSnapshots,
     briefingCache: [],
     stravaDetails,
     stravaTokens,
@@ -404,6 +408,37 @@ export async function restoreDatabase(
           db.runSync(
             'INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)',
             s.key, s.value,
+          );
+        } catch {}
+      }
+
+      // ── Restore health snapshots (recovery data for devices without HealthKit)
+      for (const h of data.healthSnapshots ?? []) {
+        try {
+          db.runSync(
+            `INSERT OR REPLACE INTO health_snapshot
+             (id, date, resting_hr, hrv_rmssd, sleep_hours,
+              resting_hr_trend_json, hrv_trend_json, sleep_trend_json,
+              weight_kg, vo2max, respiratory_rate, respiratory_rate_trend_json,
+              spo2, spo2_trend_json, steps, signal_count, cached_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            h.id ?? h.date ?? 'restored',
+            h.date,
+            h.resting_hr ?? null,
+            h.hrv_rmssd ?? null,
+            h.sleep_hours ?? null,
+            h.resting_hr_trend_json ?? null,
+            h.hrv_trend_json ?? null,
+            h.sleep_trend_json ?? null,
+            h.weight_kg ?? null,
+            h.vo2max ?? null,
+            h.respiratory_rate ?? null,
+            h.respiratory_rate_trend_json ?? null,
+            h.spo2 ?? null,
+            h.spo2_trend_json ?? null,
+            h.steps ?? null,
+            h.signal_count ?? 0,
+            h.cached_at ?? new Date().toISOString(),
           );
         } catch {}
       }

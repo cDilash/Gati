@@ -271,6 +271,40 @@ export const useAppStore = create<AppState>((set, get) => ({
         }
       } catch {}
 
+      // Load cached health snapshot (works even without HealthKit — from backup)
+      let cachedHealthSnapshot: HealthSnapshot | null = null;
+      let cachedRecoveryStatus: RecoveryStatus | null = null;
+      try {
+        const db = getDatabase();
+        const row = db.getFirstSync<any>('SELECT * FROM health_snapshot ORDER BY date DESC LIMIT 1');
+        if (row) {
+          cachedHealthSnapshot = {
+            date: row.date,
+            restingHR: row.resting_hr,
+            hrvRMSSD: row.hrv_rmssd,
+            sleepHours: row.sleep_hours,
+            restingHRTrend: JSON.parse(row.resting_hr_trend_json || '[]'),
+            hrvTrend: JSON.parse(row.hrv_trend_json || '[]'),
+            sleepTrend: JSON.parse(row.sleep_trend_json || '[]'),
+            weight: row.weight_kg != null ? { value: row.weight_kg, date: row.date } : null,
+            vo2max: row.vo2max != null ? { value: row.vo2max, date: row.date } : null,
+            respiratoryRate: row.respiratory_rate ?? null,
+            respiratoryRateTrend: JSON.parse(row.respiratory_rate_trend_json || '[]'),
+            spo2: row.spo2 ?? null,
+            spo2Trend: JSON.parse(row.spo2_trend_json || '[]'),
+            steps: row.steps ?? null,
+            stepsTrend: [],
+            signalCount: row.signal_count ?? 0,
+            cachedAt: row.cached_at,
+          };
+          const { calculateRecoveryScore } = require('./health/recoveryScore');
+          cachedRecoveryStatus = calculateRecoveryScore(cachedHealthSnapshot, {
+            restHr: profile?.rest_hr ?? null,
+            maxHr: profile?.max_hr ?? null,
+          });
+        }
+      } catch {}
+
       set({
         isLoading: false,
         userProfile: profile,
@@ -288,6 +322,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         lastSyncTime,
         coachMessages,
         shoes,
+        healthSnapshot: cachedHealthSnapshot,
+        recoveryStatus: cachedRecoveryStatus,
         todayCrossTraining: todayCT,
         weekCrossTraining: weekCT,
       });
