@@ -32,24 +32,29 @@ async function stravaFetch<T>(
   params?: Record<string, string>,
 ): Promise<T | null> {
   const token = await getValidAccessToken();
-  if (!token) return null;
+  if (!token) {
+    console.log(`[Strava] Skipping ${endpoint} — no valid token`);
+    return null;
+  }
 
   const url = new URL(`${STRAVA_BASE}${endpoint}`);
   if (params) {
     Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
   }
 
+  console.log(`[Strava] GET ${endpoint}${params ? '?' + new URLSearchParams(params).toString() : ''}`);
+
   const response = await fetch(url.toString(), {
     headers: { Authorization: `Bearer ${token}` },
   });
 
   if (response.status === 429) {
-    console.warn('Strava rate limited — backing off');
+    console.log('[Strava] Rate limited (429) — backing off');
     return null;
   }
 
   if (!response.ok) {
-    console.warn(`Strava API error: ${response.status} on ${endpoint}`);
+    console.log(`[Strava] API error: ${response.status} on ${endpoint}`);
     return null;
   }
 

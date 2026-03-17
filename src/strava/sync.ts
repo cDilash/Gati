@@ -336,7 +336,9 @@ export async function syncStravaActivities(options?: {
   console.log('[Sync] Last sync timestamp:', lastSync);
 
   // Fetch recent running activities
+  console.log(`[Sync] Fetching activities after timestamp: ${lastSync ? new Date(lastSync * 1000).toISOString() : 'none (full fetch)'}`);
   const activities = await getRecentActivities(lastSync ?? undefined, options?.perPage);
+  console.log(`[Sync] API returned ${activities.length} running activities`);
   if (activities.length === 0) {
     updateLastSyncTimestamp();
     rematchOrphanedMetrics();
@@ -351,7 +353,11 @@ export async function syncStravaActivities(options?: {
 
   for (const activity of activities) {
     // Skip if already imported (dedup by strava_activity_id)
-    if (stravaActivityAlreadyImported(activity.id)) continue;
+    if (stravaActivityAlreadyImported(activity.id)) {
+      console.log(`[Sync] Activity ${activity.id} "${activity.name}" — DUPLICATE, skipping`);
+      continue;
+    }
+    console.log(`[Sync] Activity ${activity.id} "${activity.name}" ${activity.startDate.split('T')[0]} — NEW, importing`);
 
     // Fetch detailed data + streams
     const detail = await getActivityDetail(activity.id);

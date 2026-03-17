@@ -93,6 +93,7 @@ async function refreshAccessToken(refreshToken: string): Promise<{
   expires_at: number;
 } | null> {
   try {
+    console.log('[Strava] Refreshing access token...');
     const response = await fetch(STRAVA_TOKEN_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -104,9 +105,16 @@ async function refreshAccessToken(refreshToken: string): Promise<{
       }),
     });
 
-    if (!response.ok) return null;
-    return await response.json();
-  } catch {
+    if (!response.ok) {
+      const body = await response.text().catch(() => '');
+      console.log(`[Strava] Token refresh FAILED: ${response.status} — ${body.slice(0, 200)}`);
+      return null;
+    }
+    const data = await response.json();
+    console.log(`[Strava] Token refreshed OK — expires ${new Date(data.expires_at * 1000).toISOString()}`);
+    return data;
+  } catch (e: any) {
+    console.log('[Strava] Token refresh error:', e.message);
     return null;
   }
 }
@@ -117,25 +125,30 @@ async function refreshAccessToken(refreshToken: string): Promise<{
  */
 export async function getValidAccessToken(): Promise<string | null> {
   const tokens = getStoredTokens();
-  if (!tokens) return null;
+  if (!tokens) {
+    console.log('[Strava] No stored tokens — not connected');
+    return null;
+  }
 
   const now = Math.floor(Date.now() / 1000);
+  const expired = tokens.expiresAt <= now + 60;
+  console.log(`[Strava] Token expires: ${new Date(tokens.expiresAt * 1000).toISOString()} (${expired ? 'EXPIRED' : 'valid'})`);
 
   // Token is still valid (with 60s buffer)
-  if (tokens.expiresAt > now + 60) {
+  if (!expired) {
     return tokens.accessToken;
   }
 
   // Token expired — refresh it
   const refreshed = await refreshAccessToken(tokens.refreshToken);
   if (!refreshed) {
-    // Refresh failed — don't delete tokens, just return null.
-    // Will retry next time.
+    console.log('[Strava] Token refresh failed — sync will be skipped');
     return null;
   }
 
   // Save the new tokens
   updateTokensOnly(refreshed.access_token, refreshed.refresh_token, refreshed.expires_at);
+  console.log('[Strava] New token saved to SQLite');
   return refreshed.access_token;
 }
 
