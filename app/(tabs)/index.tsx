@@ -378,6 +378,32 @@ export default function TodayScreen() {
                 </XStack>
               );
             })()}
+            {/* Streak tracker */}
+            {(() => {
+              // Count consecutive weeks with 80%+ workout completion (most recent first)
+              let streak = 0;
+              const sortedWeeks = [...weeks].sort((a, b) => b.week_number - a.week_number);
+              for (const w of sortedWeeks) {
+                if (w.week_number > currentWeekNumber) continue; // skip future
+                if (w.week_number === currentWeekNumber) continue; // skip current (incomplete)
+                const weekWO = workouts.filter(wo => wo.week_number === w.week_number && wo.workout_type !== 'rest');
+                if (weekWO.length === 0) break;
+                const completed = weekWO.filter(wo => wo.status === 'completed' || wo.status === 'partial').length;
+                if (completed / weekWO.length >= 0.8) {
+                  streak++;
+                } else {
+                  break;
+                }
+              }
+              if (streak < 2) return null;
+              return (
+                <XStack marginTop="$2" alignItems="center" gap="$2">
+                  <MaterialCommunityIcons name="fire" size={14} color={streak >= 8 ? colors.orange : colors.cyan} />
+                  <M color={streak >= 8 ? colors.orange : colors.cyan} fontSize={13} fontWeight="700">{streak}</M>
+                  <B color="$textTertiary" fontSize={11}>week streak of consistent training</B>
+                </XStack>
+              );
+            })()}
           </YStack>
         )}
         {/* Fallback header when no race name */}
