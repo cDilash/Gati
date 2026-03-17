@@ -6,11 +6,11 @@
 import { useEffect, useState, useMemo } from 'react';
 import { Text, YStack, XStack, ScrollView, Spinner, View } from 'tamagui';
 import { useLocalSearchParams } from 'expo-router';
-import { COLORS } from '../../src/utils/constants';
 import { formatPace, formatTime } from '../../src/engine/vdot';
 import { PerformanceMetric } from '../../src/types';
 import { RouteMap } from '../../src/components/RouteMap';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { colors } from '../../src/theme/colors';
 
 const H = (props: any) => <Text fontFamily="$heading" {...props} />;
 const B = (props: any) => <Text fontFamily="$body" {...props} />;
@@ -104,10 +104,10 @@ function PrimaryStat({ value, unit, label }: { value: string; unit: string; labe
   return (
     <YStack flex={1} alignItems="center">
       <XStack alignItems="baseline">
-        <M fontSize={24} color={COLORS.text} fontWeight="800">{value}</M>
-        {unit ? <M fontSize={14} color={COLORS.textSecondary} fontWeight="600" marginLeft={2}>{unit}</M> : null}
+        <M fontSize={24} color={colors.textPrimary} fontWeight="800">{value}</M>
+        {unit ? <M fontSize={14} color={colors.textSecondary} fontWeight="600" marginLeft={2}>{unit}</M> : null}
       </XStack>
-      <H fontSize={11} color={COLORS.textTertiary} textTransform="uppercase" letterSpacing={1} marginTop={4}>{label}</H>
+      <H fontSize={11} color={colors.textTertiary} textTransform="uppercase" letterSpacing={1} marginTop={4}>{label}</H>
     </YStack>
   );
 }
@@ -115,12 +115,12 @@ function PrimaryStat({ value, unit, label }: { value: string; unit: string; labe
 function GridStat({ label, value, unit }: { label: string; value: string; unit: string }) {
   const icon = GRID_ICON_MAP[label];
   return (
-    <YStack backgroundColor={COLORS.surface} borderRadius={10} paddingVertical={10} paddingHorizontal={14} minWidth="30%" flexGrow={1}>
-      {icon && <MaterialCommunityIcons name={icon as any} size={13} color={COLORS.accent} style={{ marginBottom: 2 }} />}
-      <M fontSize={16} color={COLORS.text} fontWeight="700">
-        {value}<M fontSize={12} color={COLORS.textTertiary}> {unit}</M>
+    <YStack backgroundColor={colors.surface} borderRadius={10} paddingVertical={10} paddingHorizontal={14} minWidth="30%" flexGrow={1}>
+      {icon && <MaterialCommunityIcons name={icon as any} size={13} color={colors.cyan} style={{ marginBottom: 2 }} />}
+      <M fontSize={16} color={colors.textPrimary} fontWeight="700">
+        {value}<M fontSize={12} color={colors.textTertiary}> {unit}</M>
       </M>
-      <H fontSize={10} color={COLORS.textTertiary} textTransform="uppercase" letterSpacing={1} marginTop={2}>{label}</H>
+      <H fontSize={10} color={colors.textTertiary} textTransform="uppercase" letterSpacing={1} marginTop={2}>{label}</H>
     </YStack>
   );
 }
@@ -165,8 +165,8 @@ export default function ActivityDetailScreen() {
 
   if (!metric) {
     return (
-      <YStack flex={1} backgroundColor={COLORS.background} justifyContent="center" alignItems="center">
-        <B color={COLORS.textSecondary} fontSize={16}>Activity not found</B>
+      <YStack flex={1} backgroundColor={colors.background} justifyContent="center" alignItems="center">
+        <B color={colors.textSecondary} fontSize={16}>Activity not found</B>
       </YStack>
     );
   }
@@ -183,24 +183,24 @@ export default function ActivityDetailScreen() {
   const maxPace = splitPaces.length > 0 ? Math.max(...splitPaces) : 0;
 
   return (
-    <ScrollView flex={1} backgroundColor={COLORS.background} contentContainerStyle={{ paddingBottom: 40 }}>
+    <ScrollView flex={1} backgroundColor={colors.background} contentContainerStyle={{ paddingBottom: 40 }}>
       {/* Header */}
-      <H fontSize={24} letterSpacing={1} color={COLORS.text} paddingHorizontal={16} paddingTop={16}>
+      <H fontSize={24} letterSpacing={1} color={colors.textPrimary} paddingHorizontal={16} paddingTop={16}>
         {detail?.activity_name || 'Run'}
       </H>
-      <B fontSize={14} color={COLORS.textSecondary} paddingHorizontal={16} marginTop={4}>
+      <B fontSize={14} color={colors.textSecondary} paddingHorizontal={16} marginTop={4}>
         {new Date(metric.date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
         {detail?.timezone ? `  \u00B7  ${detail.timezone.replace(/_/g, ' ').split(') ').pop()}` : ''}
       </B>
       {workoutTitle && (
-        <H fontSize={13} letterSpacing={1} color={COLORS.accent} paddingHorizontal={16} marginTop={6}>
+        <H fontSize={13} letterSpacing={1} color={colors.cyan} paddingHorizontal={16} marginTop={6}>
           {workoutTitle}
         </H>
       )}
 
       {/* User's Strava description */}
       {detail?.description && (
-        <B fontSize={14} color={COLORS.textSecondary} paddingHorizontal={16} marginTop={8} lineHeight={20} fontStyle="italic">
+        <B fontSize={14} color={colors.textSecondary} paddingHorizontal={16} marginTop={8} lineHeight={20} fontStyle="italic">
           {detail.description}
         </B>
       )}
@@ -213,7 +213,7 @@ export default function ActivityDetailScreen() {
       )}
 
       {/* Primary Stats */}
-      <XStack marginTop={20} marginHorizontal={16} backgroundColor={COLORS.surface} borderRadius={14} padding={16}>
+      <XStack marginTop={20} marginHorizontal={16} backgroundColor={colors.surface} borderRadius={14} padding={16}>
         <PrimaryStat value={`${metric.distance_miles.toFixed(2)}`} unit="mi" label="Distance" />
         <PrimaryStat
           value={metric.duration_minutes && metric.duration_minutes > 0
@@ -249,12 +249,12 @@ export default function ActivityDetailScreen() {
 
       {/* Gear + Device */}
       {(metric.gear_name || detail?.gear_name || detail?.device_name) && (
-        <YStack marginTop={12} marginHorizontal={16} backgroundColor={COLORS.surface} borderRadius={10} padding={12}>
+        <YStack marginTop={12} marginHorizontal={16} backgroundColor={colors.surface} borderRadius={10} padding={12}>
           {(metric.gear_name || detail?.gear_name) && (
-            <B color={COLORS.textSecondary} fontSize={13} lineHeight={20}>Shoes: {metric.gear_name || detail?.gear_name}</B>
+            <B color={colors.textSecondary} fontSize={13} lineHeight={20}>Shoes: {metric.gear_name || detail?.gear_name}</B>
           )}
           {detail?.device_name && (
-            <B color={COLORS.textSecondary} fontSize={13} lineHeight={20}>Device: {detail.device_name}</B>
+            <B color={colors.textSecondary} fontSize={13} lineHeight={20}>Device: {detail.device_name}</B>
           )}
         </YStack>
       )}
@@ -262,26 +262,26 @@ export default function ActivityDetailScreen() {
       {/* Splits */}
       {splits.length > 0 && (
         <YStack marginTop={20} marginHorizontal={16}>
-          <H color={COLORS.textSecondary} fontSize={13} textTransform="uppercase" letterSpacing={1} marginBottom={10}>Splits</H>
-          <YStack backgroundColor={COLORS.surface} borderRadius={12} overflow="hidden">
+          <H color={colors.textSecondary} fontSize={13} textTransform="uppercase" letterSpacing={1} marginBottom={10}>Splits</H>
+          <YStack backgroundColor={colors.surface} borderRadius={12} overflow="hidden">
             {/* Header row */}
-            <XStack paddingVertical={8} paddingHorizontal={12} borderBottomWidth={1} borderBottomColor={COLORS.border}>
-              <H fontSize={11} letterSpacing={1} color={COLORS.textTertiary} textTransform="uppercase" width={40}>Mile</H>
-              <H fontSize={11} letterSpacing={1} color={COLORS.textTertiary} textTransform="uppercase" width={60}>Pace</H>
-              <H fontSize={11} letterSpacing={1} color={COLORS.textTertiary} textTransform="uppercase" width={50}>HR</H>
-              <H fontSize={11} letterSpacing={1} color={COLORS.textTertiary} textTransform="uppercase" flex={1}>Bar</H>
+            <XStack paddingVertical={8} paddingHorizontal={12} borderBottomWidth={1} borderBottomColor={colors.border}>
+              <H fontSize={11} letterSpacing={1} color={colors.textTertiary} textTransform="uppercase" width={40}>Mile</H>
+              <H fontSize={11} letterSpacing={1} color={colors.textTertiary} textTransform="uppercase" width={60}>Pace</H>
+              <H fontSize={11} letterSpacing={1} color={colors.textTertiary} textTransform="uppercase" width={50}>HR</H>
+              <H fontSize={11} letterSpacing={1} color={colors.textTertiary} textTransform="uppercase" flex={1}>Bar</H>
             </XStack>
             {splits.map((s, i) => {
               const pace = s.averageSpeed > 0 ? 1609.344 / s.averageSpeed : 0;
               const paceNorm = maxPace > minPace && pace > 0 ? 1 - (pace - minPace) / (maxPace - minPace) : 0.5;
-              const barColor = paceNorm > 0.6 ? COLORS.success : paceNorm > 0.3 ? COLORS.accent : COLORS.danger;
+              const barColor = paceNorm > 0.6 ? colors.cyan : paceNorm > 0.3 ? colors.cyan : colors.error;
               return (
-                <XStack key={i} alignItems="center" paddingVertical={8} paddingHorizontal={12} borderBottomWidth={0.5} borderBottomColor={COLORS.border}>
-                  <M fontSize={13} color={COLORS.textSecondary} width={40}>{s.split || i + 1}</M>
-                  <M fontSize={14} color={COLORS.text} fontWeight="600" width={60}>{pace > 0 ? formatPace(Math.round(pace)) : '\u2014'}</M>
-                  <M fontSize={13} color={COLORS.textTertiary} width={50}>{s.averageHeartrate ? Math.round(s.averageHeartrate) : '\u2014'}</M>
+                <XStack key={i} alignItems="center" paddingVertical={8} paddingHorizontal={12} borderBottomWidth={0.5} borderBottomColor={colors.border}>
+                  <M fontSize={13} color={colors.textSecondary} width={40}>{s.split || i + 1}</M>
+                  <M fontSize={14} color={colors.textPrimary} fontWeight="600" width={60}>{pace > 0 ? formatPace(Math.round(pace)) : '\u2014'}</M>
+                  <M fontSize={13} color={colors.textTertiary} width={50}>{s.averageHeartrate ? Math.round(s.averageHeartrate) : '\u2014'}</M>
                   <View flex={1}>
-                    <View height={6} backgroundColor={COLORS.surfaceLight} borderRadius={3} overflow="hidden">
+                    <View height={6} backgroundColor={colors.surfaceLight} borderRadius={3} overflow="hidden">
                       <View height="100%" borderRadius={3} width={`${Math.round(paceNorm * 100)}%`} backgroundColor={barColor} />
                     </View>
                   </View>
@@ -295,19 +295,19 @@ export default function ActivityDetailScreen() {
       {/* Laps */}
       {laps.length > 1 && (
         <YStack marginTop={20} marginHorizontal={16}>
-          <H color={COLORS.textSecondary} fontSize={13} textTransform="uppercase" letterSpacing={1} marginBottom={10}>Laps</H>
+          <H color={colors.textSecondary} fontSize={13} textTransform="uppercase" letterSpacing={1} marginBottom={10}>Laps</H>
           {laps.map((lap, i) => {
             const dist = (lap.distance / 1609.344).toFixed(2);
             const pace = lap.averageSpeed > 0 ? Math.round(1609.344 / lap.averageSpeed) : 0;
             return (
-              <XStack key={i} justifyContent="space-between" alignItems="center" backgroundColor={COLORS.surface} borderRadius={10} padding={12} marginBottom={6}>
+              <XStack key={i} justifyContent="space-between" alignItems="center" backgroundColor={colors.surface} borderRadius={10} padding={12} marginBottom={6}>
                 <YStack flex={1}>
-                  <B fontSize={14} color={COLORS.text} fontWeight="600">{lap.name || `Lap ${lap.lapIndex}`}</B>
-                  <M fontSize={12} color={COLORS.textSecondary} marginTop={2}>{dist} mi · {formatTime(lap.movingTime)}</M>
+                  <B fontSize={14} color={colors.textPrimary} fontWeight="600">{lap.name || `Lap ${lap.lapIndex}`}</B>
+                  <M fontSize={12} color={colors.textSecondary} marginTop={2}>{dist} mi · {formatTime(lap.movingTime)}</M>
                 </YStack>
                 <YStack alignItems="flex-end">
-                  <M fontSize={14} color={COLORS.accent} fontWeight="700">{pace > 0 ? formatPace(pace) : '\u2014'}/mi</M>
-                  {lap.averageHeartrate && <M fontSize={12} color={COLORS.textTertiary} marginTop={2}>{Math.round(lap.averageHeartrate)} bpm</M>}
+                  <M fontSize={14} color={colors.cyan} fontWeight="700">{pace > 0 ? formatPace(pace) : '\u2014'}/mi</M>
+                  {lap.averageHeartrate && <M fontSize={12} color={colors.textTertiary} marginTop={2}>{Math.round(lap.averageHeartrate)} bpm</M>}
                 </YStack>
               </XStack>
             );
@@ -318,28 +318,28 @@ export default function ActivityDetailScreen() {
       {/* Best Efforts */}
       {bestEfforts.length > 0 && (
         <YStack marginTop={20} marginHorizontal={16}>
-          <H color={COLORS.textSecondary} fontSize={13} textTransform="uppercase" letterSpacing={1} marginBottom={10}>Best Efforts</H>
+          <H color={colors.textSecondary} fontSize={13} textTransform="uppercase" letterSpacing={1} marginBottom={10}>Best Efforts</H>
           {bestEfforts.map((e, i) => (
-            <XStack key={i} justifyContent="space-between" alignItems="center" paddingVertical={8} borderBottomWidth={0.5} borderBottomColor={COLORS.border}>
+            <XStack key={i} justifyContent="space-between" alignItems="center" paddingVertical={8} borderBottomWidth={0.5} borderBottomColor={colors.border}>
               <XStack alignItems="center" gap={8}>
-                <B fontSize={14} color={COLORS.text} fontWeight="500">{e.name}</B>
+                <B fontSize={14} color={colors.textPrimary} fontWeight="500">{e.name}</B>
                 {e.prRank === 1 && (
-                  <YStack backgroundColor="rgba(255,149,0,0.2)" paddingHorizontal={6} paddingVertical={2} borderRadius={4}>
-                    <H fontSize={11} color={COLORS.warning} letterSpacing={1}>PR</H>
+                  <YStack backgroundColor={colors.orange + '33'} paddingHorizontal={6} paddingVertical={2} borderRadius={4}>
+                    <H fontSize={11} color={colors.orange} letterSpacing={1}>PR</H>
                   </YStack>
                 )}
                 {e.prRank === 2 && (
-                  <YStack backgroundColor="rgba(174,174,178,0.15)" paddingHorizontal={6} paddingVertical={2} borderRadius={4}>
-                    <H fontSize={11} color={COLORS.textSecondary} letterSpacing={1}>2nd</H>
+                  <YStack backgroundColor={colors.textTertiary + '22'} paddingHorizontal={6} paddingVertical={2} borderRadius={4}>
+                    <H fontSize={11} color={colors.textSecondary} letterSpacing={1}>2nd</H>
                   </YStack>
                 )}
                 {e.prRank === 3 && (
-                  <YStack backgroundColor="rgba(174,174,178,0.15)" paddingHorizontal={6} paddingVertical={2} borderRadius={4}>
-                    <H fontSize={11} color={COLORS.textSecondary} letterSpacing={1}>3rd</H>
+                  <YStack backgroundColor={colors.textTertiary + '22'} paddingHorizontal={6} paddingVertical={2} borderRadius={4}>
+                    <H fontSize={11} color={colors.textSecondary} letterSpacing={1}>3rd</H>
                   </YStack>
                 )}
               </XStack>
-              <M fontSize={15} color={COLORS.accent} fontWeight="700">{formatTime(e.movingTime)}</M>
+              <M fontSize={15} color={colors.cyan} fontWeight="700">{formatTime(e.movingTime)}</M>
             </XStack>
           ))}
         </YStack>
@@ -348,38 +348,38 @@ export default function ActivityDetailScreen() {
       {/* Segment Efforts */}
       {segmentEfforts.length > 0 && (
         <YStack marginTop={20} marginHorizontal={16}>
-          <H color={COLORS.textSecondary} fontSize={13} textTransform="uppercase" letterSpacing={1} marginBottom={10}>Segments</H>
+          <H color={colors.textSecondary} fontSize={13} textTransform="uppercase" letterSpacing={1} marginBottom={10}>Segments</H>
           {segmentEfforts.map((seg, i) => {
             const dist = (seg.distance / 1609.344).toFixed(2);
             const pace = seg.distance > 0 && seg.movingTime > 0
               ? Math.round((seg.movingTime / seg.distance) * 1609.344)
               : 0;
             return (
-              <YStack key={i} paddingVertical={10} borderBottomWidth={0.5} borderBottomColor={COLORS.border}>
+              <YStack key={i} paddingVertical={10} borderBottomWidth={0.5} borderBottomColor={colors.border}>
                 <XStack alignItems="center" gap={6} marginBottom={3} flexWrap="wrap">
-                  <B fontSize={14} color={COLORS.text} fontWeight="600" flexShrink={1} numberOfLines={1}>{seg.name}</B>
+                  <B fontSize={14} color={colors.textPrimary} fontWeight="600" flexShrink={1} numberOfLines={1}>{seg.name}</B>
                   {seg.prRank === 1 && (
-                    <YStack backgroundColor="rgba(255,149,0,0.2)" paddingHorizontal={6} paddingVertical={2} borderRadius={4}>
-                      <H fontSize={11} color={COLORS.warning} letterSpacing={1}>PR</H>
+                    <YStack backgroundColor={colors.orange + '33'} paddingHorizontal={6} paddingVertical={2} borderRadius={4}>
+                      <H fontSize={11} color={colors.orange} letterSpacing={1}>PR</H>
                     </YStack>
                   )}
                   {seg.prRank === 2 && (
-                    <YStack backgroundColor="rgba(174,174,178,0.15)" paddingHorizontal={6} paddingVertical={2} borderRadius={4}>
-                      <H fontSize={11} color={COLORS.textSecondary} letterSpacing={1}>2nd</H>
+                    <YStack backgroundColor={colors.textTertiary + '22'} paddingHorizontal={6} paddingVertical={2} borderRadius={4}>
+                      <H fontSize={11} color={colors.textSecondary} letterSpacing={1}>2nd</H>
                     </YStack>
                   )}
                   {seg.prRank === 3 && (
-                    <YStack backgroundColor="rgba(174,174,178,0.15)" paddingHorizontal={6} paddingVertical={2} borderRadius={4}>
-                      <H fontSize={11} color={COLORS.textSecondary} letterSpacing={1}>3rd</H>
+                    <YStack backgroundColor={colors.textTertiary + '22'} paddingHorizontal={6} paddingVertical={2} borderRadius={4}>
+                      <H fontSize={11} color={colors.textSecondary} letterSpacing={1}>3rd</H>
                     </YStack>
                   )}
                   {seg.komRank != null && seg.komRank <= 10 && (
-                    <YStack backgroundColor="rgba(255, 215, 0, 0.2)" paddingHorizontal={6} paddingVertical={2} borderRadius={4}>
+                    <YStack backgroundColor={'#FFD70033'} paddingHorizontal={6} paddingVertical={2} borderRadius={4}>
                       <H fontSize={10} color="#FFD700" letterSpacing={1}>KOM #{seg.komRank}</H>
                     </YStack>
                   )}
                 </XStack>
-                <M fontSize={12} color={COLORS.textSecondary}>
+                <M fontSize={12} color={colors.textSecondary}>
                   {dist} mi · {formatTime(seg.movingTime)}
                   {pace > 0 ? ` · ${formatPace(pace)}/mi` : ''}
                   {seg.averageHeartrate ? ` · ${Math.round(seg.averageHeartrate)} bpm` : ''}
