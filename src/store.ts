@@ -95,6 +95,7 @@ interface AppState {
   lastSyncResult: { strava: string | null; health: string | null } | null;
 
   // Notifications
+  pendingPostRunSummary: { workoutId: string; metricId: string } | null;
   vdotNotification: { oldVDOT: number; newVDOT: number; source: string } | null;
   proactiveSuggestion: {
     message: string;
@@ -168,6 +169,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   weekCrossTraining: [],
   isSyncing: false,
   lastSyncResult: null,
+  pendingPostRunSummary: null,
   vdotNotification: null,
   proactiveSuggestion: null,
   currentWeekNumber: 0,
@@ -739,13 +741,27 @@ export const useAppStore = create<AppState>((set, get) => ({
       get().syncStravaConnection();
       get().refreshShoes();
 
-      // Auto-trigger post-run analysis for today's completed workout (fire-and-forget)
+      // Auto-trigger post-run analysis + post-run summary modal
       if (result.matched > 0) {
         (async () => {
           try {
             const todayW = get().todaysWorkout;
             if (todayW && (todayW.status === 'completed' || todayW.status === 'partial')) {
               await get().fetchPostRunAnalysis(todayW.id);
+
+              // Show post-run summary modal if not already shown for this workout
+              const lastShown = getSetting('last_shown_summary_workout_id');
+              if (lastShown !== todayW.id) {
+                // Find the matched metric
+                const db = getDatabase();
+                const metricRow = db.getFirstSync<any>(
+                  'SELECT id FROM performance_metric WHERE workout_id = ? ORDER BY date DESC LIMIT 1',
+                  [todayW.id]
+                );
+                if (metricRow) {
+                  set({ pendingPostRunSummary: { workoutId: todayW.id, metricId: metricRow.id } });
+                }
+              }
             }
           } catch {}
         })();

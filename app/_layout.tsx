@@ -49,6 +49,16 @@ export default function RootLayout() {
     else if (userProfile && inSetup) router.replace('/(tabs)');
   }, [fontsLoaded, isLoading, userProfile, segments]);
 
+  // Post-run summary modal trigger
+  const pendingPostRun = useAppStore(s => s.pendingPostRunSummary);
+  useEffect(() => {
+    if (pendingPostRun && !isLoading && userProfile) {
+      // Small delay to let the main UI settle
+      const t = setTimeout(() => router.push('/post-run'), 1500);
+      return () => clearTimeout(t);
+    }
+  }, [pendingPostRun?.workoutId]);
+
   // Loading state — fonts or app data
   if (!fontsLoaded || isLoading) {
     return (
@@ -73,6 +83,7 @@ export default function RootLayout() {
         >
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen name="setup" options={{ headerShown: false, presentation: 'fullScreenModal' }} />
+          <Stack.Screen name="post-run" options={{ headerShown: false, presentation: 'fullScreenModal', gestureEnabled: true }} />
           <Stack.Screen
             name="workout/[id]"
             options={({ navigation }) => ({
