@@ -14,6 +14,7 @@ import { colors } from '../src/theme/colors';
 import { GradientText } from '../src/theme/GradientText';
 import { GradientButton } from '../src/theme/GradientButton';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { RouteMap } from '../src/components/RouteMap';
 
 const H = (props: any) => <Text fontFamily="$heading" {...props} />;
 const B = (props: any) => <Text fontFamily="$body" {...props} />;
@@ -131,7 +132,14 @@ export default function PostRunModal() {
         </XStack>
       </YStack>
 
-      {/* Section 2: vs Plan Comparison */}
+      {/* Section 2: Route Map */}
+      {detail?.polyline_encoded && (
+        <YStack marginHorizontal={16} marginBottom={12} borderRadius={14} overflow="hidden">
+          <RouteMap polyline={detail.polyline_encoded} height={220} strokeColor={colors.cyan} strokeWidth={4} />
+        </YStack>
+      )}
+
+      {/* Section 3: vs Plan Comparison */}
       {workout && targetDist && (
         <YStack backgroundColor={colors.surface} borderRadius={14} marginHorizontal={16} padding={16} marginBottom={12}>
           <H color={colors.textSecondary} fontSize={12} letterSpacing={1.5} marginBottom={12}>VS PLAN</H>
