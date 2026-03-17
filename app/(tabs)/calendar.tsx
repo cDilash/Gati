@@ -5,10 +5,11 @@ import { useRouter } from 'expo-router';
 import { useAppStore } from '../../src/store';
 import { WORKOUT_TYPE_LABELS } from '../../src/utils/constants';
 import { formatDate, isToday } from '../../src/utils/dateUtils';
-import { Workout, CrossTraining, CROSS_TRAINING_LABELS } from '../../src/types';
+import { Workout, CrossTraining, CROSS_TRAINING_LABELS, PerformanceMetric } from '../../src/types';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { getWorkoutIcon } from '../../src/utils/workoutIcons';
 import { colors, semantic, phaseColors } from '../../src/theme/colors';
+import { formatPace } from '../../src/engine/vdot';
 
 const H = (props: any) => <Text fontFamily="$heading" {...props} />;
 const B = (props: any) => <Text fontFamily="$body" {...props} />;
@@ -49,6 +50,24 @@ export default function CalendarScreen() {
     } catch {}
     return map;
   }, [workouts]); // re-derive when workouts change (after sync)
+
+  // Actual metrics for completed workouts (keyed by workout_id)
+  const metricsByWorkout = useMemo(() => {
+    const map = new Map<string, PerformanceMetric>();
+    try {
+      const { getDatabase } = require('../../src/db/database');
+      const db = getDatabase();
+      const rows = db.getAllSync(
+        `SELECT * FROM performance_metric WHERE workout_id IS NOT NULL ORDER BY date DESC`
+      );
+      for (const r of rows) {
+        if (r.workout_id && !map.has(r.workout_id)) {
+          map.set(r.workout_id, r as PerformanceMetric);
+        }
+      }
+    } catch {}
+    return map;
+  }, [workouts]);
 
   const adherence = useMemo(() => {
     const past = workouts.filter(w => w.workout_type !== 'rest' && (w.status === 'completed' || w.status === 'skipped' || w.status === 'partial'));
@@ -217,6 +236,7 @@ export default function CalendarScreen() {
                   const statusColor = workout.status === 'completed' ? colors.success : workout.status === 'skipped' ? colors.error : workout.status === 'partial' ? colors.orangeDim : colors.textTertiary;
                   const isWToday = isToday(workout.scheduled_date);
                   const dayCT = crossTrainingByDate.get(workout.scheduled_date);
+                  const metric = (workout.status === 'completed' || workout.status === 'partial') ? metricsByWorkout.get(workout.id) : null;
 
                   return (
                     <YStack key={workout.id}>
@@ -235,10 +255,19 @@ export default function CalendarScreen() {
                           <B color="$color" fontSize={14}>{workout.workout_type === 'rest' ? 'Rest Day' : workout.title}</B>
                         </YStack>
 
-                        {workout.workout_type !== 'rest' && workout.target_distance_miles != null && (
-                          <M color="$textSecondary" fontSize={13} fontWeight="700" marginLeft="$2">
-                            {workout.target_distance_miles.toFixed(1)} mi
-                          </M>
+                        {workout.workout_type !== 'rest' && (
+                          <XStack alignItems="center" gap="$1" marginLeft="$2">
+                            {metric ? (
+                              <>
+                                <M color="$color" fontSize={13} fontWeight="700">{metric.distance_miles.toFixed(1)} mi</M>
+                                {metric.avg_pace_sec_per_mile ? (
+                                  <M color="$textTertiary" fontSize={11}>@ {formatPace(metric.avg_pace_sec_per_mile)}</M>
+                                ) : null}
+                              </>
+                            ) : workout.target_distance_miles != null ? (
+                              <M color="$textSecondary" fontSize={13} fontWeight="700">{workout.target_distance_miles.toFixed(1)} mi</M>
+                            ) : null}
+                          </XStack>
                         )}
                       </XStack>
                       {/* Cross-training on this day */}
