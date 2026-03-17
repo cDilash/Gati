@@ -47,13 +47,15 @@ function RecoveryHero({ recovery, snapshot }: { recovery: RecoveryStatus | null;
   const [connecting, setConnecting] = useState(false);
 
   if (!recovery || recovery.level === 'unknown') {
-    // No HealthKit data — show connect prompt
+    // Check if we have a snapshot but just not enough signals for a score
+    const hasAnyData = snapshot && (snapshot.restingHR !== null || snapshot.sleepHours !== null || snapshot.steps !== null);
+
     const handleConnect = async () => {
       setConnecting(true);
       try {
         const { isHealthKitAvailable } = require('../../src/health/availability');
         if (!isHealthKitAvailable()) {
-          Alert.alert('Not Available', 'Apple Health is not available on this device.');
+          Alert.alert('Not Available', 'Apple Health is not available on this device. Recovery data from your primary device is shown below.');
           setConnecting(false);
           return;
         }
@@ -70,6 +72,22 @@ function RecoveryHero({ recovery, snapshot }: { recovery: RecoveryStatus | null;
       setConnecting(false);
     };
 
+    if (hasAnyData) {
+      // Has some data but not enough for a recovery score — show what we have
+      return (
+        <YStack backgroundColor="$surface" borderRadius="$6" padding="$6" alignItems="center">
+          <MaterialCommunityIcons name="heart-pulse" size={40} color={colors.textTertiary} />
+          <H color="$color" fontSize={20} letterSpacing={1} marginTop="$3">Limited Data</H>
+          <B color="$textSecondary" fontSize={14} textAlign="center" lineHeight={20} marginTop="$2">
+            {snapshot?.signalCount === 1
+              ? 'Need at least 2 signals for a recovery score. Wear your watch tonight for sleep data.'
+              : 'Recovery data is available below. Wear your watch to track more signals.'}
+          </B>
+        </YStack>
+      );
+    }
+
+    // No data at all — show connect prompt
     return (
       <YStack backgroundColor="$surface" borderRadius="$6" padding="$6" alignItems="center">
         <MaterialCommunityIcons name="heart-pulse" size={40} color={colors.textTertiary} />
@@ -733,7 +751,7 @@ export default function RecoveryScreen() {
       <RecoveryHero recovery={recoveryStatus} snapshot={healthSnapshot} />
 
       {/* SECTION 2: Recovery Signals */}
-      {recoveryStatus && recoveryStatus.level !== 'unknown' && (
+      {(recoveryStatus && recoveryStatus.level !== 'unknown') ? (
         <YStack marginTop="$4" gap="$3">
           {hasRHR && (
             <RestingHRCard signal={recoveryStatus.signals.find(s => s.type === 'resting_hr')!} trendData={rhrTrendFull} />
@@ -769,7 +787,42 @@ export default function RecoveryScreen() {
             </YStack>
           )}
         </YStack>
-      )}
+      ) : healthSnapshot && (healthSnapshot.restingHR !== null || healthSnapshot.sleepHours !== null) ? (
+        /* Has some data but not enough for a full recovery score — show raw values */
+        <YStack marginTop="$4" gap="$3">
+          {healthSnapshot.restingHR !== null && (
+            <YStack backgroundColor="$surface" borderRadius="$6" padding="$4" borderLeftWidth={3} borderLeftColor={colors.cyan}>
+              <XStack alignItems="center" justifyContent="space-between">
+                <XStack alignItems="center" gap="$2">
+                  <MaterialCommunityIcons name="heart-pulse" size={18} color={colors.cyan} />
+                  <B color="$color" fontSize={14} fontWeight="600">Resting Heart Rate</B>
+                </XStack>
+                <XStack alignItems="center" gap="$2">
+                  <M color="$color" fontSize={18} fontWeight="800">{healthSnapshot.restingHR}</M>
+                  <B color="$textTertiary" fontSize={12}>bpm</B>
+                </XStack>
+              </XStack>
+            </YStack>
+          )}
+          {healthSnapshot.sleepHours !== null && (
+            <YStack backgroundColor="$surface" borderRadius="$6" padding="$4" borderLeftWidth={3} borderLeftColor={colors.cyan}>
+              <XStack alignItems="center" justifyContent="space-between">
+                <XStack alignItems="center" gap="$2">
+                  <MaterialCommunityIcons name="sleep" size={18} color={colors.cyan} />
+                  <B color="$color" fontSize={14} fontWeight="600">Last Night's Sleep</B>
+                </XStack>
+                <XStack alignItems="center" gap="$2">
+                  <M color="$color" fontSize={18} fontWeight="800">{healthSnapshot.sleepHours}</M>
+                  <B color="$textTertiary" fontSize={12}>hrs</B>
+                </XStack>
+              </XStack>
+            </YStack>
+          )}
+          <B color="$textTertiary" fontSize={12} textAlign="center">
+            Wear your watch tonight for trend data and recovery scoring.
+          </B>
+        </YStack>
+      ) : null}
 
       {/* Additional Health Context (non-scoring) */}
       {healthSnapshot && (healthSnapshot.spo2 !== null || healthSnapshot.steps !== null) && (
