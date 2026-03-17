@@ -42,6 +42,7 @@ export async function generateBriefing(
   currentWeek: TrainingWeek | null,
   daysUntilRace: number,
   recoveryInfo?: string | null,
+  weatherInfo?: string | null,
 ): Promise<string | null> {
   if (!isGeminiAvailable()) return null;
   if (workout.workout_type === 'rest') return null;
@@ -67,6 +68,10 @@ ${recentRuns.length > 0 ? `LAST RUN: ${recentRuns[0].date} — ${recentRuns[0].d
 PACE ZONES: E ${formatPaceRange(paceZones.E)}, M ${formatPaceRange(paceZones.M)}, T ${formatPaceRange(paceZones.T)}
 
 ${recoveryInfo || 'Recovery data: not available'}
+
+${weatherInfo || 'Weather: not available'}
+
+If weather data is provided, mention it in your briefing — adjust pace recommendations for heat, cold, rain, or wind. This is what real coaches do.
 
 Respond with ONLY the briefing text. No JSON, no formatting.`;
 

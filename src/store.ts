@@ -561,9 +561,20 @@ export const useAppStore = create<AppState>((set, get) => ({
         const signals = recoveryStatus.signals.map(s => `${s.type}: ${s.detail}`).join(', ');
         recoveryInfo = `RECOVERY: ${recoveryStatus.score}/100 (${recoveryStatus.level}). ${signals}`;
       }
+
+      // Fetch weather for the briefing (fire-and-forget if it fails)
+      let weatherInfo: string | null = null;
+      try {
+        const { getWeatherForRun } = require('./ai/weather');
+        const weather = await getWeatherForRun();
+        if (weather) {
+          weatherInfo = `WEATHER: ${weather.temperature}°F (feels like ${weather.feelsLike}°F), ${weather.humidity}% humidity, ${weather.windSpeed} mph wind. ${weather.description}. ${weather.advice}${weather.paceAdjustment > 0 ? ` Suggested pace adjustment: +${weather.paceAdjustment} sec/mile.` : ''}`;
+        }
+      } catch {}
+
       const briefing = await generateBriefing(
         todaysWorkout, recentMetrics, paceZones,
-        userProfile, currentWeek, daysUntilRace, recoveryInfo,
+        userProfile, currentWeek, daysUntilRace, recoveryInfo, weatherInfo,
       );
       if (briefing) set({ preWorkoutBriefing: briefing });
     } catch (error) {
