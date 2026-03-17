@@ -281,7 +281,7 @@ export default function ActivityDetailScreen() {
                   <M fontSize={14} color={colors.textPrimary} fontWeight="600" width={60}>{pace > 0 ? formatPace(Math.round(pace)) : '\u2014'}</M>
                   <M fontSize={13} color={colors.textTertiary} width={50}>{s.averageHeartrate ? Math.round(s.averageHeartrate) : '\u2014'}</M>
                   <View flex={1}>
-                    <View height={6} backgroundColor={colors.surfaceLight} borderRadius={3} overflow="hidden">
+                    <View height={6} backgroundColor={colors.surfaceHover} borderRadius={3} overflow="hidden">
                       <View height="100%" borderRadius={3} width={`${Math.round(paceNorm * 100)}%`} backgroundColor={barColor} />
                     </View>
                   </View>
