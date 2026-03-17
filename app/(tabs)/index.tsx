@@ -503,10 +503,17 @@ export default function TodayScreen() {
                   </YStack>
                 )}
               </XStack>
-              {todaysWorkout.target_distance_miles && todaysMetric.distance_miles !== todaysWorkout.target_distance_miles && (
+              {todaysWorkout.target_distance_miles && Math.abs(todaysMetric.distance_miles - todaysWorkout.target_distance_miles) > 0.2 && (
                 <B color="$textTertiary" fontSize={11} marginTop="$2">
                   Target was {todaysWorkout.target_distance_miles.toFixed(1)} mi — ran {Math.round((todaysMetric.distance_miles / todaysWorkout.target_distance_miles) * 100)}% of target
                 </B>
+              )}
+              {(todaysWorkout as any).execution_quality && (todaysWorkout as any).execution_quality !== 'on_target' && (
+                <XStack marginTop="$2">
+                  <B color={colors.orange} fontSize={10} fontWeight="700" backgroundColor={colors.orange + '22'} paddingHorizontal={6} paddingVertical={2} borderRadius={4}>
+                    {(todaysWorkout as any).execution_quality === 'missed_pace' ? 'Pace ↓ — slower than target zone' : (todaysWorkout as any).execution_quality === 'exceeded_pace' ? 'Pace ↑ — faster than easy zone' : 'Modified workout'}
+                  </B>
+                </XStack>
               )}
             </YStack>
           )}

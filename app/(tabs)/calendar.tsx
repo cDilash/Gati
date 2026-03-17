@@ -221,7 +221,7 @@ export default function CalendarScreen() {
                   )}
                 </XStack>
                 <XStack alignItems="center" gap={8}>
-                  <M color="$textSecondary" fontSize={13} fontWeight="700">
+                  <M color={completedVolume >= week.target_volume ? colors.cyan : completedVolume >= week.target_volume * 0.8 ? '$color' : completedVolume > 0 ? colors.orange : '$textSecondary'} fontSize={13} fontWeight="700">
                     {completedVolume > 0 ? `${completedVolume.toFixed(0)}/${week.target_volume.toFixed(0)} mi` : `${week.target_volume.toFixed(0)} mi`}
                   </M>
                   <B color="$textTertiary" fontSize={14}>{isExpanded ? '▾' : '▸'}</B>
@@ -237,39 +237,65 @@ export default function CalendarScreen() {
                   const isWToday = isToday(workout.scheduled_date);
                   const dayCT = crossTrainingByDate.get(workout.scheduled_date);
                   const metric = (workout.status === 'completed' || workout.status === 'partial') ? metricsByWorkout.get(workout.id) : null;
+                  const isSkipped = workout.status === 'skipped';
+                  const eq = (workout as any).execution_quality;
+                  const hasQualityIssue = eq && eq !== 'on_target' && (workout.status === 'completed' || workout.status === 'partial');
 
                   return (
-                    <YStack key={workout.id}>
-                      <XStack alignItems="center" paddingVertical="$3" borderBottomWidth={0.5} borderBottomColor="$border"
+                    <YStack key={workout.id} opacity={isSkipped ? 0.5 : 1}>
+                      <YStack paddingVertical="$3" borderBottomWidth={0.5} borderBottomColor="$border"
                         backgroundColor={isWToday ? '$surfaceLight' : 'transparent'} marginHorizontal={isWToday ? -14 : 0}
                         paddingHorizontal={isWToday ? 14 : 0} borderRadius={isWToday ? 8 : 0}
                         pressStyle={workout.workout_type !== 'rest' ? { opacity: 0.7 } : undefined}
                         onPress={workout.workout_type !== 'rest' ? () => router.push(`/workout/${workout.id}`) : undefined}>
 
-                        <MaterialCommunityIcons name={getWorkoutIcon(workout.workout_type) as any} size={16} color={statusColor} style={{ marginRight: 8, width: 16 }} />
+                        {/* Row 1: Date + Title + Distance */}
+                        <XStack alignItems="center">
+                          <MaterialCommunityIcons name={getWorkoutIcon(workout.workout_type) as any} size={16} color={statusColor} style={{ marginRight: 8, width: 16 }} />
+                          <YStack flex={1}>
+                            <B color="$textTertiary" fontSize={11} fontWeight="600" marginBottom={1}>
+                              {formatDate(workout.scheduled_date)}{isWToday ? '  (Today)' : ''}
+                            </B>
+                            <B color={isSkipped ? '$textTertiary' : '$color'} fontSize={14}
+                              textDecorationLine={isSkipped ? 'line-through' : 'none'}>
+                              {workout.workout_type === 'rest' ? 'Rest Day' : workout.title}
+                            </B>
+                          </YStack>
+                          {workout.workout_type !== 'rest' && (
+                            <M color={isSkipped ? '$textTertiary' : '$color'} fontSize={13} fontWeight="700" marginLeft="$2"
+                              textDecorationLine={isSkipped ? 'line-through' : 'none'}>
+                              {metric ? `${metric.distance_miles.toFixed(1)} mi` : workout.target_distance_miles != null ? `${workout.target_distance_miles.toFixed(1)} mi` : ''}
+                            </M>
+                          )}
+                        </XStack>
 
-                        <YStack flex={1}>
-                          <B color="$textTertiary" fontSize={11} fontWeight="600" marginBottom={1}>
-                            {formatDate(workout.scheduled_date)}{isWToday ? '  (Today)' : ''}
-                          </B>
-                          <B color="$color" fontSize={14}>{workout.workout_type === 'rest' ? 'Rest Day' : workout.title}</B>
-                        </YStack>
-
-                        {workout.workout_type !== 'rest' && (
-                          <XStack alignItems="center" gap="$1" marginLeft="$2">
-                            {metric ? (
-                              <>
-                                <M color="$color" fontSize={13} fontWeight="700">{metric.distance_miles.toFixed(1)} mi</M>
-                                {metric.avg_pace_sec_per_mile ? (
-                                  <M color="$textTertiary" fontSize={11}>@ {formatPace(metric.avg_pace_sec_per_mile)}</M>
-                                ) : null}
-                              </>
-                            ) : workout.target_distance_miles != null ? (
-                              <M color="$textSecondary" fontSize={13} fontWeight="700">{workout.target_distance_miles.toFixed(1)} mi</M>
+                        {/* Row 2: Actual stats for completed/partial (pace, HR, duration) */}
+                        {metric && (
+                          <XStack marginLeft={24} marginTop={4} gap="$2" alignItems="center" flexWrap="wrap">
+                            {metric.avg_pace_sec_per_mile ? (
+                              <M color="$textSecondary" fontSize={11}>{formatPace(metric.avg_pace_sec_per_mile)}/mi</M>
                             ) : null}
+                            {metric.avg_hr ? (
+                              <M color={colors.orange} fontSize={11}>{metric.avg_hr} bpm</M>
+                            ) : null}
+                            {metric.duration_minutes ? (
+                              <M color="$textTertiary" fontSize={11}>{Math.floor(metric.duration_minutes)}:{String(Math.round((metric.duration_minutes % 1) * 60)).padStart(2, '0')}</M>
+                            ) : null}
+                            {hasQualityIssue && (
+                              <B color={colors.orange} fontSize={9} fontWeight="700" backgroundColor={colors.orange + '22'} paddingHorizontal={4} paddingVertical={1} borderRadius={3}>
+                                {eq === 'missed_pace' ? 'Pace ↓' : eq === 'exceeded_pace' ? 'Pace ↑' : 'Modified'}
+                              </B>
+                            )}
                           </XStack>
                         )}
-                      </XStack>
+
+                        {/* Row 3: Target comparison for completed/partial */}
+                        {metric && workout.target_distance_miles != null && Math.abs(metric.distance_miles - workout.target_distance_miles) > 0.2 && (
+                          <B color="$textTertiary" fontSize={10} marginLeft={24} marginTop={2}>
+                            planned {workout.target_distance_miles.toFixed(1)} mi · {metric.distance_miles > workout.target_distance_miles ? '+' : ''}{Math.round(((metric.distance_miles / workout.target_distance_miles) - 1) * 100)}%
+                          </B>
+                        )}
+                      </YStack>
                       {/* Cross-training on this day */}
                       {dayCT && (
                         <XStack alignItems="center" paddingVertical={6} paddingLeft={24} borderBottomWidth={0.5} borderBottomColor="$border">
