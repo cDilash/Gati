@@ -322,7 +322,7 @@ export default function ActivitiesScreen() {
                       backgroundColor={
                         runType === 'Race' ? '$dangerMuted'
                         : runType === 'Trail' ? '$successMuted'
-                        : runType === 'Treadmill' ? 'rgba(174,174,178,0.15)'
+                        : runType === 'Treadmill' ? (colors.textTertiary + '22')
                         : '$accentMuted'
                       }
                     >

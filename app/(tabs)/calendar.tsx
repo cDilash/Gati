@@ -198,7 +198,7 @@ export default function CalendarScreen() {
                     </H>
                   </YStack>
                   {week.is_cutback && (
-                    <YStack backgroundColor="rgba(174,174,178,0.15)" paddingHorizontal={6} paddingVertical={2} borderRadius={4}>
+                    <YStack backgroundColor={colors.textTertiary + '22'} paddingHorizontal={6} paddingVertical={2} borderRadius={4}>
                       <H color="$textTertiary" fontSize={10} textTransform="uppercase" letterSpacing={1}>Cutback</H>
                     </YStack>
                   )}

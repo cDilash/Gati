@@ -105,3 +105,11 @@ export const zoneColors = [
   '#CC8822',        // Zone 4 — interval
   colors.orange,    // Zone 5 — max
 ] as const;
+
+// Sleep stages (domain-specific)
+export const sleepStageColors = {
+  deep: '#006090',
+  light: colors.cyan,
+  rem: '#9966FF',
+  awake: colors.textTertiary,
+} as const;

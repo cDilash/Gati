@@ -11,7 +11,7 @@ import {
 } from '../../src/engine/vdot';
 import { PaceZoneName, PaceZones, HRZones, Shoe, RecoveryStatus, HealthSnapshot, SleepResult, RestingHRResult } from '../../src/types';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { colors, semantic, zoneColors } from '../../src/theme/colors';
+import { colors, semantic, zoneColors, sleepStageColors } from '../../src/theme/colors';
 import { GradientText } from '../../src/theme/GradientText';
 import { GradientBorder } from '../../src/theme/GradientBorder';
 
@@ -419,12 +419,7 @@ function formatNightLabel(dateStr: string): string {
   } catch { return dateStr; }
 }
 
-const STAGE_COLORS = {
-  deep: '#006090',     // dark cyan
-  light: colors.cyan,
-  rem: '#9966FF',      // purple blend
-  awake: colors.textTertiary,
-};
+const STAGE_COLORS = sleepStageColors;
 
 function SleepCard({ signal, sleepTrend }: {
   signal: { value: number | null; status: string; score: number; detail: string };
@@ -637,7 +632,7 @@ function PaceZoneRow({ zone, paceZones }: { zone: PaceZoneName; paceZones: PaceZ
           <B color="$color" fontSize={15} fontWeight="600" flex={1}>{ZONE_FULL_NAMES[zone]}</B>
           <B color="$textTertiary" fontSize={12}>{ZONE_RPE[zone]}</B>
         </XStack>
-        <M color="$accent" fontSize={15} fontWeight="700" marginLeft={28} marginBottom={2}>
+        <M color={colors.cyan} fontSize={15} fontWeight="700" marginLeft={28} marginBottom={2}>
           {formatPaceRange(range)} /mi
         </M>
         <B color="$textSecondary" fontSize={12} marginLeft={28} lineHeight={16}>{desc}</B>
@@ -655,7 +650,7 @@ function HRZoneRow({ label, name, min, max, index }: { label: string; name: stri
         <B color="$color" fontSize={14} fontWeight="600">{label}</B>
         <B color="$textSecondary" fontSize={12}>{name}</B>
       </YStack>
-      <M color="$accent" fontSize={14} fontWeight="600">{min} - {max} bpm</M>
+      <M color={colors.orange} fontSize={14} fontWeight="600">{min} - {max} bpm</M>
     </XStack>
   );
 }
@@ -802,18 +797,19 @@ export default function RecoveryScreen() {
 
       {/* SECTION 3: Today's Recommendation */}
       {recoveryStatus && recoveryStatus.level !== 'unknown' && (
-        <YStack backgroundColor="$surface" borderRadius="$6" padding="$4" marginTop="$4" borderLeftWidth={3}
-          borderLeftColor={recoveryStatus.score >= 80 ? colors.cyan : recoveryStatus.score >= 60 ? colors.orange : colors.error}>
-          <H color="$textSecondary" fontSize={12} textTransform="uppercase" letterSpacing={1.5} marginBottom="$2">
-            Today's Recommendation
-          </H>
-          <B color="$color" fontSize={14} lineHeight={21}>{recoveryStatus.recommendation}</B>
-          {todaysWorkout && todaysWorkout.workout_type !== 'rest' && (
-            <B color="$textTertiary" fontSize={12} marginTop="$2">
-              Scheduled: {todaysWorkout.title} — {todaysWorkout.target_distance_miles?.toFixed(1)} mi
-            </B>
-          )}
-        </YStack>
+        <GradientBorder side="left" borderWidth={3} borderRadius={14} style={{ marginTop: 16 }}>
+          <YStack padding="$4">
+            <H color="$textSecondary" fontSize={12} textTransform="uppercase" letterSpacing={1.5} marginBottom="$2">
+              Today's Recommendation
+            </H>
+            <B color="$color" fontSize={14} lineHeight={21}>{recoveryStatus.recommendation}</B>
+            {todaysWorkout && todaysWorkout.workout_type !== 'rest' && (
+              <B color="$textTertiary" fontSize={12} marginTop="$2">
+                Scheduled: {todaysWorkout.title} — {todaysWorkout.target_distance_miles?.toFixed(1)} mi
+              </B>
+            )}
+          </YStack>
+        </GradientBorder>
       )}
 
       {/* SECTION 4: Pace Zones (collapsible) */}
@@ -840,12 +836,12 @@ export default function RecoveryScreen() {
           <XStack justifyContent="center" alignItems="center" paddingVertical="$4" borderBottomWidth={0.5} borderBottomColor="$border" gap="$8">
             <YStack alignItems="center">
               <H color="$textSecondary" fontSize={12} textTransform="uppercase" letterSpacing={1}>VDOT</H>
-              <M color="$accent" fontSize={42} fontWeight="800" lineHeight={48}>{vdot.toFixed(1)}</M>
+              <GradientText text={vdot.toFixed(1)} style={{ fontSize: 42, fontWeight: '800', lineHeight: 48 }} />
             </YStack>
             {healthSnapshot?.vo2max && (
               <YStack alignItems="center">
                 <H color="$textSecondary" fontSize={12} textTransform="uppercase" letterSpacing={1}>VO2max</H>
-                <M color="$primary" fontSize={42} fontWeight="800" lineHeight={48}>{healthSnapshot.vo2max.value}</M>
+                <GradientText text={String(healthSnapshot.vo2max.value)} style={{ fontSize: 42, fontWeight: '800', lineHeight: 48 }} />
                 <B color="$textTertiary" fontSize={10}>{healthSnapshot.vo2max.date}</B>
               </YStack>
             )}
