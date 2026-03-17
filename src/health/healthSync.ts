@@ -84,14 +84,26 @@ export async function syncHealthData(): Promise<HealthSnapshot | null> {
 
   const todayHRV = hrvData.length > 0 ? hrvData[0].value : null;
 
-  // Sleep: use only if most recent entry is from last night or night before
+  // Sleep: use only if from last night (today's date - 1) or the night before (today's date - 2)
+  // Sleep dated "2026-03-16" means the night OF March 16 (went to bed that evening)
   let todaySleep: number | null = null;
   let sleepAge: number | null = null;
   if (sleepData.length > 0) {
-    const mostRecentSleepDate = new Date(sleepData[0].date + 'T12:00:00').getTime();
-    sleepAge = Math.round((now - mostRecentSleepDate) / 3600000);
+    const todayDate = new Date().toISOString().split('T')[0];
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayDate = yesterday.toISOString().split('T')[0];
+    const dayBefore = new Date();
+    dayBefore.setDate(dayBefore.getDate() - 2);
+    const dayBeforeDate = dayBefore.toISOString().split('T')[0];
+
+    const sleepDate = sleepData[0].date;
+    const mostRecentSleepMs = new Date(sleepDate + 'T12:00:00').getTime();
+    sleepAge = Math.round((now - mostRecentSleepMs) / 3600000);
+
+    const isFresh = sleepDate === todayDate || sleepDate === yesterdayDate || sleepDate === dayBeforeDate;
     const isIncomplete = sleepData[0].isLikelyIncomplete;
-    if (now - mostRecentSleepDate <= STALENESS_THRESHOLD_MS && !isIncomplete) {
+    if (isFresh && !isIncomplete) {
       todaySleep = sleepData[0].totalMinutes / 60;
     }
   }
