@@ -1,4 +1,5 @@
 import { getHealthKit } from "./availability";
+import { getHealthKitConstants } from "./availability";
 
 export interface DailySteps {
   date: string; // YYYY-MM-DD
@@ -22,16 +23,11 @@ export async function getStepCount(date: Date): Promise<number | null> {
           endDate: endOfDay.toISOString(),
         },
         (error: string, result: any) => {
-          if (error || !result) {
-            resolve(null);
-            return;
-          }
+          if (error || !result) { resolve(null); return; }
           resolve(Math.round(result.value));
         }
       );
-    } catch {
-      resolve(null);
-    }
+    } catch { resolve(null); }
   });
 }
 
@@ -39,50 +35,61 @@ export async function getStepHistory(daysBack: number = 7): Promise<DailySteps[]
   const AppleHealthKit = getHealthKit();
   if (!AppleHealthKit) return [];
 
-  // Use getStepCount for each day individually with strict date boundaries
-  // This is the most reliable approach — getDailyStepCountSamples may not exist
-  const results: DailySteps[] = [];
+  const startDate = new Date();
+  startDate.setDate(startDate.getDate() - daysBack);
+  startDate.setHours(0, 0, 0, 0);
 
-  for (let i = daysBack - 1; i >= 0; i--) {
-    const day = new Date();
-    day.setDate(day.getDate() - i);
-    day.setHours(12, 0, 0, 0); // noon to avoid timezone edge cases
-
-    const startOfDay = new Date(day);
-    startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay = new Date(day);
-    endOfDay.setHours(23, 59, 59, 999);
-
-    const dateStr = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
-
-    const steps = await new Promise<number | null>((resolve) => {
-      try {
-        AppleHealthKit.getStepCount(
-          {
-            startDate: startOfDay.toISOString(),
-            endDate: endOfDay.toISOString(),
-            includeManuallyAdded: false,
-          },
-          (error: string, result: any) => {
-            if (error || !result) {
-              console.log(`[HealthKit] Steps ${dateStr} error:`, error);
-              resolve(null);
-              return;
-            }
-            console.log(`[HealthKit] Steps ${dateStr}: ${Math.round(result.value)}`);
-            resolve(Math.round(result.value));
+  // Use getSamples to fetch raw step samples, then aggregate by day
+  // This is more reliable than getStepCount which may ignore date params
+  return new Promise((resolve) => {
+    try {
+      AppleHealthKit.getSamples(
+        {
+          startDate: startDate.toISOString(),
+          endDate: new Date().toISOString(),
+          type: 'StepCount',
+        },
+        (error: string, results: any[]) => {
+          if (error || !results?.length) {
+            console.log("[HealthKit] Step samples error:", error);
+            // Fallback to single today value
+            getStepCount(new Date()).then(today => {
+              if (today) {
+                const todayStr = new Date().toISOString().split('T')[0];
+                resolve([{ date: todayStr, steps: today }]);
+              } else {
+                resolve([]);
+              }
+            });
+            return;
           }
-        );
-      } catch {
-        resolve(null);
-      }
-    });
 
-    if (steps !== null && steps > 0) {
-      results.push({ date: dateStr, steps });
+          console.log("[HealthKit] Step samples raw:", results.length);
+
+          // Group by day and sum
+          const dayMap = new Map<string, number>();
+          for (const sample of results) {
+            const date = (sample.startDate ?? sample.start ?? '').split('T')[0];
+            if (!date) continue;
+            const value = Math.round(sample.value ?? sample.quantity ?? 0);
+            if (value > 0) {
+              dayMap.set(date, (dayMap.get(date) ?? 0) + value);
+            }
+          }
+
+          const mapped: DailySteps[] = [];
+          dayMap.forEach((steps, date) => {
+            mapped.push({ date, steps });
+          });
+
+          mapped.sort((a, b) => a.date.localeCompare(b.date));
+          console.log("[HealthKit] Step history:", mapped.map(d => `${d.date}:${d.steps}`).join(', '));
+          resolve(mapped);
+        }
+      );
+    } catch (e) {
+      console.log("[HealthKit] Step samples call failed:", e);
+      resolve([]);
     }
-  }
-
-  console.log(`[HealthKit] Step history: ${results.length} days fetched`);
-  return results;
+  });
 }
