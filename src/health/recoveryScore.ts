@@ -13,15 +13,8 @@ export function calculateRecoveryScore(
 ): RecoveryStatus {
   const signals: RecoverySignal[] = [];
 
-  // ── Resting HR (33 pts max) — only score if from today/yesterday ──
-  const rhrIsStale = snapshot.restingHRTrend.length > 0 &&
-    (() => {
-      const latestDate = snapshot.restingHRTrend[0].date;
-      const today = new Date().toISOString().split('T')[0];
-      const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
-      return latestDate !== today && latestDate !== yesterday;
-    })();
-  if (snapshot.restingHR !== null && snapshot.restingHRTrend.length >= 3 && !rhrIsStale) {
+  // ── Resting HR (33 pts max) ──
+  if (snapshot.restingHR !== null && snapshot.restingHRTrend.length >= 3) {
     const baseline = average(snapshot.restingHRTrend.map(r => r.value));
     const diff = snapshot.restingHR - baseline;
 
@@ -84,15 +77,10 @@ export function calculateRecoveryScore(
     signals.push({ type: 'hrv', value: snapshot.hrvRMSSD, baseline: Math.round(baseline), status, score, detail });
   }
 
-  // ── Sleep (33 pts max) — only score if from last night ──
-  const sleepIsStale = snapshot.sleepTrend.length > 0 &&
-    (() => {
-      const latestDate = snapshot.sleepTrend[0].date;
-      const today = new Date().toISOString().split('T')[0];
-      const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
-      return latestDate !== today && latestDate !== yesterday;
-    })();
-  if (snapshot.sleepHours !== null && !sleepIsStale) {
+  // ── Sleep (33 pts max) ──
+  // Skip incomplete sleep data
+  const latestSleep = snapshot.sleepTrend.length > 0 ? snapshot.sleepTrend[0] : null;
+  if (snapshot.sleepHours !== null && !(latestSleep?.isLikelyIncomplete)) {
     let score: number;
     let status: RecoverySignal['status'];
     let detail: string;

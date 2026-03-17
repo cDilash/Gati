@@ -67,10 +67,35 @@ export async function syncHealthData(): Promise<HealthSnapshot | null> {
     if (r.status === 'rejected') console.log(`[HealthKit] ${name} REJECTED:`, r.reason?.message || r.reason);
   }
 
-  // Today's values (most recent)
-  const todayRHR = restingHRData.length > 0 ? restingHRData[0].value : null;
+  // Today's values with staleness check (48-hour window)
+  const now = Date.now();
+  const STALENESS_THRESHOLD_MS = 48 * 60 * 60 * 1000; // 48 hours
+
+  // Resting HR: use only if most recent sample is within 48 hours
+  let todayRHR: number | null = null;
+  let restingHRAge: number | null = null;
+  if (restingHRData.length > 0) {
+    const mostRecentDate = new Date(restingHRData[0].date + 'T12:00:00').getTime();
+    restingHRAge = Math.round((now - mostRecentDate) / 3600000); // hours
+    if (now - mostRecentDate <= STALENESS_THRESHOLD_MS) {
+      todayRHR = restingHRData[0].value;
+    }
+  }
+
   const todayHRV = hrvData.length > 0 ? hrvData[0].value : null;
-  const todaySleep = sleepData.length > 0 ? sleepData[0].totalMinutes / 60 : null;
+
+  // Sleep: use only if most recent entry is from last night or night before
+  let todaySleep: number | null = null;
+  let sleepAge: number | null = null;
+  if (sleepData.length > 0) {
+    const mostRecentSleepDate = new Date(sleepData[0].date + 'T12:00:00').getTime();
+    sleepAge = Math.round((now - mostRecentSleepDate) / 3600000);
+    const isIncomplete = sleepData[0].isLikelyIncomplete;
+    if (now - mostRecentSleepDate <= STALENESS_THRESHOLD_MS && !isIncomplete) {
+      todaySleep = sleepData[0].totalMinutes / 60;
+    }
+  }
+
   const todayResp = respData.length > 0 ? respData[0].value : null;
 
   // Recovery signal count (RHR, HRV, sleep, respiratory rate)
@@ -96,6 +121,8 @@ export async function syncHealthData(): Promise<HealthSnapshot | null> {
     spo2Trend: spo2Data,
     steps: stepsData,
     stepsTrend: stepsHistData,
+    restingHRAge,
+    sleepAge,
     signalCount,
     cachedAt: new Date().toISOString(),
   };
@@ -136,6 +163,8 @@ function getCachedSnapshot(): HealthSnapshot | null {
       spo2Trend: JSON.parse(row.spo2_trend_json || '[]'),
       steps: row.steps ?? null,
       stepsTrend: [],  // Not cached — re-fetched each sync
+      restingHRAge: null,
+      sleepAge: null,
       signalCount: row.signal_count,
       cachedAt: row.cached_at,
     };

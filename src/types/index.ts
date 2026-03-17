@@ -385,6 +385,7 @@ export interface SleepResult {
   bedStart: string;
   bedEnd: string;
   stages: SleepStages | null;
+  isLikelyIncomplete: boolean;
 }
 
 export interface WeightResult {
@@ -423,6 +424,8 @@ export interface HealthSnapshot {
   spo2Trend: SpO2Result[];
   steps: number | null;
   stepsTrend: { date: string; steps: number }[];
+  restingHRAge: number | null;  // hours since last reading
+  sleepAge: number | null;      // hours since last reading
   signalCount: number;
   cachedAt: string;
 }

@@ -13,6 +13,7 @@ export interface SleepResult {
   bedStart: string; // ISO timestamp
   bedEnd: string; // ISO timestamp
   stages: SleepStages | null; // null if device doesn't provide stages
+  isLikelyIncomplete: boolean;
 }
 
 // Apple Health sleep category values
@@ -189,6 +190,10 @@ export async function getSleepData(daysBack: number = 14): Promise<SleepResult[]
 
           if (totalSleepMin <= 0) return;
 
+          // Flag potentially incomplete: < 3 hours AND few stage blocks
+          const stageBlockCount = [val.deep.length, val.light.length, val.rem.length, val.awake.length].filter(n => n > 0).length;
+          const isLikelyIncomplete = totalSleepMin > 0 && totalSleepMin < 180 && stageBlockCount <= 1;
+
           mapped.push({
             totalMinutes: Math.round(totalSleepMin),
             date,
@@ -200,6 +205,7 @@ export async function getSleepData(daysBack: number = 14): Promise<SleepResult[]
               remMinutes: Math.round(remMin),
               awakeMinutes: Math.round(awakeMin),
             } : null,
+            isLikelyIncomplete,
           });
         });
 

@@ -294,6 +294,8 @@ export const useAppStore = create<AppState>((set, get) => ({
             spo2Trend: JSON.parse(row.spo2_trend_json || '[]'),
             steps: row.steps ?? null,
             stepsTrend: [],
+            restingHRAge: null,
+            sleepAge: null,
             signalCount: row.signal_count ?? 0,
             cachedAt: row.cached_at,
           };
