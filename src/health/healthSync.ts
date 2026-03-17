@@ -8,7 +8,7 @@ import { getWeight } from "./weight";
 import { getVO2Max } from "./vo2max";
 import { getRespiratoryRate } from "./respiratory";
 import { getBloodOxygen } from "./spo2";
-import { getStepCount } from "./steps";
+import { getStepCount, getStepHistory } from "./steps";
 import { getDatabase } from "../db/database";
 import { HealthSnapshot } from "../types";
 
@@ -36,7 +36,7 @@ export async function syncHealthData(): Promise<HealthSnapshot | null> {
   }
 
   // Fetch all health data in parallel — each one independent
-  const [restingHR, hrv, sleep, weight, vo2max, resp, spo2, steps] = await Promise.allSettled([
+  const [restingHR, hrv, sleep, weight, vo2max, resp, spo2, steps, stepsHist] = await Promise.allSettled([
     getRestingHeartRate(14),
     getHRVSamples(14),
     getSleepData(14),
@@ -45,6 +45,7 @@ export async function syncHealthData(): Promise<HealthSnapshot | null> {
     getRespiratoryRate(14),
     getBloodOxygen(14),
     getStepCount(new Date()),
+    getStepHistory(7),
   ]);
 
   const restingHRData = restingHR.status === "fulfilled" ? restingHR.value : [];
@@ -55,6 +56,7 @@ export async function syncHealthData(): Promise<HealthSnapshot | null> {
   const respData = resp.status === "fulfilled" ? resp.value : [];
   const spo2Data = spo2.status === "fulfilled" ? spo2.value : [];
   const stepsData = steps.status === "fulfilled" ? steps.value : null;
+  const stepsHistData = stepsHist.status === "fulfilled" ? stepsHist.value : [];
 
   // Log any rejected promises
   const results = [
@@ -93,6 +95,7 @@ export async function syncHealthData(): Promise<HealthSnapshot | null> {
     spo2: spo2Data.length > 0 ? spo2Data[0].value : null,
     spo2Trend: spo2Data,
     steps: stepsData,
+    stepsTrend: stepsHistData,
     signalCount,
     cachedAt: new Date().toISOString(),
   };
@@ -132,6 +135,7 @@ function getCachedSnapshot(): HealthSnapshot | null {
       spo2: row.spo2 ?? null,
       spo2Trend: JSON.parse(row.spo2_trend_json || '[]'),
       steps: row.steps ?? null,
+      stepsTrend: [],  // Not cached — re-fetched each sync
       signalCount: row.signal_count,
       cachedAt: row.cached_at,
     };

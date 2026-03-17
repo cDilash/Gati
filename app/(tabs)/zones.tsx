@@ -784,13 +784,51 @@ export default function RecoveryScreen() {
             </XStack>
           )}
           {healthSnapshot.steps !== null && (
-            <XStack alignItems="center" justifyContent="space-between">
-              <XStack alignItems="center" gap="$2">
-                <MaterialCommunityIcons name="shoe-print" size={16} color={colors.textSecondary} />
-                <B color="$textSecondary" fontSize={13}>Steps Today</B>
+            <YStack>
+              <XStack alignItems="center" justifyContent="space-between">
+                <XStack alignItems="center" gap="$2">
+                  <MaterialCommunityIcons name="shoe-print" size={16} color={colors.textSecondary} />
+                  <B color="$textSecondary" fontSize={13}>Steps Today</B>
+                </XStack>
+                <M color="$color" fontSize={15} fontWeight="700">{healthSnapshot.steps.toLocaleString()}</M>
               </XStack>
-              <M color="$color" fontSize={15} fontWeight="700">{healthSnapshot.steps.toLocaleString()}</M>
-            </XStack>
+              {/* 7-day steps bar chart */}
+              {healthSnapshot.stepsTrend && healthSnapshot.stepsTrend.length >= 3 && (
+                <YStack marginTop="$3" paddingTop="$3" borderTopWidth={0.5} borderTopColor={colors.border}>
+                  <XStack height={60} alignItems="flex-end" gap={4}>
+                    {(() => {
+                      const trend = healthSnapshot.stepsTrend;
+                      const maxSteps = Math.max(...trend.map(d => d.steps), 1);
+                      return trend.map((d, i) => {
+                        const height = Math.max(4, (d.steps / maxSteps) * 52);
+                        const isToday = i === trend.length - 1;
+                        return (
+                          <YStack key={i} flex={1} alignItems="center">
+                            <View width="100%" height={height} borderRadius={3}
+                              backgroundColor={isToday ? colors.cyan : colors.cyan + '55'} />
+                          </YStack>
+                        );
+                      });
+                    })()}
+                  </XStack>
+                  <XStack gap={4} marginTop={4}>
+                    {healthSnapshot.stepsTrend.map((d, i) => {
+                      const isToday = i === healthSnapshot.stepsTrend.length - 1;
+                      return (
+                        <YStack key={i} flex={1} alignItems="center">
+                          <M color={isToday ? colors.cyan : colors.textTertiary} fontSize={8} fontWeight="600">
+                            {d.steps >= 1000 ? `${(d.steps / 1000).toFixed(1)}k` : d.steps}
+                          </M>
+                          <B color={colors.textTertiary} fontSize={8}>
+                            {new Date(d.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'narrow' })}
+                          </B>
+                        </YStack>
+                      );
+                    })}
+                  </XStack>
+                </YStack>
+              )}
+            </YStack>
           )}
         </YStack>
       )}

@@ -422,6 +422,7 @@ export interface HealthSnapshot {
   spo2: number | null;
   spo2Trend: SpO2Result[];
   steps: number | null;
+  stepsTrend: { date: string; steps: number }[];
   signalCount: number;
   cachedAt: string;
 }
