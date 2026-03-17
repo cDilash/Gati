@@ -397,8 +397,77 @@ export default function TodayScreen() {
         <RecoveryBadge recovery={recoveryStatus} />
       )}
 
-      {/* Race Week Strategy */}
-      {isRaceWeek && raceStrategy && (
+      {/* Taper Experience (last 21 days before race) */}
+      {daysUntilRace <= 21 && daysUntilRace > 0 && currentPhase === 'taper' && (
+        <YStack backgroundColor="$surface" borderRadius="$6" padding="$4" marginBottom="$4" borderLeftWidth={3}
+          borderLeftColor={daysUntilRace <= 7 ? colors.orange : colors.cyan}>
+          <H color={daysUntilRace <= 7 ? colors.orange : colors.cyan} fontSize={13} letterSpacing={1.5} textTransform="uppercase" marginBottom="$3">
+            {daysUntilRace <= 7 ? 'Race Week' : daysUntilRace <= 14 ? 'Taper — 2 Weeks Out' : 'Taper — 3 Weeks Out'}
+          </H>
+
+          {/* Daily taper tip */}
+          <B color="$color" fontSize={14} lineHeight={21} marginBottom="$3">
+            {daysUntilRace <= 1 ? "Tomorrow is race day. Trust your training. You're ready."
+            : daysUntilRace <= 3 ? "Don't try anything new — no new shoes, food, or gear on race day. Stick to what you've trained with."
+            : daysUntilRace <= 5 ? "Volume is low this week and that's by design. Feeling restless is normal — it means you're rested."
+            : daysUntilRace <= 7 ? "This week is about freshness, not fitness. Short easy runs, lots of sleep, and trust the process."
+            : daysUntilRace <= 10 ? "Your body is absorbing weeks of training. Sleep 8+ hours, eat clean, minimize stress."
+            : daysUntilRace <= 14 ? "Volume drops but intensity stays. One short quality session keeps the engine sharp without adding fatigue."
+            : "Taper has begun. Mileage is coming down — this feels weird but it's working. Your race fitness is building."}
+          </B>
+
+          {/* Gear checklist — show in race week */}
+          {daysUntilRace <= 7 && (
+            <YStack backgroundColor="$surfaceLight" borderRadius="$4" padding="$3" marginBottom="$3">
+              <H color="$textSecondary" fontSize={11} letterSpacing={1} textTransform="uppercase" marginBottom="$2">Race Day Kit</H>
+              {[
+                { item: 'Race shoes (broken in)', icon: 'shoe-sneaker' },
+                { item: 'Bib + safety pins', icon: 'card-account-details' },
+                { item: 'Gels / nutrition', icon: 'food-apple' },
+                { item: 'Body glide / anti-chafe', icon: 'shield-check' },
+                { item: 'Watch (charged)', icon: 'watch' },
+                { item: 'Weather-appropriate gear', icon: 'weather-partly-cloudy' },
+              ].map(({ item, icon }, i) => (
+                <XStack key={i} alignItems="center" gap="$2" paddingVertical={4}>
+                  <MaterialCommunityIcons name={icon as any} size={14} color={colors.textTertiary} />
+                  <B color="$textSecondary" fontSize={13}>{item}</B>
+                </XStack>
+              ))}
+            </YStack>
+          )}
+
+          {/* Race morning timeline — show 2 days before */}
+          {daysUntilRace <= 2 && daysUntilRace >= 1 && (
+            <YStack backgroundColor="$surfaceLight" borderRadius="$4" padding="$3" marginBottom="$3">
+              <H color="$textSecondary" fontSize={11} letterSpacing={1} textTransform="uppercase" marginBottom="$2">Race Morning Timeline</H>
+              {[
+                { time: '3 hrs before start', task: 'Wake up, light movement' },
+                { time: '2.5 hrs before', task: 'Eat breakfast (what you practiced)' },
+                { time: '1.5 hrs before', task: 'Begin hydrating (16 oz water/sports drink)' },
+                { time: '1 hr before', task: 'Arrive at venue, pick up bib if needed' },
+                { time: '30 min before', task: 'Warm-up jog, dynamic stretches' },
+                { time: '10 min before', task: 'Line up, take a gel, deep breaths' },
+              ].map(({ time, task }, i) => (
+                <XStack key={i} paddingVertical={4} gap="$3">
+                  <M color={colors.cyan} fontSize={11} fontWeight="600" width={90}>{time}</M>
+                  <B color="$textSecondary" fontSize={12} flex={1}>{task}</B>
+                </XStack>
+              ))}
+            </YStack>
+          )}
+
+          {/* Race strategy (AI-generated) */}
+          {isRaceWeek && raceStrategy && (
+            <YStack marginTop="$1">
+              <H color="$textSecondary" fontSize={11} letterSpacing={1} textTransform="uppercase" marginBottom="$2">Pacing Strategy</H>
+              <B color="$textSecondary" fontSize={14} lineHeight={21}>{raceStrategy}</B>
+            </YStack>
+          )}
+        </YStack>
+      )}
+
+      {/* Race Week Strategy (fallback for non-taper detection) */}
+      {isRaceWeek && raceStrategy && currentPhase !== 'taper' && (
         <YStack backgroundColor="$surface" borderRadius="$6" padding="$4" marginBottom="$4" borderLeftWidth={3} borderLeftColor="$warning">
           <H color="$warning" fontSize={14} textTransform="uppercase" letterSpacing={1.5} marginBottom="$3">Race Week Strategy</H>
           <B color="$textSecondary" fontSize={14} lineHeight={21}>{raceStrategy}</B>
