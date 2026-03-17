@@ -406,6 +406,85 @@ export default function TodayScreen() {
             })()}
           </YStack>
         )}
+
+        {/* Cumulative Mileage */}
+        {weeks.length >= 3 && (
+          <YStack backgroundColor="$surface" borderRadius="$6" padding="$4">
+            {(() => {
+              const totalPlanned = weeks.reduce((s, w) => s + w.target_volume, 0);
+              const totalActual = weeks.reduce((s, w) => s + w.actual_volume, 0);
+              const pct = totalPlanned > 0 ? Math.round((totalActual / totalPlanned) * 100) : 0;
+
+              // Build cumulative data points
+              const cumPlanned: number[] = [];
+              const cumActual: number[] = [];
+              let runPlanned = 0, runActual = 0;
+              for (const w of weeks) {
+                runPlanned += w.target_volume;
+                runActual += w.actual_volume;
+                cumPlanned.push(runPlanned);
+                cumActual.push(runActual);
+              }
+
+              const maxVal = Math.max(totalPlanned, totalActual, 1);
+              const chartW = 280; // approximate, will flex
+              const chartH = 60;
+              const toX = (i: number) => (i / Math.max(weeks.length - 1, 1)) * chartW;
+              const toY = (v: number) => chartH - (v / maxVal) * chartH;
+
+              // Build SVG path for planned (dashed reference line)
+              let plannedPath = `M 0 ${toY(cumPlanned[0])}`;
+              for (let i = 1; i < cumPlanned.length; i++) {
+                plannedPath += ` L ${toX(i)} ${toY(cumPlanned[i])}`;
+              }
+
+              // Build SVG path for actual (filled area)
+              let actualPath = `M 0 ${toY(cumActual[0])}`;
+              for (let i = 1; i < cumActual.length; i++) {
+                actualPath += ` L ${toX(i)} ${toY(cumActual[i])}`;
+              }
+              const actualFill = `${actualPath} L ${toX(cumActual.length - 1)} ${chartH} L 0 ${chartH} Z`;
+
+              return (
+                <YStack>
+                  <XStack justifyContent="space-between" alignItems="baseline" marginBottom="$3">
+                    <YStack>
+                      <M color="$color" fontSize={20} fontWeight="800">{Math.round(totalActual)} mi</M>
+                      <B color="$textTertiary" fontSize={11}>of {Math.round(totalPlanned)} mi planned</B>
+                    </YStack>
+                    <M color={pct >= 90 ? colors.cyan : pct >= 70 ? '$color' : colors.orange} fontSize={14} fontWeight="700">{pct}%</M>
+                  </XStack>
+                  <View style={{ height: chartH }}>
+                    {(() => {
+                      try {
+                        const Svg = require('react-native-svg').default;
+                        const { Path: SvgPath, Defs, LinearGradient: SvgGrad, Stop } = require('react-native-svg');
+                        return (
+                          <Svg width="100%" height={chartH} viewBox={`0 0 ${chartW} ${chartH}`}>
+                            <Defs>
+                              <SvgGrad id="cumFill" x1="0" y1="0" x2="0" y2="1">
+                                <Stop offset="0" stopColor={colors.cyan} stopOpacity="0.3" />
+                                <Stop offset="1" stopColor={colors.cyan} stopOpacity="0.05" />
+                              </SvgGrad>
+                            </Defs>
+                            <SvgPath d={actualFill} fill="url(#cumFill)" />
+                            <SvgPath d={actualPath} fill="none" stroke={colors.cyan} strokeWidth={2} />
+                            <SvgPath d={plannedPath} fill="none" stroke={colors.textTertiary} strokeWidth={1} strokeDasharray="4,4" />
+                          </Svg>
+                        );
+                      } catch { return null; }
+                    })()}
+                  </View>
+                  <XStack justifyContent="space-between" marginTop={4}>
+                    <B color="$textTertiary" fontSize={10}>Week 1</B>
+                    <B color="$textTertiary" fontSize={10}>Week {weeks.length}</B>
+                  </XStack>
+                </YStack>
+              );
+            })()}
+          </YStack>
+        )}
+
         {/* Fallback header when no race name */}
         {(!userProfile?.race_name || daysUntilRace <= 0) && (
           <YStack marginBottom="$2">
