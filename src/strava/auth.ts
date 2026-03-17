@@ -142,7 +142,9 @@ export async function getValidAccessToken(): Promise<string | null> {
   // Token expired — refresh it
   const refreshed = await refreshAccessToken(tokens.refreshToken);
   if (!refreshed) {
-    console.log('[Strava] Token refresh failed — sync will be skipped');
+    // Refresh token is invalid — auto-disconnect so user knows to reconnect
+    console.log('[Strava] Token refresh failed — disconnecting (refresh token invalid)');
+    try { deleteTokens(); } catch {}
     return null;
   }
 
