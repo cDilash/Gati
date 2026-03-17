@@ -8,14 +8,16 @@ A personal-use React Native marathon training app. AI-first architecture — Gem
 - **Language**: TypeScript (strict)
 - **Routing**: Expo Router (file-based)
 - **Database**: expo-sqlite (local, primary) + Supabase (cloud backup only)
-- **AI Engine**: Google Gemini 2.5 Flash via `@google/generative-ai` SDK
+- **AI Engine**: Google Gemini (dual-model: 3.1 Pro for planning, 3 Flash for chat) via `@google/generative-ai` SDK
 - **Run Data**: Strava API (OAuth2, activity sync, streams, segments)
 - **State Management**: Zustand (single store at `src/store.ts`)
 - **UI Framework**: Tamagui (configured in `tamagui.config.ts`)
 - **Styling**: `StyleSheet.create()` with Tamagui theme tokens
 - **Icons**: MaterialCommunityIcons (`@expo/vector-icons`) for fitness icons + Lucide (`@tamagui/lucide-icons`) for general UI
 - **Maps**: react-native-maps (route display)
-- **SVG**: react-native-svg (polyline thumbnails)
+- **SVG**: react-native-svg (polyline thumbnails, interactive line graphs)
+- **Gradients**: expo-linear-gradient + @react-native-masked-view/masked-view (gradient text)
+- **HealthKit**: react-native-health (lazy-loaded, recovery signals)
 - **UUID**: `expo-crypto` randomUUID() — NEVER use the `uuid` npm package
 
 ## Typography System
@@ -60,10 +62,11 @@ Three custom fonts loaded via `expo-font`. Every text element MUST use one of th
 
 ### MaterialCommunityIcons (fitness-specific)
 ```
-Tab bar: "run-fast" (Today), "calendar-month" (Plan), "robot" (Coach), "gauge" (Zones), "shoe-sneaker" (Runs)
+Tab bar: "run-fast" (Today), "calendar-month-outline" (Plan), "message-text-outline" (Coach), "chart-timeline-variant" (Runs), "heart-pulse" (Recovery)
 Workout: "run" (easy), "run-fast" (threshold), "routes" (long run), "sleep" (rest), "walk" (recovery)
 Metrics: "heart-pulse" (HR), "speedometer" (pace), "map-marker-distance" (distance), "timer-outline" (duration), "fire" (calories)
 Status: "trophy" (PR/best effort), "medal" (race), "terrain" (hills)
+Cross-training: "dumbbell" (general), "weight-lifter" (leg day), "arm-flex" (upper body), "bicycle" (cycling), "swim" (swimming), "meditation" (yoga)
 ```
 
 ### Lucide Icons (general UI)
@@ -71,45 +74,73 @@ Status: "trophy" (PR/best effort), "medal" (race), "terrain" (hills)
 Settings, ChevronRight, Send, X, Check, AlertTriangle, Plus, ArrowLeft, Search
 ```
 
-## Color Palette (Dark Theme)
+## Theme System — Cyan + Orange Gradient Identity
 
-Defined in `tamagui.config.ts` tokens and `src/utils/constants.ts`:
+Defined in `src/theme/colors.ts` (single source of truth), applied via `tamagui.config.ts` tokens.
+The app icon (cyan/orange runner) defines the visual identity. **Never use hardcoded hex values in components — always import from `src/theme/colors.ts`.**
+
+### Primary Colors
 ```
-Background:    #121212           (app background)
-Surface:       #1E1E1E           (cards, inputs)
-Surface Light: #2A2A2A           (hover states, nested cards)
-Border:        #333333           (subtle borders)
-
-Accent:        #FF6B35           (primary brand color — bold orange)
-Accent Light:  #FF8A5C           (hover/pressed accent)
-Primary:       #007AFF           (iOS blue — links, long run day)
-
-Success:       #34C759           (completed, connected, healthy)
-Warning:       #FF9500           (caution, approaching limit)
-Danger:        #FF3B30           (destructive, critical, skipped)
-
-Text:          #FFFFFF           (primary text)
-Text Secondary:#A0A0A0           (descriptions, subtitles)
-Text Tertiary: #666666           (timestamps, hints, muted)
-
-Phase Base:    #007AFF (blue)
-Phase Build:   #FF9500 (orange)
-Phase Peak:    #FF3B30 (red)
-Phase Taper:   #34C759 (green)
-
-Strava:        #FC4C02           (Strava brand orange)
+Cyan:          #00D4FF           (calm, speed, recovery, easy effort, "on target")
+Orange:        #FF6B35           (intensity, fire, effort, warning, "needs attention")
+Gradient:      cyan → orange     (hero elements, energy spectrum, premium feel)
 ```
+
+### Color Meaning Rules (NEVER break these)
+- **Cyan** = calm, cool, speed, recovery, easy effort, AI/tech, positive state
+- **Orange** = intensity, fire, effort, heart rate, warning, high impact
+- **Gradient (cyan→orange)** = energy spectrum, hero elements, primary buttons
+- **HR is ALWAYS orange** — heart rate numbers, heart icons, HR zones
+- **LOW→HIGH scale** = always cyan→orange (easy→hard, recovered→fatigued, Zone 1→Zone 5)
+
+### Backgrounds (blue-tinted, NOT pure gray)
+```
+Background:    #0A0A0F           (deep blue-black — main bg)
+Surface:       #141420           (card/elevated bg)
+Surface Hover: #1A1A2E           (pressed/hover state)
+Border:        #1E2A3A           (blue-tinted border)
+```
+
+### Text (blue-gray, NOT pure gray)
+```
+Primary:       #FFFFFF
+Secondary:     #8899AA           (descriptions, subtitles)
+Tertiary:      #556677           (timestamps, hints)
+```
+
+### Semantic
+```
+Success:       #00E676           (completed, connected)
+Error:         #FF5252           (destructive, skipped)
+Warning:       #FF6B35           (orange = warning)
+Strava:        #FC4C02           (Strava brand — keep their color)
+```
+
+### Gradient Components (from `src/theme/`)
+- `GradientText` — masked gradient text for hero numbers (VDOT, recovery score)
+- `GradientBorder` — gradient-bordered cards (left side or all sides)
+- `GradientButton` — gradient background buttons (primary actions)
+- Direction: ALWAYS cyan→orange, left→right or top→bottom. Never reversed.
+
+### Where Colors Apply
+- **Workout types**: Easy=cyan, Quality(threshold/intervals/tempo)=orange, Long Run=gradient, Rest=cyanDim
+- **Recovery levels**: Ready=cyan, Moderate=orangeDim, Fatigued=orange, Rest=error
+- **Execution quality**: On target=cyan, Missed pace=orange, Exceeded pace=orange
+- **Cross-training impact**: High=orange, Moderate=orangeDim, Low=textSecondary, Positive=cyan
+- **Pace zones**: E=cyan → I/R=orange (intensity spectrum)
+- **HR zones**: Zone 1=cyan → Zone 5=orange
+- **Tab bar**: Active=cyan, Inactive=blue-gray (#4A5568)
 
 ## Architecture
 
 ```
 ┌─────────────────────────────────────────────────┐
 │                  USER INTERFACE                   │
-│  Today | Plan | Coach | Zones | Runs | Settings  │
+│  Today | Plan | Coach | Runs | Recovery | Settings │
 └──────────────────────┬──────────────────────────┘
                        │
 ┌──────────────────────▼──────────────────────────┐
-│              AI ENGINE (Gemini 2.5 Flash)         │
+│     AI ENGINE (Gemini 3.1 Pro + 3 Flash)          │
 │  Plan generation, adaptation, briefings,          │
 │  post-run analysis, weekly review, coaching chat  │
 └──────────────────────┬──────────────────────────┘
@@ -141,7 +172,7 @@ app/
 │   ├── index.tsx             # Today — workout + briefing + analysis
 │   ├── calendar.tsx          # Plan — expandable weeks by phase
 │   ├── coach.tsx             # AI Coach — chat with plan changes
-│   ├── zones.tsx             # Zones — pace/HR zones, predictions, shoes
+│   ├── zones.tsx             # Recovery — recovery score, signals, zones, fitness profile
 │   ├── activities.tsx        # Runs — activity list with maps + filters
 │   └── settings.tsx          # Settings (hidden tab, gear icon access)
 ├── workout/[id].tsx          # Workout detail (modal)
@@ -149,13 +180,14 @@ app/
 
 src/
 ├── ai/
-│   ├── gemini.ts             # Gemini client, retry, JSON extraction
-│   ├── planGenerator.ts      # AI plan generation + validation
+│   ├── gemini.ts             # Dual-model client (heavy=Pro, fast=Flash), retry, fallback
+│   ├── planGenerator.ts      # AI plan generation + validation (heavy model)
 │   ├── safetyValidator.ts    # Safety constraint clamping (~50 lines of logic)
-│   ├── adaptation.ts         # Plan adaptation (missed workouts, injury, etc.)
-│   ├── weeklyReview.ts       # AI weekly review + adaptation triggers
-│   ├── coach.ts              # Coaching chat with context building
-│   └── briefing.ts           # Pre-workout, post-run, race strategy
+│   ├── adaptation.ts         # Plan adaptation (heavy model)
+│   ├── weeklyReview.ts       # AI weekly review + adaptation triggers (heavy model)
+│   ├── coach.ts              # Coaching chat with full context (fast model)
+│   ├── briefing.ts           # Pre-workout, post-run, race strategy (fast model)
+│   └── crossTrainingAdvisor.ts # Cross-training impact evaluation (pure logic, no AI)
 ├── db/
 │   ├── schema.ts             # All CREATE TABLE statements
 │   ├── database.ts           # DB init, CRUD, migrations
@@ -166,28 +198,50 @@ src/
 ├── strava/
 │   ├── auth.ts               # OAuth2 + token management
 │   ├── api.ts                # REST client (activities, detail, streams, athlete, gear)
-│   ├── sync.ts               # Activity sync pipeline + auto-matching
+│   ├── sync.ts               # Activity sync pipeline + auto-matching + execution quality
 │   ├── shoes.ts              # Shoe sync from athlete profile
 │   ├── profileImport.ts      # Import profile data for setup pre-fill
+│   ├── profileUpdater.ts     # Auto-update profile from Strava (weekly miles, VDOT, max HR)
 │   ├── convert.ts            # Unit conversions (meters→miles, m/s→sec/mi)
 │   ├── bestEfforts.ts        # Best effort analysis
 │   └── historicalSync.ts     # First-time 8-week backfill
+├── health/
+│   ├── availability.ts       # Lazy-load guard (require inside try-catch, NEVER top-level import)
+│   ├── permissions.ts        # 8 read permissions, 0 write (double-nested structure)
+│   ├── healthSync.ts         # Composite fetcher — 8 signals in parallel, SQLite cache (2hr TTL)
+│   ├── recoveryScore.ts      # Pure function — 0-100 score from health signals
+│   ├── restingHR.ts          # Resting heart rate samples
+│   ├── hrv.ts                # Heart rate variability (RMSSD)
+│   ├── sleep.ts              # Sleep with stage breakdown + interval merging
+│   ├── weight.ts             # Weight from HealthKit
+│   ├── vo2max.ts             # VO2max from Garmin via HealthKit
+│   ├── respiratory.ts        # Respiratory rate
+│   ├── spo2.ts               # Blood oxygen
+│   └── steps.ts              # Daily step count
 ├── backup/
 │   ├── supabase.ts           # Supabase client
 │   ├── auth.ts               # Sign in/up/out, session management
-│   └── backup.ts             # Serialize/upload/download/restore
+│   └── backup.ts             # Serialize/upload/download/restore (schema v3)
+├── theme/
+│   ├── colors.ts             # Single source of truth for ALL colors
+│   ├── gradients.ts          # Gradient configs for expo-linear-gradient
+│   ├── GradientText.tsx       # Masked gradient text component
+│   ├── GradientBorder.tsx     # Gradient-bordered card component
+│   └── GradientButton.tsx     # Gradient background button component
 ├── components/
 │   ├── common/
 │   │   └── PlanGenerationLoader.tsx  # AI loading screen with streaming steps
+│   ├── WeightCheckin.tsx      # Weekly weight check-in modal
 │   ├── RouteMap.tsx           # MapView with decoded polyline
 │   └── PolylineThumbnail.tsx  # SVG polyline for list cards
-├── store.ts                  # Zustand store (single, ~600 lines)
+├── store.ts                  # Zustand store (single, ~900 lines)
 ├── types/index.ts            # All TypeScript types
 ├── stores/
 │   └── settingsStore.ts      # Unit preferences (imperial/metric)
 └── utils/
     ├── constants.ts           # COLORS, PHASE_COLORS, WORKOUT_TYPE_LABELS
     ├── dateUtils.ts           # Date formatting and math
+    ├── workoutIcons.ts        # Workout type → icon mapping
     └── units.ts               # Display unit conversions
 ```
 
@@ -206,15 +260,14 @@ src/
 
 ### Button Pattern
 ```typescript
-// Primary action
-{ backgroundColor: '#FF6B35', borderRadius: 12, paddingVertical: 14, alignItems: 'center' }
-// Button text
-{ fontFamily: 'Exo2_700Bold', fontSize: 16, color: '#FFFFFF' }
+// Primary action — use GradientButton from src/theme/
+// Or: { backgroundColor: colors.cyan, borderRadius: 12, paddingVertical: 14 }
 
 // Secondary action
-{ backgroundColor: '#1E1E1E', borderRadius: 12, borderWidth: 1, borderColor: '#333333' }
-// Secondary text
-{ fontFamily: 'Exo2_600SemiBold', fontSize: 15, color: '#A0A0A0' }
+{ backgroundColor: colors.surface, borderRadius: 12, borderWidth: 1, borderColor: colors.border }
+
+// Destructive action
+{ borderWidth: 1, borderColor: colors.orange }
 ```
 
 ### Section Header Pattern
@@ -230,18 +283,19 @@ src/
 { fontFamily: 'BebasNeue_400Regular', fontSize: 11, color: '#666666', textTransform: 'uppercase', letterSpacing: 1 }
 ```
 
-### Status Colors
-- Completed: `#34C759` (green)
-- Upcoming: `#666666` (gray)
-- Skipped: `#FF3B30` (red)
-- Modified: `#FF9500` (orange)
+### Status Colors (import from `src/theme/colors.ts`)
+- Completed: `success` (#00E676)
+- Upcoming: `textSecondary` (#8899AA)
+- Skipped: `error` (#FF5252)
+- Modified: `orange` (#FF6B35)
+- Partial: `orangeDim` (#FF6B3580)
 
 ## Data Architecture
 
 ### SQLite (Primary — local)
 All data lives in SQLite. The app works fully offline.
 
-Key tables: `user_profile` (single row), `training_plan` (plan_json JSONB), `workout` (individual workouts), `training_week`, `performance_metric` (run data), `coach_message`, `strava_activity_detail` (rich Strava data), `shoes`, `ai_cache`, `strava_tokens`
+Key tables: `user_profile` (single row), `training_plan` (plan_json JSONB), `workout` (individual workouts + execution_quality), `training_week` (actual_volume from real data), `performance_metric` (run data), `coach_message`, `strava_activity_detail` (rich Strava data), `shoes`, `ai_cache`, `strava_tokens`, `health_snapshot` (HealthKit cache), `cross_training`, `app_settings`
 
 ### Supabase (Backup only — cloud)
 One `backups` table with one row per user. Contains full SQLite snapshot as JSONB. Auto-backup fires after profile save and plan generation. Auto-restore on fresh install if user is logged in.
@@ -297,15 +351,22 @@ Fetches: activities, detail (splits, laps, best efforts, segments), streams (HR,
 
 1. **AI generates, math validates** — Gemini creates plans, safety validator clamps numbers
 2. **Local-first** — SQLite is primary, Supabase is backup only, app works offline
-3. **Strava is the data source** — no HealthKit in v2 (add later)
-4. **Fail gracefully everywhere** — if Gemini is down, show fallback. If Strava disconnected, manual entry works.
+3. **Dual data sources** — Strava for run data, HealthKit for recovery signals (lazy-loaded, optional)
+4. **Fail gracefully everywhere** — if Gemini is down, show fallback. If Strava/HealthKit unavailable, works without.
 5. **Cache AI content aggressively** — same inputs = don't call Gemini again
 6. **expo-crypto for UUIDs** — NEVER `uuid` package
-7. **Auto-backup after key events** — profile save, plan generation
+7. **Auto-backup after significant events** — profile save, plan generation, adaptation, VDOT update, weekly review
 8. **Auto-restore on fresh install** — if logged in with cloud backup
 9. **Every number uses JetBrains Mono** — no exceptions
 10. **Every heading uses Bebas Neue** — uppercase with letter-spacing
 11. **Every body text uses Exo 2** — weights 400-700
+12. **All colors from `src/theme/colors.ts`** — NEVER hardcode hex values in components
+13. **Cyan = calm, Orange = intensity** — this color meaning is NEVER broken
+14. **Gradients always cyan→orange** — left→right or top→bottom, never reversed
+15. **HealthKit is lazy-loaded** — `react-native-health` only via `require()` in availability.ts, never top-level import
+16. **Workout swaps are 1-2 row changes** — never full plan regeneration for a single workout swap
+17. **Past workouts auto-skipped** — `sweepPastWorkouts()` runs on every app open
+18. **Volume from real data** — `recalculateWeeklyVolumes()` uses actual performance_metric, not target distances
 
 ## Skill Triggers
 
@@ -351,3 +412,10 @@ Examples: "add social features", "redesign the app architecture", "what should w
 5. **Tamagui babel plugin**: Must be in `babel.config.js`. Clear Metro cache after config changes (`--clear`).
 6. **Foreign keys in restore**: Disable `PRAGMA foreign_keys` during cloud restore — v1 backup data has different FK relationships.
 7. **Hot reload limitations**: Changes to `database.ts`, `store.ts`, and module-level code require full Metro restart.
+8. **HealthKit on simulator**: `isHealthKitAvailable()` returns false — always test on real device for HealthKit features.
+9. **react-native-health TurboModule**: The JS wrapper's `default` export is broken under RN 0.83. Access via `NativeModules.AppleHealthKit` directly (see `availability.ts`).
+10. **Sleep double-counting**: Garmin sends overlapping ASLEEP samples. Always merge intervals before summing (see `sleep.ts`).
+11. **Suggestions lost on restart**: `vdotNotification` and `proactiveSuggestion` are persisted to `app_settings` — clear them when dismissed.
+12. **Backup schema v3**: Always use `??` fallbacks in `restoreDatabase()` for backward compat with old backups.
+13. **Gemini model fallback**: Heavy model (Pro) falls back to fast (Flash) on failure — never crash the app on AI errors.
+14. **Hardcoded colors**: NEVER use hex values in component files. Import from `src/theme/colors.ts`. Run grep to audit.
