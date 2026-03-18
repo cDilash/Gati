@@ -429,17 +429,77 @@ export default function SetupScreen() {
     );
   };
 
-  const renderStep5 = () => (
-    <ScrollView flex={1} contentContainerStyle={{paddingHorizontal:24,paddingTop:8,paddingBottom:32}}>
-      <H color="$color" fontSize={32} letterSpacing={1} marginBottom="$2">Training Schedule</H>
-      <B color="$textSecondary" fontSize={15} lineHeight={22} marginBottom="$7">Which days can you run? Pick at least 3.</B>
-      <FieldLabel text="Available Days" />
-      <XStack flexWrap="wrap" gap="$2">{DAY_LABELS.map((l,i)=>(<YStack key={i} width={44} height={44} borderRadius={22} backgroundColor={availableDays.includes(i)?'$accent':'$surface'} borderWidth={1} borderColor={availableDays.includes(i)?'$accent':'$border'} justifyContent="center" alignItems="center" pressStyle={{opacity:0.8}} onPress={()=>toggleDay(i)}><B color={availableDays.includes(i)?'white':'$textSecondary'} fontSize={13} fontWeight="600">{l}</B></YStack>))}</XStack>
-      <FieldLabel text="Long Run Day" /><B color="$textTertiary" fontSize={13} marginBottom="$2">Pick one of your available days.</B>
-      <XStack flexWrap="wrap" gap="$2">{DAY_LABELS.map((l,i)=>{const a=availableDays.includes(i);return(<YStack key={i} width={44} height={44} borderRadius={22} backgroundColor={longRunDay===i?'$primary':a?'$surface':'$surface'} borderWidth={1} borderColor={longRunDay===i?'$primary':a?'$border':'$border'} opacity={a?1:0.3} justifyContent="center" alignItems="center" pressStyle={a?{opacity:0.8}:undefined} onPress={a?()=>setLongRunDay(i):undefined}><B color={longRunDay===i||a?'$color':'$textTertiary'} fontSize={13} fontWeight="600">{l}</B></YStack>);})}</XStack>
-      <YStack height={20} />
-    </ScrollView>
-  );
+  const renderStep5 = () => {
+    const runDays = availableDays.length;
+    const restDays = 7 - runDays;
+    return (
+      <ScrollView flex={1} contentContainerStyle={{paddingHorizontal:24,paddingTop:8,paddingBottom:32}}>
+        <H color={colors.textPrimary} fontSize={28} letterSpacing={1} marginBottom={4}>Training Schedule</H>
+        <B color={colors.textSecondary} fontSize={14} lineHeight={20} marginBottom={20}>Which days can you run? Pick at least 3.</B>
+
+        {/* Available Days */}
+        <XStack alignItems="center" gap={6} marginBottom={8}><MaterialCommunityIcons name="calendar-check" size={14} color={colors.textTertiary} /><B color={colors.textTertiary} fontSize={12}>Available Days</B></XStack>
+        <XStack justifyContent="center" gap={10}>
+          {DAY_LABELS.map((l,i) => {
+            const sel = availableDays.includes(i);
+            return (
+              <YStack key={i} width={44} height={44} borderRadius={22}
+                backgroundColor={sel ? colors.cyan : colors.surface}
+                borderWidth={1} borderColor={sel ? colors.cyan : colors.border}
+                justifyContent="center" alignItems="center"
+                pressStyle={{opacity:0.7}} onPress={()=>toggleDay(i)}>
+                <B color={sel ? colors.background : colors.textSecondary} fontSize={14} fontWeight="600">{l.charAt(0)}</B>
+              </YStack>
+            );
+          })}
+        </XStack>
+        <B color={runDays < 3 ? colors.orange : colors.textTertiary} fontSize={11} marginTop={6} textAlign="center">
+          {runDays < 3 ? `Select at least 3 days (${runDays} selected)` :
+           `${runDays} run days + ${restDays} rest day${restDays !== 1 ? 's' : ''} per week`}
+        </B>
+
+        {/* Long Run Day */}
+        <XStack alignItems="center" gap={6} marginTop={20} marginBottom={8}><MaterialCommunityIcons name="calendar-star" size={14} color={colors.textTertiary} /><B color={colors.textTertiary} fontSize={12}>Long Run Day</B></XStack>
+        <XStack justifyContent="center" gap={10}>
+          {DAY_LABELS.map((l,i) => {
+            const avail = availableDays.includes(i);
+            const sel = longRunDay === i;
+            return (
+              <YStack key={i} width={44} height={44} borderRadius={22}
+                backgroundColor={sel ? colors.cyan : avail ? colors.surface : colors.surface}
+                borderWidth={sel ? 2 : 1} borderColor={sel ? colors.orange : avail ? colors.border : colors.border}
+                opacity={avail ? 1 : 0.25}
+                justifyContent="center" alignItems="center"
+                pressStyle={avail ? {opacity:0.7} : undefined} onPress={avail ? ()=>setLongRunDay(i) : undefined}>
+                <B color={sel ? colors.background : avail ? colors.textSecondary : colors.textTertiary} fontSize={14} fontWeight="600">{l.charAt(0)}</B>
+              </YStack>
+            );
+          })}
+        </XStack>
+        <B color={colors.textTertiary} fontSize={11} marginTop={6} textAlign="center">
+          {DAY_LABELS[longRunDay]} — your longest run each week
+        </B>
+
+        {/* Scheduling Tips */}
+        <YStack backgroundColor={colors.surface} borderRadius={14} padding={14} marginTop={24} gap={10}>
+          <H color={colors.textTertiary} fontSize={10} letterSpacing={1.5}>SCHEDULING TIPS</H>
+          <XStack gap={8} alignItems="flex-start">
+            <MaterialCommunityIcons name="calendar-check" size={14} color={colors.cyan} style={{marginTop:2}} />
+            <B color={colors.textSecondary} fontSize={12} lineHeight={17} flex={1}>3-4 run days is ideal for beginners. 5-6 for intermediate/advanced.</B>
+          </XStack>
+          <XStack gap={8} alignItems="flex-start">
+            <MaterialCommunityIcons name="moon-waning-crescent" size={14} color={colors.cyan} style={{marginTop:2}} />
+            <B color={colors.textSecondary} fontSize={12} lineHeight={17} flex={1}>Include at least 1-2 rest days for recovery.</B>
+          </XStack>
+          <XStack gap={8} alignItems="flex-start">
+            <MaterialCommunityIcons name="run-fast" size={14} color={colors.cyan} style={{marginTop:2}} />
+            <B color={colors.textSecondary} fontSize={12} lineHeight={17} flex={1}>Your long run should be on a day with the most free time — typically Saturday or Sunday.</B>
+          </XStack>
+        </YStack>
+        <YStack height={20} />
+      </ScrollView>
+    );
+  };
 
   const renderStep6 = () => (
     <ScrollView flex={1} contentContainerStyle={{paddingHorizontal:24,paddingTop:8,paddingBottom:32}}>
