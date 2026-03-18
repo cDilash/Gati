@@ -220,14 +220,14 @@ export default function SetupScreen() {
       </YStack>
     );
     return (
-      <YStack flex={1} justifyContent="center" alignItems="center" paddingHorizontal={32}>
+      <YStack flex={1} alignItems="center" paddingHorizontal={32} paddingTop="25%">
         <View width={64} height={64} borderRadius={32} backgroundColor={colors.surfaceHover} alignItems="center" justifyContent="center" marginBottom={16}>
           <StravaIcon size={32} />
         </View>
         <H color={colors.textPrimary} fontSize={28} letterSpacing={1} marginBottom={6}>Connect Strava</H>
         <B color={colors.textSecondary} fontSize={14} textAlign="center" lineHeight={20} marginBottom={32}>We'll import your running history to pre-fill your profile and calculate your fitness level.</B>
         {stravaConnected ? (<XStack backgroundColor={colors.surface} borderRadius={12} padding={16} borderWidth={1} borderColor={colors.success} alignItems="center" gap={10}><MaterialCommunityIcons name="check-circle" size={20} color={colors.success} /><B color={colors.success} fontSize={16} fontWeight="600">Strava connected</B></XStack>)
-        : (<YStack backgroundColor="#FC5200" paddingVertical={14} borderRadius={12} width="100%" alignItems="center" flexDirection="row" justifyContent="center" gap={8} pressStyle={{opacity:0.8}} onPress={handleConnectStrava}><MaterialCommunityIcons name="run-fast" size={18} color="#FFFFFF" /><B color="white" fontSize={16} fontWeight="700">Connect with Strava</B></YStack>)}
+        : (<YStack backgroundColor="#FC5200" paddingVertical={14} borderRadius={12} width="100%" alignItems="center" flexDirection="row" justifyContent="center" gap={8} pressStyle={{opacity:0.8}} onPress={handleConnectStrava}><StravaIcon size={18} color="#FFFFFF" /><B color="white" fontSize={16} fontWeight="700">Connect with Strava</B></YStack>)}
         <YStack marginTop={24} padding={8} pressStyle={{opacity:0.7}} onPress={()=>setStep(3)}><B color={colors.textTertiary} fontSize={14}>Skip — enter everything manually</B></YStack>
       </YStack>
     );
