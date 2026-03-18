@@ -194,11 +194,11 @@ export default function SetupScreen() {
     return (
       <ScrollView flex={1} contentContainerStyle={{paddingHorizontal:24,paddingTop:40,paddingBottom:32}}>
         <YStack alignItems="center" marginBottom={32}>
-          <View width={80} height={80} borderRadius={16} overflow="hidden" marginBottom={12}>
-            <Image source={require('../assets/images/icon.png')} style={{width:80,height:80}} />
+          <View width={100} height={100} borderRadius={20} overflow="hidden">
+            <Image source={require('../assets/images/icon.png')} style={{width:100,height:100}} />
           </View>
-          <GradientText text="GATI" style={{fontSize:32,fontWeight:'800',letterSpacing:3}} />
-          <B color={colors.textSecondary} fontSize={14} marginTop={4}>Your AI Marathon Coach</B>
+          <GradientText text="GATI" style={{fontSize:32,fontWeight:'800',letterSpacing:3,marginTop:-8}} />
+          <B color={colors.textSecondary} fontSize={14} marginTop={2}>Your AI Marathon Coach</B>
         </YStack>
         {!isLoggedIn ? (<>
           <Input height={44} backgroundColor={colors.surface} borderColor={colors.border} borderRadius={12} color={colors.textPrimary} fontSize={16} fontFamily="$body" placeholder="Email" placeholderTextColor="$textTertiary" paddingHorizontal={14} value={authEmail} onChangeText={setAuthEmail} autoCapitalize="none" keyboardType="email-address" />
