@@ -339,11 +339,11 @@ export default function SettingsScreen() {
 
       {/* ─── App Info ────────────────────────────────────── */}
       <YStack alignItems="center" marginTop={32} marginBottom={16}>
-        <View width={48} height={48} borderRadius={12} overflow="hidden" marginBottom={8}>
+        <View width={48} height={48} borderRadius={12} overflow="hidden">
           <Image source={require('../../assets/images/icon.png')} style={{ width: 48, height: 48 }} />
         </View>
-        <GradientText text="Gati" style={{ fontSize: 16, fontWeight: '800' }} />
-        <B color={colors.textTertiary} fontSize={11} marginTop={1}>Marathon Coach</B>
+        <GradientText text="Gati" style={{ fontSize: 16, fontWeight: '800', marginTop: -4 }} />
+        <B color={colors.textTertiary} fontSize={11} marginTop={0}>Marathon Coach</B>
         <B color={colors.textTertiary} fontSize={10} marginTop={6}>Version 2.0.0</B>
         <B color={colors.textTertiary} fontSize={9} marginTop={2}>Built with AI · Powered by Gemini</B>
       </YStack>
