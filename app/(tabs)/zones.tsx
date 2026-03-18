@@ -12,6 +12,7 @@ import {
 import { PaceZoneName, PaceZones, HRZones, Shoe, RecoveryStatus, HealthSnapshot, SleepResult, RestingHRResult } from '../../src/types';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { colors, semantic, zoneColors, sleepStageColors } from '../../src/theme/colors';
+import { calculateInjuryRisk } from '../../src/health/injuryRisk';
 import { GradientText } from '../../src/theme/GradientText';
 import { GradientBorder } from '../../src/theme/GradientBorder';
 
@@ -738,6 +739,8 @@ export default function RecoveryScreen() {
   const recoveryStatus = useAppStore(s => s.recoveryStatus);
   const healthSnapshot = useAppStore(s => s.healthSnapshot);
   const todaysWorkout = useAppStore(s => s.todaysWorkout);
+  const weeks = useAppStore(s => s.weeks);
+  const workouts = useAppStore(s => s.workouts);
 
   if (!userProfile || !paceZones) {
     return (
@@ -815,6 +818,41 @@ export default function RecoveryScreen() {
             </YStack>
           )}
         </YStack>
+      )}
+
+      {/* Injury Risk Score */}
+      {weeks.length >= 3 && (
+        (() => {
+          const risk = calculateInjuryRisk(
+            weeks, workouts, useAppStore.getState().currentWeekNumber,
+            recoveryStatus, healthSnapshot?.sleepHours ?? null, healthSnapshot?.sleepTrend ?? [],
+          );
+          if (risk.factors.length === 0) return null;
+          const riskColor = risk.level === 'high' ? colors.error : risk.level === 'moderate' ? colors.orange : colors.cyan;
+          return (
+            <YStack backgroundColor="$surface" borderRadius="$6" padding="$4" marginTop="$3" borderLeftWidth={3} borderLeftColor={riskColor}>
+              <XStack justifyContent="space-between" alignItems="center" marginBottom="$2">
+                <XStack alignItems="center" gap="$2">
+                  <MaterialCommunityIcons name="shield-alert" size={16} color={riskColor} />
+                  <H color="$textSecondary" fontSize={12} letterSpacing={1.5} textTransform="uppercase">Injury Risk</H>
+                </XStack>
+                <H color={riskColor} fontSize={14} letterSpacing={1}>{risk.level.toUpperCase()}</H>
+              </XStack>
+              {risk.factors.filter(f => f.status !== 'ok').map((f, i) => (
+                <XStack key={i} alignItems="center" gap="$2" marginBottom={4}>
+                  <View width={6} height={6} borderRadius={3} backgroundColor={f.status === 'danger' ? colors.error : colors.orange} />
+                  <B color="$textSecondary" fontSize={12}>{f.name}: {f.detail}</B>
+                </XStack>
+              ))}
+              {risk.factors.every(f => f.status === 'ok') && (
+                <B color="$textTertiary" fontSize={12}>All factors in safe range</B>
+              )}
+              {risk.level !== 'low' && (
+                <B color={riskColor} fontSize={12} fontStyle="italic" marginTop="$2">{risk.recommendation}</B>
+              )}
+            </YStack>
+          );
+        })()
       )}
 
       {/* Additional Health Context (non-scoring) */}

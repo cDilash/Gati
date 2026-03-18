@@ -348,6 +348,24 @@ Keep responses to 2-4 paragraphs max unless the athlete asks for detailed analys
     parts.push('');
   }
 
+  // Injury risk assessment
+  try {
+    const { calculateInjuryRisk } = require('../health/injuryRisk');
+    const risk = calculateInjuryRisk(
+      weeks, allWorkouts, currentWeek?.week_number ?? 0,
+      recoveryStatus, healthSnapshot?.sleepHours ?? null, healthSnapshot?.sleepTrend ?? [],
+    );
+    if (risk.level !== 'low') {
+      parts.push(`INJURY RISK: ${risk.level.toUpperCase()} (score: ${risk.score}/100)`);
+      for (const f of risk.factors.filter((f: any) => f.status !== 'ok')) {
+        parts.push(`  ⚠️ ${f.name}: ${f.detail}`);
+      }
+      parts.push(`Recommendation: ${risk.recommendation}`);
+      parts.push('If injury risk is MODERATE or HIGH, proactively suggest backing off quality sessions.');
+      parts.push('');
+    }
+  } catch {}
+
   // Additional health signals
   if (healthSnapshot) {
     const extras: string[] = [];
