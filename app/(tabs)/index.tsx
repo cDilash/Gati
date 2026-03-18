@@ -1237,14 +1237,14 @@ export default function TodayScreen() {
             {/* Notes input */}
             <YStack marginTop="$4">
               <B color="$textTertiary" fontSize={11} marginBottom="$1">Notes (optional)</B>
-              <XStack backgroundColor={colors.surfaceHover} borderRadius={12} paddingHorizontal={16} paddingVertical={14}
-                borderWidth={1} borderColor={ctNotes ? colors.cyanDim : colors.border} minHeight={52}>
+              <XStack backgroundColor={colors.surfaceHover} borderRadius={12} paddingHorizontal={14} paddingVertical={10}
+                borderWidth={1} borderColor={ctNotes ? colors.cyanDim : colors.border} minHeight={44}>
                 <TextInput
                   value={ctNotes}
                   onChangeText={setCTNotes}
                   placeholder='e.g., "heavy squats, 5x5"'
                   placeholderTextColor={colors.textTertiary}
-                  style={{ flex: 1, color: colors.textPrimary, fontFamily: 'Exo2_400Regular', fontSize: 14 }}
+                  style={{ flex: 1, color: colors.textPrimary, fontFamily: 'Exo2_400Regular', fontSize: 16 }}
                 />
               </XStack>
             </YStack>

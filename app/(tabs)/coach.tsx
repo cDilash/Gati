@@ -395,8 +395,8 @@ export default function CoachScreen() {
       <XStack alignItems="flex-end" paddingHorizontal={12} paddingVertical={8} paddingBottom={12}
         borderTopWidth={0.5} borderTopColor={colors.border} backgroundColor={colors.background} gap={8}>
         <Input
-          flex={1} backgroundColor={colors.surface} borderRadius={20} paddingHorizontal={16} paddingVertical={12}
-          color={colors.textPrimary} fontSize={14} fontFamily="$body" maxHeight={100} minHeight={48}
+          flex={1} backgroundColor={colors.surface} borderRadius={20} paddingHorizontal={14} paddingVertical={10}
+          color={colors.textPrimary} fontSize={16} fontFamily="$body" maxHeight={100} minHeight={44}
           borderWidth={1} borderColor={inputText ? colors.cyanDim : colors.border}
           placeholderTextColor="$textTertiary"
           placeholder="Ask your coach..." multiline

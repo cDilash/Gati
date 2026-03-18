@@ -589,11 +589,11 @@ function FInput({ value, onChangeText, placeholder, keyboardType, mono, multilin
 }) {
   return (
     <Input backgroundColor={colors.surfaceHover} borderColor={colors.border} borderRadius={12}
-      color={colors.textPrimary} fontSize={14} fontFamily={mono ? '$mono' : '$body'} fontWeight={mono ? '600' : '400'}
-      placeholderTextColor="$textTertiary" paddingHorizontal={16} paddingVertical={14}
-      height={multiline ? undefined : 52}
+      color={colors.textPrimary} fontSize={16} fontFamily={mono ? '$mono' : '$body'} fontWeight={mono ? '600' : '400'}
+      placeholderTextColor="$textTertiary" paddingHorizontal={14} paddingVertical={10}
+      height={multiline ? undefined : 44}
       placeholder={placeholder} keyboardType={keyboardType} multiline={multiline}
-      minHeight={multiline ? 100 : 52}
+      minHeight={multiline ? 80 : 44}
       value={value} onChangeText={onChangeText}
     />
   );
