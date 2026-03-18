@@ -24,7 +24,7 @@ const M_ = (props: any) => <Text fontFamily="$mono" {...props} />;
 // ─── Status icon helper ─────────────────────────────────────
 
 function workoutStatusIcon(workout: Workout, isTodayW: boolean): { name: string; color: string } {
-  if (workout.workout_type === 'rest') return { name: 'moon-waning-crescent', color: colors.textTertiary };
+  if (workout.workout_type === 'rest') return { name: 'battery-heart-outline', color: colors.textTertiary };
   switch (workout.status) {
     case 'completed': return { name: 'check-circle', color: (workout as any).execution_quality === 'on_target' || !(workout as any).execution_quality ? colors.success : colors.orange };
     case 'skipped': return { name: 'close-circle', color: colors.error };

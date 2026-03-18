@@ -718,7 +718,7 @@ export default function TodayScreen() {
           {/* Header */}
           <YStack alignItems="center" marginBottom="$3">
             <View width={56} height={56} borderRadius={28} backgroundColor={colors.cyanGhost} alignItems="center" justifyContent="center" marginBottom="$2">
-              <MaterialCommunityIcons name="weather-night" size={30} color={colors.cyan} />
+              <MaterialCommunityIcons name="battery-heart-outline" size={30} color={colors.cyan} />
             </View>
             <H color="$color" fontSize={26} letterSpacing={1}>Rest Day</H>
             <B color="$textTertiary" fontSize={13}>
@@ -793,7 +793,7 @@ export default function TodayScreen() {
                     const iconName = w.status === 'completed' ? 'check-circle'
                       : w.status === 'skipped' ? (isQualitySkip ? 'close-circle' : 'minus-circle')
                       : w.status === 'partial' ? 'circle-half-full'
-                      : isToday ? 'moon-waning-crescent'
+                      : isToday ? 'battery-heart-outline'
                       : 'chevron-right';
                     const iconColor = w.status === 'completed' ? colors.success
                       : w.status === 'skipped' ? skipColor

@@ -488,7 +488,7 @@ export default function SetupScreen() {
             <B color={colors.textSecondary} fontSize={12} lineHeight={17} flex={1}>3-4 run days is ideal for beginners. 5-6 for intermediate/advanced.</B>
           </XStack>
           <XStack gap={8} alignItems="flex-start">
-            <MaterialCommunityIcons name="moon-waning-crescent" size={14} color={colors.cyan} style={{marginTop:2}} />
+            <MaterialCommunityIcons name="battery-heart-outline" size={14} color={colors.cyan} style={{marginTop:2}} />
             <B color={colors.textSecondary} fontSize={12} lineHeight={17} flex={1}>Include at least 1-2 rest days for recovery.</B>
           </XStack>
           <XStack gap={8} alignItems="flex-start">

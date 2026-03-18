@@ -45,7 +45,7 @@ export const WORKOUT_TYPE_ICONS: Record<string, string> = {
   fartlek: 'shuffle',
   marathon_pace: 'flag',
   recovery: 'heart',
-  rest: 'moon',
+  rest: 'battery-heart-outline',
 };
 
 export const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
