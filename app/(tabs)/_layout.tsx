@@ -1,10 +1,10 @@
-import { Pressable } from 'react-native';
+import { Pressable, View } from 'react-native';
 import { Tabs, useRouter } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { Settings, User } from '@tamagui/lucide-icons';
 import { useAppStore } from '../../src/store';
 import { colors, semantic } from '../../src/theme/colors';
 import { GatiTabBar } from '../../src/components/GatiTabBar';
+import { UserAvatar } from '../../src/components/UserAvatar';
 
 const ICON_SIZE = 24;
 
@@ -30,14 +30,25 @@ export default function TabLayout() {
           title: 'Today',
           tabBarIcon: ({ color }) => <MaterialCommunityIcons name="run-fast" size={ICON_SIZE} color={color} />,
           tabBarBadge: (vdotNotification || proactiveSuggestion) ? '' : undefined,
-          headerLeft: () => (
-            <Pressable onPress={() => router.push('/profile')} hitSlop={12} style={{ marginLeft: 16 }}>
-              <User size={22} color={colors.textSecondary} />
-            </Pressable>
-          ),
+          headerLeft: () => {
+            const profile = useAppStore.getState().userProfile;
+            return (
+              <Pressable onPress={() => router.push('/profile')} style={({ pressed }) => ({ marginLeft: 16, opacity: pressed ? 0.7 : 1, transform: [{ scale: pressed ? 0.95 : 1 }] })}>
+                {profile?.avatar_base64 ? (
+                  <UserAvatar size={36} name={profile.name} avatarBase64={profile.avatar_base64} />
+                ) : (
+                  <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }}>
+                    <MaterialCommunityIcons name="account-outline" size={20} color={colors.textSecondary} />
+                  </View>
+                )}
+              </Pressable>
+            );
+          },
           headerRight: () => (
-            <Pressable onPress={() => router.push('/(tabs)/settings')} hitSlop={12} style={{ marginRight: 16 }}>
-              <Settings size={22} color={colors.textSecondary} />
+            <Pressable onPress={() => router.push('/(tabs)/settings')} style={({ pressed }) => ({ marginRight: 16, opacity: pressed ? 0.7 : 1, transform: [{ scale: pressed ? 0.95 : 1 }] })}>
+              <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }}>
+                <MaterialCommunityIcons name="cog-outline" size={20} color={colors.textSecondary} />
+              </View>
             </Pressable>
           ),
         }}
