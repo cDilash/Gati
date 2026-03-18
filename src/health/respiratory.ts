@@ -27,12 +27,14 @@ export async function getRespiratoryRate(daysBack: number = 14): Promise<Respira
           limit: daysBack,
         },
         (error: string, results: any[]) => {
-          if (error) {
+          // TurboModule proxy may pass results as first arg
+          const data = Array.isArray(error) ? error : (results || []);
+          if (error && !Array.isArray(error)) {
             console.log("[HealthKit] Respiratory rate error:", error);
             resolve([]);
             return;
           }
-          const mapped = (results || []).map((r: any) => ({
+          const mapped = (data || []).map((r: any) => ({
             value: Math.round(r.value * 10) / 10,
             date: r.startDate?.split("T")[0] || "",
           }));

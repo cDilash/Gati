@@ -14,6 +14,7 @@ export function calculateRecoveryScore(
   const signals: RecoverySignal[] = [];
 
   // ── Resting HR (33 pts max) ──
+  // Baseline: 14-day average (RHR is stable, longer window smooths daily noise)
   if (snapshot.restingHR !== null && snapshot.restingHRTrend.length >= 3) {
     const baseline = average(snapshot.restingHRTrend.map(r => r.value));
     const diff = snapshot.restingHR - baseline;
@@ -48,6 +49,7 @@ export function calculateRecoveryScore(
   }
 
   // ── HRV RMSSD (33 pts max) ──
+  // Baseline: 7-day average (HRV is highly volatile, longer windows dilute signal)
   if (snapshot.hrvRMSSD !== null && snapshot.hrvTrend.length >= 3) {
     const baseline = average(snapshot.hrvTrend.slice(0, 7).map(r => r.value));
     const pctBelow = ((baseline - snapshot.hrvRMSSD) / baseline) * 100;

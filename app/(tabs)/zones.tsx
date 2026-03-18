@@ -165,7 +165,7 @@ function RecoveryHero({ recovery, snapshot }: { recovery: RecoveryStatus | null;
         <GradientText text={String(recovery.score)} style={{ fontSize: 36, fontWeight: '800' }} />
       </View>
       <H color={color} fontSize={22} letterSpacing={1.5} marginTop="$3" textTransform="uppercase">{label}</H>
-      <B color="$textSecondary" fontSize={13} marginTop="$1">Based on {recovery.signalCount}/3 signals</B>
+      <B color="$textSecondary" fontSize={13} marginTop="$1">Based on {recovery.signalCount} signal{recovery.signalCount !== 1 ? 's' : ''}</B>
       {snapshot?.cachedAt && (
         <B color="$textTertiary" fontSize={11} marginTop="$1">
           Last synced {formatTimeAgo(snapshot.cachedAt)}
@@ -552,14 +552,14 @@ function SleepCard({ signal, sleepTrend }: {
           <XStack height={12} borderRadius={6} overflow="hidden" marginBottom="$2">
             {(() => {
               const { deepMinutes, lightMinutes, remMinutes, awakeMinutes } = latest.stages;
-              const total = deepMinutes + lightMinutes + remMinutes + awakeMinutes;
-              if (total === 0) return null;
+              const bedTotal = deepMinutes + lightMinutes + remMinutes + awakeMinutes;
+              if (bedTotal === 0) return null;
               return (
                 <>
-                  {deepMinutes > 0 && <View flex={deepMinutes / total} backgroundColor={STAGE_COLORS.deep} />}
-                  {lightMinutes > 0 && <View flex={lightMinutes / total} backgroundColor={STAGE_COLORS.light} />}
-                  {remMinutes > 0 && <View flex={remMinutes / total} backgroundColor={STAGE_COLORS.rem} />}
-                  {awakeMinutes > 0 && <View flex={awakeMinutes / total} backgroundColor={STAGE_COLORS.awake} />}
+                  {deepMinutes > 0 && <View flex={deepMinutes / bedTotal} backgroundColor={STAGE_COLORS.deep} />}
+                  {lightMinutes > 0 && <View flex={lightMinutes / bedTotal} backgroundColor={STAGE_COLORS.light} />}
+                  {remMinutes > 0 && <View flex={remMinutes / bedTotal} backgroundColor={STAGE_COLORS.rem} />}
+                  {awakeMinutes > 0 && <View flex={awakeMinutes / bedTotal} backgroundColor={STAGE_COLORS.awake} />}
                 </>
               );
             })()}

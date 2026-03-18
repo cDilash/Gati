@@ -19,8 +19,13 @@ export async function getWeight(): Promise<WeightResult | null> {
       AppleHealthKit.getLatestWeight(
         { unit: 'kg' },
         (error: string, result: any) => {
+          // TurboModule proxy may pass result as first arg (single object, not array)
+          if (error && typeof error === 'object' && error !== null && 'value' in error) {
+            result = error;
+            error = '' as any;
+          }
           if (error || !result) {
-            console.log("[HealthKit] Weight error:", error);
+            if (error) console.log("[HealthKit] Weight error:", error);
             resolve(null);
             return;
           }

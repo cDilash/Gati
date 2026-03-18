@@ -28,7 +28,7 @@ export async function syncHealthData(forceRefresh: boolean = false): Promise<Hea
     return null;
   }
 
-  // Guard 3: Check cache — don't re-fetch within 2 hours (skip if forced)
+  // Guard 3: Check cache — don't re-fetch within 30 minutes (skip if forced)
   if (!forceRefresh) {
     const cached = getCachedSnapshot();
     if (cached) {
@@ -170,14 +170,14 @@ function getCachedSnapshot(): HealthSnapshot | null {
       restingHRTrend: JSON.parse(row.resting_hr_trend_json || '[]'),
       hrvTrend: JSON.parse(row.hrv_trend_json || '[]'),
       sleepTrend: JSON.parse(row.sleep_trend_json || '[]'),
-      weight: row.weight_kg != null ? { value: row.weight_kg, date: row.date } : null,
+      weight: row.weight_kg != null ? { value: row.weight_kg, date: row.weight_date ?? row.date } : null,
       vo2max: row.vo2max != null ? { value: row.vo2max, date: row.date } : null,
       respiratoryRate: row.respiratory_rate ?? null,
       respiratoryRateTrend: JSON.parse(row.respiratory_rate_trend_json || '[]'),
       spo2: row.spo2 ?? null,
       spo2Trend: JSON.parse(row.spo2_trend_json || '[]'),
       steps: row.steps ?? null,
-      stepsTrend: [],  // Not cached — re-fetched each sync
+      stepsTrend: JSON.parse(row.steps_trend_json || '[]'),
       restingHRAge: null,
       sleepAge: null,
       signalCount: row.signal_count,
@@ -195,10 +195,10 @@ function saveSnapshotToCache(snapshot: HealthSnapshot): void {
     const id = Crypto.randomUUID();
     db.runSync(
       `INSERT OR REPLACE INTO health_snapshot
-       (id, date, resting_hr, hrv_rmssd, sleep_hours, resting_hr_trend_json, hrv_trend_json, sleep_trend_json, weight_kg, vo2max, respiratory_rate, respiratory_rate_trend_json, spo2, spo2_trend_json, steps, signal_count, cached_at)
+       (id, date, resting_hr, hrv_rmssd, sleep_hours, resting_hr_trend_json, hrv_trend_json, sleep_trend_json, weight_kg, vo2max, respiratory_rate, respiratory_rate_trend_json, spo2, spo2_trend_json, steps, signal_count, cached_at, steps_trend_json, weight_date)
        VALUES (
          COALESCE((SELECT id FROM health_snapshot WHERE date = ?), ?),
-         ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+         ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
        )`,
       [
         snapshot.date, id,
@@ -218,6 +218,8 @@ function saveSnapshotToCache(snapshot: HealthSnapshot): void {
         snapshot.steps,
         snapshot.signalCount,
         snapshot.cachedAt,
+        JSON.stringify(snapshot.stepsTrend ?? []),
+        snapshot.weight?.date ?? null,
       ]
     );
   } catch (e) {

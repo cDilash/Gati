@@ -121,6 +121,8 @@ export function initializeDatabase(): void {
     { table: 'user_profile', column: 'leg_day_weekday', type: 'INTEGER' },
     { table: 'ai_cache', column: 'model_used', type: 'TEXT' },
     { table: 'user_profile', column: 'avatar_base64', type: 'TEXT' },
+    { table: 'health_snapshot', column: 'steps_trend_json', type: 'TEXT' },
+    { table: 'health_snapshot', column: 'weight_date', type: 'TEXT' },
     { table: 'user_profile', column: 'max_hr_updated_at', type: 'TEXT' },
     { table: 'user_profile', column: 'rest_hr_updated_at', type: 'TEXT' },
     { table: 'user_profile', column: 'weekly_mileage_updated_at', type: 'TEXT' },

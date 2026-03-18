@@ -398,9 +398,7 @@ Keep responses to 2-4 paragraphs max unless the athlete asks for detailed analys
     if (healthSnapshot.vo2max) {
       extras.push(`Garmin VO2max: ${healthSnapshot.vo2max.value} mL/kg/min (${healthSnapshot.vo2max.date})`);
     }
-    if (healthSnapshot.respiratoryRate !== null) {
-      extras.push(`Respiratory rate: ${healthSnapshot.respiratoryRate} breaths/min`);
-    }
+    // Respiratory rate already in RECOVERY STATUS signals — don't duplicate
     if (healthSnapshot.spo2 !== null) {
       const spo2Warning = healthSnapshot.spo2 < 94 ? ' ⚠️ LOW' : '';
       extras.push(`SpO2: ${healthSnapshot.spo2}%${spo2Warning}`);
