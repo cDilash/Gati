@@ -340,20 +340,94 @@ export default function SetupScreen() {
     </ScrollView>
   );
 
-  const renderStep4 = () => (
-    <ScrollView flex={1} contentContainerStyle={{paddingHorizontal:24,paddingTop:8,paddingBottom:32}}>
-      <H color="$color" fontSize={32} letterSpacing={1} marginBottom="$2">Race Details</H>
-      <B color="$textSecondary" fontSize={15} lineHeight={22} marginBottom="$7">Tell us about your target marathon.</B>
-      <FieldLabel text="Race Name (optional)" /><Input height={44} backgroundColor={colors.surface} borderColor={colors.border} borderRadius={12} color={colors.textPrimary} fontSize={16} fontFamily="$body" paddingHorizontal={14} placeholder="e.g. Chicago Marathon" placeholderTextColor="$textTertiary" value={raceName} onChangeText={setRaceName} />
-      <FieldLabel text="Race Date *" />
-      <YStack backgroundColor="$surface" borderRadius="$4" borderWidth={1} borderColor="$border" paddingHorizontal="$4" paddingVertical="$4" height={52} pressStyle={{opacity:0.8}} onPress={()=>setShowDatePicker(true)}><B color={raceDate?'$color':'$textTertiary'} fontSize={16}>{raceDate||'Tap to select race date'}</B></YStack>
-      {showDatePicker&&(<Modal visible transparent animationType="slide"><Pressable style={{flex:1,backgroundColor:'rgba(0,0,0,0.6)',justifyContent:'flex-end'}} onPress={()=>setShowDatePicker(false)}><Pressable style={{backgroundColor:colors.surface,borderTopLeftRadius:20,borderTopRightRadius:20,padding:24,paddingBottom:40}} onPress={e=>e.stopPropagation()}><H color={colors.textPrimary} fontSize={20} textAlign="center" letterSpacing={1}>Race Date</H><B color={colors.textTertiary} fontSize={12} textAlign="center" marginTop={2} marginBottom={12}>When is your marathon?</B><DateTimePicker value={raceDate?new Date(raceDate+'T00:00:00'):new Date(Date.now()+120*86400000)} mode="date" display="spinner" minimumDate={new Date()} themeVariant="dark" onChange={(_,d)=>{if(d){setRaceDate(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`);}}} /><YStack marginTop={8}><GradientButton label="Done" onPress={()=>setShowDatePicker(false)} /></YStack></Pressable></Pressable></Modal>)}
-      <FieldLabel text="Course Profile" /><SegmentedControl options={COURSE_PROFILES} selected={courseProfile} onSelect={setCourseProfile} />
-      <FieldLabel text="Goal Type" /><SegmentedControl options={GOAL_TYPES} selected={goalType} onSelect={setGoalType} />
-      {(goalType==='Time Goal'||goalType==='BQ')&&(<><FieldLabel text="Target Finish Time" /><YStack backgroundColor="$surface" borderRadius="$4" borderWidth={1} borderColor="$border" paddingHorizontal="$4" paddingVertical="$4" height={52} pressStyle={{opacity:0.8}} onPress={()=>openDurationPicker(targetFinishTime,'finish')}><B color={targetFinishTime?'$color':'$textTertiary'} fontSize={16}>{targetFinishTime||'Tap to set (e.g. 3:30:00)'}</B></YStack><DurationPickerModal visible={showFinishTimePicker} onClose={()=>setShowFinishTimePicker(false)} onConfirm={()=>confirmDurationPicker('finish')} title="Target Finish Time" /></>)}
-      <YStack height={20} />
-    </ScrollView>
-  );
+  const courseDescriptions: Record<CourseProfile,string> = {
+    'Flat': 'Less than 300ft elevation gain',
+    'Rolling': '300-1000ft gain, gentle hills',
+    'Hilly': '1000ft+ gain, significant climbs',
+    'Unknown': "I'll look it up later",
+  };
+  const goalDescriptions: Record<GoalType,string> = {
+    'Just Finish': 'Complete the marathon, no time pressure',
+    'Time Goal': 'Hit a specific finish time',
+    'BQ': 'Qualify for Boston Marathon',
+    'PR': 'Beat my previous marathon time',
+  };
+
+  const renderStep4 = () => {
+    // Race date info
+    let raceDateFormatted = '';
+    let daysAway = 0;
+    let weeksAway = 0;
+    if (raceDate && /^\d{4}-\d{2}-\d{2}$/.test(raceDate)) {
+      const rd = new Date(raceDate + 'T12:00:00');
+      raceDateFormatted = rd.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+      daysAway = Math.ceil((rd.getTime() - Date.now()) / 86400000);
+      weeksAway = Math.floor(daysAway / 7);
+    }
+
+    // Estimated marathon time from VDOT
+    let estimatedTime = '';
+    if (calculatedVDOT) {
+      try { const { predictMarathonTime, formatTime: ft } = require('../src/engine/vdot'); estimatedTime = ft(predictMarathonTime(calculatedVDOT)); } catch {}
+    }
+
+    return (
+      <ScrollView flex={1} contentContainerStyle={{paddingHorizontal:24,paddingTop:8,paddingBottom:32}}>
+        <H color={colors.textPrimary} fontSize={28} letterSpacing={1} marginBottom={4}>Race Details</H>
+        <B color={colors.textSecondary} fontSize={14} lineHeight={20} marginBottom={20}>Tell us about your target marathon.</B>
+
+        {/* Race Name */}
+        <XStack alignItems="center" gap={6} marginBottom={4}><MaterialCommunityIcons name="trophy-outline" size={14} color={colors.textTertiary} /><B color={colors.textTertiary} fontSize={12}>Race Name (optional)</B></XStack>
+        <Input height={44} backgroundColor={colors.surface} borderColor={colors.border} borderRadius={12} color={colors.textPrimary} fontSize={16} fontFamily="$body" paddingHorizontal={14} placeholder="e.g. San Francisco Marathon" placeholderTextColor="$textTertiary" value={raceName} onChangeText={setRaceName} />
+
+        {/* Race Date */}
+        <XStack alignItems="center" gap={6} marginTop={14} marginBottom={4}><MaterialCommunityIcons name="calendar-outline" size={14} color={colors.textTertiary} /><B color={colors.textTertiary} fontSize={12}>Race Date <B color={colors.orange} fontSize={12}>*</B></B></XStack>
+        <YStack backgroundColor={colors.surface} borderRadius={12} borderWidth={1} borderColor={colors.border} paddingHorizontal={14} height={44} justifyContent="center" pressStyle={{opacity:0.8}} onPress={()=>setShowDatePicker(true)}>
+          <B color={raceDate ? colors.textPrimary : colors.textTertiary} fontSize={16}>{raceDateFormatted || 'Tap to select race date'}</B>
+        </YStack>
+        {raceDate && daysAway > 0 && (
+          <B color={daysAway < 84 ? colors.orange : colors.textTertiary} fontSize={11} marginTop={4}>
+            {daysAway} days from now · {weeksAway} weeks of training
+            {daysAway < 84 ? ' ⚠️ Plan will be compressed' : ''}
+          </B>
+        )}
+        {showDatePicker&&(<Modal visible transparent animationType="slide"><Pressable style={{flex:1,backgroundColor:'rgba(0,0,0,0.6)',justifyContent:'flex-end'}} onPress={()=>setShowDatePicker(false)}><Pressable style={{backgroundColor:colors.surface,borderTopLeftRadius:20,borderTopRightRadius:20,padding:24,paddingBottom:40}} onPress={e=>e.stopPropagation()}><H color={colors.textPrimary} fontSize={20} textAlign="center" letterSpacing={1}>Race Date</H><B color={colors.textTertiary} fontSize={12} textAlign="center" marginTop={2} marginBottom={12}>When is your marathon?</B><DateTimePicker value={raceDate?new Date(raceDate+'T00:00:00'):new Date(Date.now()+120*86400000)} mode="date" display="spinner" minimumDate={new Date()} themeVariant="dark" onChange={(_,d)=>{if(d){setRaceDate(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`);}}} /><YStack marginTop={8}><GradientButton label="Done" onPress={()=>setShowDatePicker(false)} /></YStack></Pressable></Pressable></Modal>)}
+
+        {/* Course Profile */}
+        <XStack alignItems="center" gap={6} marginTop={14} marginBottom={4}><MaterialCommunityIcons name="terrain" size={14} color={colors.textTertiary} /><B color={colors.textTertiary} fontSize={12}>Course Profile</B></XStack>
+        <SegmentedControl options={COURSE_PROFILES} selected={courseProfile} onSelect={setCourseProfile} />
+        <B color={colors.textTertiary} fontSize={11} marginTop={4}>{courseDescriptions[courseProfile]}</B>
+
+        {/* Goal Type */}
+        <XStack alignItems="center" gap={6} marginTop={14} marginBottom={4}><MaterialCommunityIcons name="flag-checkered" size={14} color={colors.textTertiary} /><B color={colors.textTertiary} fontSize={12}>Goal Type</B></XStack>
+        <SegmentedControl options={GOAL_TYPES} selected={goalType} onSelect={setGoalType} />
+        <B color={colors.textTertiary} fontSize={11} marginTop={4}>{goalDescriptions[goalType]}</B>
+
+        {/* Target Finish Time — only for Time Goal / BQ */}
+        {goalType === 'Just Finish' ? (
+          <YStack backgroundColor={colors.surface} borderRadius={12} padding={12} marginTop={14}>
+            <B color={colors.textSecondary} fontSize={13} lineHeight={18}>We'll set a comfortable pace based on your fitness level{estimatedTime ? `. Estimated finish: ~${estimatedTime}` : ''}.</B>
+          </YStack>
+        ) : (goalType === 'Time Goal' || goalType === 'BQ') ? (
+          <>
+            <XStack alignItems="center" gap={6} marginTop={14} marginBottom={4}><MaterialCommunityIcons name="timer-outline" size={14} color={colors.textTertiary} /><B color={colors.textTertiary} fontSize={12}>Target Finish Time</B></XStack>
+            <YStack backgroundColor={colors.surface} borderRadius={12} borderWidth={1} borderColor={colors.border} paddingHorizontal={14} height={44} justifyContent="center" pressStyle={{opacity:0.8}} onPress={()=>openDurationPicker(targetFinishTime,'finish')}>
+              <B color={targetFinishTime ? colors.textPrimary : colors.textTertiary} fontSize={16}>{targetFinishTime || 'Tap to set time'}</B>
+            </YStack>
+            {estimatedTime && !targetFinishTime && <B color={colors.textTertiary} fontSize={11} marginTop={4}>Based on your VDOT, estimated: ~{estimatedTime}</B>}
+            <DurationPickerModal visible={showFinishTimePicker} onClose={()=>setShowFinishTimePicker(false)} onConfirm={()=>confirmDurationPicker('finish')} title="Target Finish Time" />
+          </>
+        ) : null}
+
+        {/* Helpful note */}
+        <YStack backgroundColor={colors.surface} borderRadius={12} padding={12} marginTop={20} flexDirection="row" gap={10} alignItems="flex-start">
+          <MaterialCommunityIcons name="lightbulb-outline" size={16} color={colors.cyan} style={{marginTop:2}} />
+          <B color={colors.textTertiary} fontSize={12} lineHeight={17} flex={1}>Don't worry about getting these perfect — your AI coach will adjust the plan as you train and improve.</B>
+        </YStack>
+        <YStack height={20} />
+      </ScrollView>
+    );
+  };
 
   const renderStep5 = () => (
     <ScrollView flex={1} contentContainerStyle={{paddingHorizontal:24,paddingTop:8,paddingBottom:32}}>
