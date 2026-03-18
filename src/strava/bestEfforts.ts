@@ -34,8 +34,8 @@ const EFFORT_CALCULATORS: Record<string, { label: string; calc: (s: number) => n
 };
 
 function getDb() {
-  const SQLite = require('expo-sqlite');
-  return SQLite.openDatabaseSync('marathon_coach.db');
+  const { getDatabase } = require('../db/database');
+  return getDatabase();
 }
 
 /**

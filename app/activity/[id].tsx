@@ -12,7 +12,7 @@ import { RouteMap } from '../../src/components/RouteMap';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { colors } from '../../src/theme/colors';
 import { useAppStore } from '../../src/store';
-import { StravaLogo } from '../../src/components/StravaLogo';
+import { StravaIcon } from '../../src/components/icons/StravaIcon';
 
 const H = (props: any) => <Text fontFamily="$heading" {...props} />;
 const B = (props: any) => <Text fontFamily="$body" {...props} />;
@@ -218,7 +218,7 @@ export default function ActivityDetailScreen() {
             <YStack flex={1}>
               <B fontSize={13} color={colors.textSecondary} lineHeight={19} fontStyle="italic">{detail.description}</B>
               <XStack alignItems="center" gap={4} marginTop={4} alignSelf="flex-end">
-                <StravaLogo size={9} />
+                <StravaIcon size={10} />
                 <B fontSize={10} color={colors.strava}>Strava</B>
               </XStack>
             </YStack>
@@ -299,8 +299,8 @@ export default function ActivityDetailScreen() {
       {/* ─── Secondary Stats Grid (2 columns) ──────────────── */}
       {(() => {
         const stats: { icon: string; iconColor: string; value: string; unit: string; label: string; isHR?: boolean }[] = [];
-        if (metric.avg_hr != null) stats.push({ icon: 'heart-pulse', iconColor: colors.orange, value: `${metric.avg_hr}`, unit: 'bpm', label: 'Avg HR', isHR: true });
-        if (metric.max_hr != null) stats.push({ icon: 'heart-pulse', iconColor: colors.orange, value: `${metric.max_hr}`, unit: 'bpm', label: 'Max HR', isHR: true });
+        if (metric.avg_hr != null) stats.push({ icon: 'heart-pulse', iconColor: colors.orange, value: `${Math.round(metric.avg_hr)}`, unit: 'bpm', label: 'Avg HR', isHR: true });
+        if (metric.max_hr != null) stats.push({ icon: 'heart-pulse', iconColor: colors.orange, value: `${Math.round(metric.max_hr)}`, unit: 'bpm', label: 'Max HR', isHR: true });
         if (detail?.elevation_gain_ft != null) stats.push({ icon: 'trending-up', iconColor: colors.cyan, value: `${Math.round(detail.elevation_gain_ft)}`, unit: 'ft', label: 'Elevation' });
         if (detail?.calories != null) stats.push({ icon: 'fire', iconColor: colors.cyan, value: `${detail.calories}`, unit: '', label: 'Calories' });
         if (detail?.cadence_avg != null) stats.push({ icon: 'metronome', iconColor: colors.cyan, value: `${Math.round(detail.cadence_avg * 2)}`, unit: 'spm', label: 'Cadence' });
@@ -499,7 +499,7 @@ export default function ActivityDetailScreen() {
       {stravaId && (
         <Pressable onPress={() => Linking.openURL(`https://www.strava.com/activities/${stravaId}`)} style={{ marginHorizontal: 16, marginBottom: 12 }}>
           <XStack backgroundColor={colors.surface} borderRadius={12} padding={14} alignItems="center" justifyContent="center" gap={8}>
-            <StravaLogo size={18} />
+            <StravaIcon size={18} />
             <B fontSize={13} color={colors.strava} fontWeight="600">View on Strava</B>
             <MaterialCommunityIcons name="chevron-right" size={16} color={colors.strava} />
           </XStack>

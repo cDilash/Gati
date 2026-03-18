@@ -13,8 +13,8 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { colors } from '../../src/theme/colors';
 import { GradientText } from '../../src/theme/GradientText';
 import { UserAvatar } from '../../src/components/UserAvatar';
-import { StravaLogo } from '../../src/components/StravaLogo';
-import { AppleHealthLogo } from '../../src/components/AppleHealthLogo';
+import { StravaIcon } from '../../src/components/icons/StravaIcon';
+import { HealthIcon } from '../../src/components/icons/HealthIcon';
 
 const H = (props: any) => <Text fontFamily="$heading" {...props} />;
 const B = (props: any) => <Text fontFamily="$body" {...props} />;
@@ -225,7 +225,7 @@ export default function SettingsScreen() {
 
       {/* ─── Strava ──────────────────────────────────────── */}
       <XStack alignItems="center" gap={6} marginTop={24} marginBottom={10} marginLeft={4}>
-        <StravaLogo size={14} />
+        <StravaIcon size={14} />
         <H color={colors.textSecondary} fontSize={12} textTransform="uppercase" letterSpacing={1.5}>Strava</H>
       </XStack>
       <YStack backgroundColor={colors.surface} borderRadius={14} overflow="hidden">
@@ -245,7 +245,7 @@ export default function SettingsScreen() {
       {(hkAvailable || healthSnapshot) && (
         <>
           <XStack alignItems="center" gap={6} marginTop={24} marginBottom={10} marginLeft={4}>
-            <AppleHealthLogo size={14} />
+            <HealthIcon size={14} />
             <H color={colors.textSecondary} fontSize={12} textTransform="uppercase" letterSpacing={1.5}>Apple Health</H>
           </XStack>
           <YStack backgroundColor={colors.surface} borderRadius={14} overflow="hidden">
@@ -260,7 +260,8 @@ export default function SettingsScreen() {
                     healthSnapshot.sleepHours != null ? 'Sleep' : null,
                     healthSnapshot.steps != null ? 'Steps' : null,
                   ].filter(Boolean).join(' · ') || 'None'} />
-                <SettingsRow icon="sync" iconColor={colors.cyan} label="Sync Health Data"
+                <SettingsRow icon="sync" iconColor={colors.cyan} label="Last Sync"
+                  subtitle={healthSnapshot.cachedAt ? formatLastSync(healthSnapshot.cachedAt) : 'Not synced yet'}
                   rightElement={<SmallButton label="Sync" onPress={handleSyncHealth} />} loading={isHealthSyncing} />
               </>
             )}
@@ -282,6 +283,12 @@ export default function SettingsScreen() {
       {/* ─── Cloud Backup ────────────────────────────────── */}
       <SectionHeader title="Cloud Backup" />
       <YStack backgroundColor={colors.surface} borderRadius={14} overflow="hidden">
+        {(() => {
+          const lastBackup = useAppStore.getState().lastBackupTime;
+          return lastBackup > 0 ? (
+            <SettingsRow icon="clock-outline" iconColor={colors.cyan} label="Last Backup" subtitle={formatLastSync(new Date(lastBackup).toISOString())} />
+          ) : null;
+        })()}
         <SettingsRow icon="cloud-check-outline" iconColor={colors.cyan} label="Backup to Cloud"
           subtitle="Save all data to Supabase" onPress={handleBackup} loading={isBackingUp} />
         <SettingsRow icon="cloud-download-outline" iconColor={colors.orange} label="Restore from Cloud"

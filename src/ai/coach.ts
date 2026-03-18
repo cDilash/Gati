@@ -165,7 +165,7 @@ Keep responses to 2-4 paragraphs max unless the athlete asks for detailed analys
       // Enrichments from strava detail
       const detail = m.strava_activity_id ? detailMap.get(m.strava_activity_id) : null;
       const elev = detail?.elevation_gain_ft ? ` +${Math.round(detail.elevation_gain_ft)}ft` : '';
-      const cadence = detail?.cadence_avg ? ` ${Math.round(detail.cadence_avg)}spm` : '';
+      const cadence = detail?.cadence_avg ? ` ${Math.round(detail.cadence_avg * 2)}spm` : '';
       const suffer = detail?.suffer_score ? ` effort:${detail.suffer_score}` : '';
 
       parts.push(`  ${m.date}: ${m.distance_miles.toFixed(1)}mi @ ${pace}/mi${hr}${rpe}${elev}${cadence}${suffer}${gear}`);
@@ -178,10 +178,10 @@ Keep responses to 2-4 paragraphs max unless the athlete asks for detailed analys
             const splits = JSON.parse(splitsSource);
             if (splits.length >= 2) {
               const splitPaces = splits.map((sp: any) => {
-                if (sp.average_speed && sp.average_speed > 0) {
-                  return formatPace(1609.34 / sp.average_speed);
-                } else if (sp.moving_time && sp.distance) {
-                  return formatPace((sp.moving_time / sp.distance) * 1609.34);
+                if (sp.averageSpeed && sp.averageSpeed > 0) {
+                  return formatPace(Math.round(1609.344 / sp.averageSpeed));
+                } else if (sp.movingTime && sp.distance) {
+                  return formatPace(Math.round((sp.movingTime / sp.distance) * 1609.344));
                 }
                 return '?';
               });
@@ -229,12 +229,13 @@ Keep responses to 2-4 paragraphs max unless the athlete asks for detailed analys
       const prDistances = ['400m', '1/2 mile', '1 mile', '1k', '2 mile', '5k', '10k'];
       const prs = prDistances
         .map(dist => {
-          const matching = allEfforts.filter((e: any) => e.name === dist && e.pr_rank === 1);
+          const matching = allEfforts.filter((e: any) => e.name === dist && (e.prRank === 1 || e.pr_rank === 1));
           if (matching.length === 0) return null;
           const best = matching[0];
-          const mins = Math.floor(best.elapsed_time / 60);
-          const secs = best.elapsed_time % 60;
-          const prDate = best.start_date?.split('T')[0] || '';
+          const time = best.movingTime ?? best.elapsedTime ?? best.moving_time ?? best.elapsed_time ?? 0;
+          const mins = Math.floor(time / 60);
+          const secs = time % 60;
+          const prDate = (best.startDate ?? best.start_date ?? '').split('T')[0];
           return `${dist}: ${mins}:${String(secs).padStart(2, '0')}${prDate ? ` (${prDate})` : ''}`;
         })
         .filter(Boolean);

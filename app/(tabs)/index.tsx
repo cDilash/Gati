@@ -1047,7 +1047,7 @@ export default function TodayScreen() {
                 )}
                 {todaysMetric.avg_hr && (
                   <YStack>
-                    <M color={colors.orange} fontSize={18} fontWeight="800">{todaysMetric.avg_hr}</M>
+                    <M color={colors.orange} fontSize={18} fontWeight="800">{Math.round(todaysMetric.avg_hr)}</M>
                     <B color="$textTertiary" fontSize={10}>Avg HR</B>
                   </YStack>
                 )}

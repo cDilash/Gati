@@ -17,8 +17,8 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { GradientText } from '../src/theme/GradientText';
 import { GradientButton } from '../src/theme/GradientButton';
 import { UserAvatar } from '../src/components/UserAvatar';
-import { StravaLogo } from '../src/components/StravaLogo';
-import { AppleHealthLogo } from '../src/components/AppleHealthLogo';
+import { StravaIcon } from '../src/components/icons/StravaIcon';
+import { HealthIcon } from '../src/components/icons/HealthIcon';
 import { formatRelativeTime, isStale } from '../src/utils/formatTime';
 
 const H = (props: any) => <Text fontFamily="$heading" {...props} />;
@@ -207,7 +207,7 @@ export default function ProfileScreen() {
             <H color={colors.textTertiary} fontSize={8} letterSpacing={1} marginTop={2}>VDOT</H>
             {userProfile.vdot_updated_at && (
               <XStack alignItems="center" gap={3} marginTop={2}>
-                {userProfile.vdot_source?.includes('strava') && <StravaLogo size={7} />}
+                {userProfile.vdot_source?.includes('strava') && <StravaIcon size={8} />}
                 <B color={isStale(userProfile.vdot_updated_at, 56) ? colors.orange : colors.textTertiary} fontSize={7}>
                   {formatRelativeTime(userProfile.vdot_updated_at)}
                 </B>
@@ -215,7 +215,7 @@ export default function ProfileScreen() {
             )}
             {!userProfile.vdot_updated_at && userProfile.vdot_source && (
               <XStack alignItems="center" gap={3} marginTop={2}>
-                {userProfile.vdot_source.includes('strava') && <StravaLogo size={7} />}
+                {userProfile.vdot_source.includes('strava') && <StravaIcon size={8} />}
                 <B color={colors.textTertiary} fontSize={7}>{userProfile.vdot_source === 'strava_best_effort' ? 'Strava' : userProfile.vdot_source}</B>
               </XStack>
             )}
@@ -225,7 +225,7 @@ export default function ProfileScreen() {
               <M color={colors.orange} fontSize={16} fontWeight="700">{userProfile.max_hr}</M>
               <H color={colors.textTertiary} fontSize={8} letterSpacing={1} marginTop={2}>MAX HR</H>
               <XStack alignItems="center" gap={3} marginTop={2}>
-                <StravaLogo size={7} />
+                <StravaIcon size={8} />
                 <B color={(userProfile as any).max_hr_updated_at && isStale((userProfile as any).max_hr_updated_at, 84) ? colors.orange : colors.textTertiary} fontSize={7}>
                   {(userProfile as any).max_hr_updated_at ? formatRelativeTime((userProfile as any).max_hr_updated_at) : 'Strava'}
                 </B>
@@ -237,7 +237,7 @@ export default function ProfileScreen() {
               <M color={colors.orange} fontSize={16} fontWeight="700">{userProfile.rest_hr}</M>
               <H color={colors.textTertiary} fontSize={8} letterSpacing={1} marginTop={2}>REST HR</H>
               <XStack alignItems="center" gap={3} marginTop={2}>
-                <AppleHealthLogo size={9} />
+                <HealthIcon size={10} />
                 <B color={(userProfile as any).rest_hr_updated_at && isStale((userProfile as any).rest_hr_updated_at, 3) ? colors.orange : colors.textTertiary} fontSize={7}>
                   {(userProfile as any).rest_hr_updated_at ? formatRelativeTime((userProfile as any).rest_hr_updated_at) : 'HealthKit'}
                 </B>
@@ -518,7 +518,7 @@ export default function ProfileScreen() {
                   </View>
                   <YStack flex={1}>
                     <B color={colors.textSecondary} fontSize={12}>Max HR</B>
-                    <XStack alignItems="center" gap={3}><StravaLogo size={9} /><B color={colors.strava} fontSize={10}>Strava</B></XStack>
+                    <XStack alignItems="center" gap={3}><StravaIcon size={10} /><B color={colors.strava} fontSize={10}>Strava</B></XStack>
                   </YStack>
                   <M color={colors.orange} fontSize={15} fontWeight="700">{userProfile.max_hr} bpm</M>
                 </XStack>
@@ -629,8 +629,8 @@ function MiniStat({ value, label, source, updatedAt }: { value: string; label: s
       <H color={colors.textTertiary} fontSize={8} letterSpacing={1} marginTop={2}>{label.toUpperCase()}</H>
       {source && (
         <XStack alignItems="center" gap={3} marginTop={1}>
-          {source === 'HealthKit' && <AppleHealthLogo size={8} />}
-          {source === 'Strava' && <StravaLogo size={7} />}
+          {source === 'HealthKit' && <HealthIcon size={9} />}
+          {source === 'Strava' && <StravaIcon size={8} />}
           <B color={stale ? colors.orange : colors.textTertiary} fontSize={7}>
             {updatedAt ? formatRelativeTime(updatedAt) : source}
           </B>
@@ -652,8 +652,8 @@ function IconRow({ icon, iconColor, label, value, source, updatedAt }: { icon: s
         <B color={colors.textSecondary} fontSize={14}>{label}</B>
         {source && (
           <XStack alignItems="center" gap={4} marginTop={1}>
-            {source === 'Strava' && <StravaLogo size={9} />}
-            {source === 'HealthKit' && <AppleHealthLogo size={10} />}
+            {source === 'Strava' && <StravaIcon size={10} />}
+            {source === 'HealthKit' && <HealthIcon size={11} />}
             <B color={stale ? colors.orange : colors.textTertiary} fontSize={9}>
               {hasTime ? `${source} · ${formatRelativeTime(updatedAt!)}` : `auto · ${source}`}
             </B>
