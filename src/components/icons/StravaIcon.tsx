@@ -1,22 +1,24 @@
 /**
- * StravaIcon — official Strava arrow/chevron mark.
- * Path from Bootstrap Icons (MIT licensed).
- * Default color: #FC5200 (Strava brand orange).
+ * StravaIcon — official Strava two-tone arrow mark.
+ * Light orange (#F9B797) for the smaller chevron, dark orange (#F05222) for the larger one.
  */
 
 import Svg, { Path } from 'react-native-svg';
 
 interface Props {
   size?: number;
-  color?: string;
 }
 
-export function StravaIcon({ size = 20, color = '#FC5200' }: Props) {
+export function StravaIcon({ size = 20 }: Props) {
   return (
-    <Svg width={size} height={size} viewBox="0 0 16 16">
+    <Svg width={size} height={size} viewBox="0 0 64 64">
       <Path
-        d="M6.731 0 2 9.125h2.788L6.73 5.497l1.93 3.628h2.766zm4.694 9.125-1.372 2.756L8.66 9.125H6.547L10.053 16l3.484-6.875z"
-        fill={color}
+        d="M41.03 47.852l-5.572-10.976h-8.172L41.03 64l13.736-27.124h-8.18"
+        fill="#F9B797"
+      />
+      <Path
+        d="M27.898 21.944l7.564 14.928h11.124L27.898 0 9.234 36.876H20.35"
+        fill="#F05222"
       />
     </Svg>
   );

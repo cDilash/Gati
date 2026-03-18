@@ -1,24 +1,33 @@
 /**
- * HealthIcon — heart with cardiogram/EKG pulse line.
- * SVG from Health Icons (healthicons.org) — CC0 public domain.
- * Visually matches the Apple Health aesthetic (heart + pulse).
- * Default color: cyan (our health/recovery accent).
+ * HealthIcon — Apple Health app icon with white rounded square background
+ * and pink→red gradient heart.
  */
 
-import Svg, { Path } from 'react-native-svg';
-import { colors } from '../../theme/colors';
+import Svg, { Rect, Path, Defs, LinearGradient, Stop } from 'react-native-svg';
 
 interface Props {
   size?: number;
-  color?: string;
 }
 
-export function HealthIcon({ size = 20, color = colors.cyan }: Props) {
+export function HealthIcon({ size = 20 }: Props) {
   return (
-    <Svg width={size} height={size} viewBox="0 0 48 48">
+    <Svg width={size} height={size} viewBox="0 0 728 728">
+      <Defs>
+        <LinearGradient id="ahGrad" x1="0.6" y1="0.1" x2="0.8" y2="0.85">
+          <Stop offset="0" stopColor="#FF6AD2" />
+          <Stop offset="0.1" stopColor="#FE65C9" />
+          <Stop offset="0.27" stopColor="#FB58B0" />
+          <Stop offset="0.48" stopColor="#F74387" />
+          <Stop offset="0.72" stopColor="#F1254E" />
+          <Stop offset="1" stopColor="#E90006" />
+        </LinearGradient>
+      </Defs>
+      {/* White rounded square background */}
+      <Rect x="0.5" y="0.5" width="727" height="727" rx="160" fill="#FFFFFF" />
+      {/* Gradient heart */}
       <Path
-        d="M9 19.0345C9 13.3091 12.8117 8 18.0312 8C21.6533 8 24.341 10.382 26 13.7611C27.6589 10.3822 30.3466 8 33.9688 8C39.1889 8 43 13.31 43 19.0345C43 31.2888 26 40 26 40C26 40 14.5487 34.4872 10.4431 25.4444H20.5848L22.1968 22.5788L24.0797 29.1692L28.4891 23.5H34V21.5H27.5109L24.9203 24.8308L22.8032 17.4212L19.4152 23.4444H9.67984C9.89182 24.1288 10.1486 24.7957 10.4431 25.4444L6 25.4443V23.4443L9.67984 23.4444C9.24643 22.0453 9 20.5731 9 19.0345Z"
-        fill={color}
+        d="M650.84,183.86c0-50.1-41.49-90.72-92.68-90.72a93.48,93.48,0,0,0-59.49,21.17,93.51,93.51,0,0,0-59.5-21.17c-51.19,0-92.68,40.62-92.68,90.72a89.1,89.1,0,0,0,18.3,54.14h0l.06.06a91.67,91.67,0,0,0,11.4,12.4l122.42,133.15L621,250.54A89.64,89.64,0,0,0,650.84,183.86Z"
+        fill="url(#ahGrad)"
       />
     </Svg>
   );
