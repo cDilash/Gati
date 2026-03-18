@@ -12,7 +12,7 @@ import { getStepCount, getStepHistory } from "./steps";
 import { getDatabase } from "../db/database";
 import { HealthSnapshot } from "../types";
 
-const CACHE_TTL_MS = 2 * 60 * 60 * 1000; // 2 hours
+const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
 
 export async function syncHealthData(forceRefresh: boolean = false): Promise<HealthSnapshot | null> {
   // Guard 1: HealthKit available?

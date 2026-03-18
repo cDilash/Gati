@@ -4,7 +4,7 @@
 
 import { useState, useCallback } from 'react';
 import React from 'react';
-import { Alert, Pressable } from 'react-native';
+import { Alert, Pressable, Image } from 'react-native';
 import { ScrollView, YStack, XStack, Text, View, Spinner } from 'tamagui';
 import { useRouter } from 'expo-router';
 import { useAppStore } from '../../src/store';
@@ -14,6 +14,7 @@ import { colors } from '../../src/theme/colors';
 import { GradientText } from '../../src/theme/GradientText';
 import { UserAvatar } from '../../src/components/UserAvatar';
 import { StravaLogo } from '../../src/components/StravaLogo';
+import { AppleHealthLogo } from '../../src/components/AppleHealthLogo';
 
 const H = (props: any) => <Text fontFamily="$heading" {...props} />;
 const B = (props: any) => <Text fontFamily="$body" {...props} />;
@@ -187,17 +188,13 @@ export default function SettingsScreen() {
   return (
     <ScrollView flex={1} backgroundColor={colors.background} contentContainerStyle={{ padding: 16, paddingBottom: 60 }} showsVerticalScrollIndicator={false}>
 
-      {/* ─── Compact Profile Card (links to full Profile) ── */}
+      {/* ─── Compact Profile Card (link to full Profile — NO stats) ── */}
       {userProfile && (
         <Pressable onPress={() => router.push('/profile')} style={({ pressed }) => ({ opacity: pressed ? 0.8 : 1 })}>
           <XStack backgroundColor={colors.surface} borderRadius={14} padding={14} alignItems="center" marginBottom={4}>
             <UserAvatar size={44} name={userProfile.name} avatarBase64={userProfile.avatar_base64 ?? null} />
             <YStack flex={1} marginLeft={12}>
               <B color={colors.textPrimary} fontSize={16} fontWeight="600">{userProfile.name ?? 'Athlete'}</B>
-              <XStack alignItems="center" gap={6} marginTop={1}>
-                <M color={colors.textSecondary} fontSize={12}>VDOT {userProfile.vdot_score}</M>
-                {userProfile.weight_kg && <B color={colors.textTertiary} fontSize={12}>· {Math.round(userProfile.weight_kg * 2.20462)} lbs</B>}
-              </XStack>
             </YStack>
             <XStack alignItems="center" gap={2}>
               <B color={colors.cyan} fontSize={12} fontWeight="600">View Profile</B>
@@ -247,7 +244,10 @@ export default function SettingsScreen() {
       {/* ─── Apple Health ────────────────────────────────── */}
       {(hkAvailable || healthSnapshot) && (
         <>
-          <SectionHeader title="Apple Health" />
+          <XStack alignItems="center" gap={6} marginTop={24} marginBottom={10} marginLeft={4}>
+            <AppleHealthLogo size={14} />
+            <H color={colors.textSecondary} fontSize={12} textTransform="uppercase" letterSpacing={1.5}>Apple Health</H>
+          </XStack>
           <YStack backgroundColor={colors.surface} borderRadius={14} overflow="hidden">
             <SettingsRow icon="heart-pulse" iconColor={colors.cyan} label="Status"
               rightElement={<StatusDot on={!!healthSnapshot} />} />
@@ -332,10 +332,13 @@ export default function SettingsScreen() {
 
       {/* ─── App Info ────────────────────────────────────── */}
       <YStack alignItems="center" marginTop={32} marginBottom={16}>
-        <GradientText text="Gati" style={{ fontSize: 20, fontWeight: '800' }} />
-        <B color={colors.textTertiary} fontSize={12} marginTop={2}>Marathon Coach</B>
-        <B color={colors.textTertiary} fontSize={11} marginTop={2}>Version 2.0.0</B>
-        <B color={colors.textTertiary} fontSize={10} marginTop={4}>Built with AI · Powered by Gemini</B>
+        <View width={48} height={48} borderRadius={12} overflow="hidden" marginBottom={8}>
+          <Image source={require('../../assets/images/icon.png')} style={{ width: 48, height: 48 }} />
+        </View>
+        <GradientText text="Gati" style={{ fontSize: 16, fontWeight: '800' }} />
+        <B color={colors.textTertiary} fontSize={11} marginTop={1}>Marathon Coach</B>
+        <B color={colors.textTertiary} fontSize={10} marginTop={6}>Version 2.0.0</B>
+        <B color={colors.textTertiary} fontSize={9} marginTop={2}>Built with AI · Powered by Gemini</B>
       </YStack>
     </ScrollView>
   );

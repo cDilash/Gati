@@ -96,6 +96,8 @@ interface AppState {
   // Sync state
   isSyncing: boolean;
   lastSyncResult: { strava: string | null; health: string | null } | null;
+  backupDirty: boolean;
+  lastBackupTime: number;
 
   // Notifications
   pendingPostRunSummary: { workoutId: string; metricId: string } | null;
@@ -174,6 +176,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   weekCrossTraining: [],
   isSyncing: false,
   lastSyncResult: null,
+  backupDirty: false,
+  lastBackupTime: 0,
   pendingPostRunSummary: null,
   vdotNotification: null,
   proactiveSuggestion: null,
@@ -434,7 +438,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       isRaceWeek: daysUntilRace <= 7 && daysUntilRace >= 0,
     });
     // Auto-backup (fire-and-forget)
-    (async () => { try { const { autoBackup } = require('./backup/backup'); await autoBackup(); } catch {} })();
+    (async () => { try { const { autoBackup } = require('./backup/backup'); await autoBackup(); set({ lastBackupTime: Date.now(), backupDirty: false }); } catch {} })();
   },
 
   // ─── Plan ───────────────────────────────────────────────
@@ -443,7 +447,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const result = savePlan(plan, vdot, startDate);
     get().refreshState();
     // Auto-backup after plan generation (fire-and-forget)
-    (async () => { try { const { autoBackup } = require('./backup/backup'); await autoBackup(); } catch {} })();
+    (async () => { try { const { autoBackup } = require('./backup/backup'); await autoBackup(); set({ lastBackupTime: Date.now(), backupDirty: false }); } catch {} })();
     return result;
   },
 
@@ -503,7 +507,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   addCoachMessage: (role, content, messageType = 'chat', metadata) => {
     const id = require('expo-crypto').randomUUID();
     dbSaveCoachMessage({ id, role, content, message_type: messageType, metadata_json: metadata ?? null });
-    set({ coachMessages: getCoachMessages() });
+    set({ coachMessages: getCoachMessages(), backupDirty: true });
   },
 
   sendToCoach: async (message) => {
@@ -688,7 +692,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ coachMessages: getCoachMessages() });
 
       // Auto-backup after plan adaptation
-      (async () => { try { const { autoBackup } = require('./backup/backup'); await autoBackup(); } catch {} })();
+      (async () => { try { const { autoBackup } = require('./backup/backup'); await autoBackup(); set({ lastBackupTime: Date.now(), backupDirty: false }); } catch {} })();
 
       return { success: true, summary: result.changesSummary };
     } catch (error: any) {
@@ -725,7 +729,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       setSetting(lastReviewedKey, String(currentWeekNumber));
 
       // Auto-backup at end of week (natural checkpoint)
-      (async () => { try { const { autoBackup } = require('./backup/backup'); await autoBackup(); } catch {} })();
+      (async () => { try { const { autoBackup } = require('./backup/backup'); await autoBackup(); set({ lastBackupTime: Date.now(), backupDirty: false }); } catch {} })();
 
       // If adaptation needed, auto-trigger
       if (review.adaptationNeeded && review.adaptationReason) {
@@ -767,7 +771,7 @@ export const useAppStore = create<AppState>((set, get) => ({
               });
               try { setSetting('pending_vdot_notification', JSON.stringify({ oldVDOT: profileUpdate.oldVDOT, newVDOT: profileUpdate.newVDOT, source: src })); } catch {}
               // Auto-backup after VDOT change
-              (async () => { try { const { autoBackup } = require('./backup/backup'); await autoBackup(); } catch {} })();
+              (async () => { try { const { autoBackup } = require('./backup/backup'); await autoBackup(); set({ lastBackupTime: Date.now(), backupDirty: false }); } catch {} })();
             }
           }
         }
@@ -1111,6 +1115,18 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     set({ isSyncing: false, lastSyncResult: results });
     console.log(`[SyncAll] Done — Strava: ${results.strava ?? 'skipped'}, Health: ${results.health ?? 'skipped'}`);
+
+    // Auto-backup if dirty flag set and last backup was > 10 minutes ago
+    if (get().backupDirty && Date.now() - get().lastBackupTime > 600000) {
+      (async () => {
+        try {
+          const { autoBackup } = require('./backup/backup');
+          await autoBackup();
+          set({ backupDirty: false, lastBackupTime: Date.now() });
+          console.log('[SyncAll] Auto-backup triggered (dirty flag)');
+        } catch {}
+      })();
+    }
   },
 
   // ─── Cross-Training ───────────────────────────────────────
@@ -1129,7 +1145,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       const { saveCrossTraining } = require('./db/database');
       saveCrossTraining(entry);
-      set({ todayCrossTraining: entry });
+      set({ todayCrossTraining: entry, backupDirty: true });
       console.log(`[Store] Cross-training logged: ${type} (${entry.impact} impact)`);
 
       // Evaluate impact on tomorrow's workout

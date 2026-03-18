@@ -1,7 +1,7 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { View, ActivityIndicator, Pressable } from 'react-native';
+import { View, ActivityIndicator, Pressable, AppState } from 'react-native';
 import { TamaguiProvider } from 'tamagui';
 import { useFonts } from 'expo-font';
 import { BebasNeue_400Regular } from '@expo-google-fonts/bebas-neue';
@@ -36,10 +36,37 @@ export default function RootLayout() {
   }, [fontsLoaded]);
 
   // Unified sync on app load — Strava + Health + weekly review in parallel
+  const lastSyncRef = useRef(0);
+
   useEffect(() => {
     if (isLoading || !userProfile) return;
+    lastSyncRef.current = Date.now();
     useAppStore.getState().syncAll();
   }, [isLoading, userProfile?.id]);
+
+  // Foreground return sync — catch new Strava data after a run
+  useEffect(() => {
+    if (!userProfile) return;
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active' && Date.now() - lastSyncRef.current > 120000) {
+        lastSyncRef.current = Date.now();
+        useAppStore.getState().syncAll();
+      }
+    });
+    return () => sub.remove();
+  }, [userProfile?.id]);
+
+  // Periodic sync every 5 minutes while app is open
+  useEffect(() => {
+    if (!userProfile) return;
+    const interval = setInterval(() => {
+      if (Date.now() - lastSyncRef.current > 120000) {
+        lastSyncRef.current = Date.now();
+        useAppStore.getState().syncAll();
+      }
+    }, 300000);
+    return () => clearInterval(interval);
+  }, [userProfile?.id]);
 
   // Navigation guard
   useEffect(() => {

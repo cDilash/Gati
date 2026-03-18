@@ -18,6 +18,8 @@ import { GradientText } from '../src/theme/GradientText';
 import { GradientButton } from '../src/theme/GradientButton';
 import { UserAvatar } from '../src/components/UserAvatar';
 import { StravaLogo } from '../src/components/StravaLogo';
+import { AppleHealthLogo } from '../src/components/AppleHealthLogo';
+import { formatRelativeTime, isStale } from '../src/utils/formatTime';
 
 const H = (props: any) => <Text fontFamily="$heading" {...props} />;
 const B = (props: any) => <Text fontFamily="$body" {...props} />;
@@ -183,44 +185,72 @@ export default function ProfileScreen() {
           </B>
         </YStack>
 
-        {/* Key stats */}
-        <XStack gap={8} marginBottom={8}>
-          {heightDisplay && <MiniStat value={heightDisplay.split(' ')[0]} label={heightDisplay.split(' ')[1] ?? ''} />}
-          {weightDisplay && <MiniStat value={weightDisplay.split(' ')[0]} label={weightDisplay.split(' ')[1] ?? ''} source={userProfile.weight_source === 'healthkit' ? 'HealthKit' : undefined} />}
+        {/* ─── Body ──────────────────────────────────────── */}
+        {(heightDisplay || weightDisplay) && (
+          <>
+            <SectionTitle title="Body" />
+            <XStack gap={8} marginBottom={16}>
+              {heightDisplay && <MiniStat value={heightDisplay.split(' ')[0]} label={heightDisplay.split(' ')[1] ?? ''} />}
+              {weightDisplay && <MiniStat value={weightDisplay.split(' ')[0]} label={weightDisplay.split(' ')[1] ?? ''} source={userProfile.weight_source === 'healthkit' ? 'HealthKit' : userProfile.weight_source === 'strava' ? 'Strava' : undefined} updatedAt={userProfile.weight_updated_at} />}
+              {heightDisplay && weightDisplay && userProfile.height_cm && userProfile.weight_kg && (
+                <MiniStat value={String((userProfile.weight_kg / ((userProfile.height_cm / 100) ** 2)).toFixed(1))} label="BMI" />
+              )}
+            </XStack>
+          </>
+        )}
+
+        {/* ─── Fitness ──────────────────────────────────── */}
+        <SectionTitle title="Fitness" />
+        <XStack gap={8} marginBottom={16}>
           <YStack flex={1} backgroundColor={colors.surface} borderRadius={10} padding={10} alignItems="center" borderWidth={0.5} borderColor={colors.border}>
             <GradientText text={String(userProfile.vdot_score)} style={{ fontSize: 16, fontWeight: '700' }} />
             <H color={colors.textTertiary} fontSize={8} letterSpacing={1} marginTop={2}>VDOT</H>
-            {userProfile.vdot_source && (
-              <XStack alignItems="center" gap={3} marginTop={1}>
-                {userProfile.vdot_source.includes('strava') && <StravaLogo size={8} />}
-                <B color={userProfile.vdot_source.includes('strava') ? colors.strava : colors.textTertiary} fontSize={8}>
-                  {userProfile.vdot_source === 'strava_best_effort' ? 'Strava' : userProfile.vdot_source}
+            {userProfile.vdot_updated_at && (
+              <XStack alignItems="center" gap={3} marginTop={2}>
+                {userProfile.vdot_source?.includes('strava') && <StravaLogo size={7} />}
+                <B color={isStale(userProfile.vdot_updated_at, 56) ? colors.orange : colors.textTertiary} fontSize={7}>
+                  {formatRelativeTime(userProfile.vdot_updated_at)}
                 </B>
               </XStack>
             )}
+            {!userProfile.vdot_updated_at && userProfile.vdot_source && (
+              <XStack alignItems="center" gap={3} marginTop={2}>
+                {userProfile.vdot_source.includes('strava') && <StravaLogo size={7} />}
+                <B color={colors.textTertiary} fontSize={7}>{userProfile.vdot_source === 'strava_best_effort' ? 'Strava' : userProfile.vdot_source}</B>
+              </XStack>
+            )}
           </YStack>
-        </XStack>
-        <XStack gap={8} marginBottom={20}>
           {userProfile.max_hr && (
             <YStack flex={1} backgroundColor={colors.surface} borderRadius={10} padding={10} alignItems="center" borderWidth={0.5} borderColor={colors.border}>
               <M color={colors.orange} fontSize={16} fontWeight="700">{userProfile.max_hr}</M>
               <H color={colors.textTertiary} fontSize={8} letterSpacing={1} marginTop={2}>MAX HR</H>
+              <XStack alignItems="center" gap={3} marginTop={2}>
+                <StravaLogo size={7} />
+                <B color={(userProfile as any).max_hr_updated_at && isStale((userProfile as any).max_hr_updated_at, 84) ? colors.orange : colors.textTertiary} fontSize={7}>
+                  {(userProfile as any).max_hr_updated_at ? formatRelativeTime((userProfile as any).max_hr_updated_at) : 'Strava'}
+                </B>
+              </XStack>
             </YStack>
           )}
           {userProfile.rest_hr && (
             <YStack flex={1} backgroundColor={colors.surface} borderRadius={10} padding={10} alignItems="center" borderWidth={0.5} borderColor={colors.border}>
               <M color={colors.orange} fontSize={16} fontWeight="700">{userProfile.rest_hr}</M>
               <H color={colors.textTertiary} fontSize={8} letterSpacing={1} marginTop={2}>REST HR</H>
+              <XStack alignItems="center" gap={3} marginTop={2}>
+                <AppleHealthLogo size={9} />
+                <B color={(userProfile as any).rest_hr_updated_at && isStale((userProfile as any).rest_hr_updated_at, 3) ? colors.orange : colors.textTertiary} fontSize={7}>
+                  {(userProfile as any).rest_hr_updated_at ? formatRelativeTime((userProfile as any).rest_hr_updated_at) : 'HealthKit'}
+                </B>
+              </XStack>
             </YStack>
           )}
-          {!userProfile.max_hr && !userProfile.rest_hr && <View flex={1} />}
         </XStack>
 
-        {/* ─── Running ──────────────────────────────────── */}
-        <SectionTitle title="Running" />
+        {/* ─── Running Schedule ──────────────────────────── */}
+        <SectionTitle title="Running Schedule" />
         <YStack backgroundColor={colors.surface} borderRadius={14} overflow="hidden">
-          <IconRow icon="road-variant" label="Weekly Mileage" value={isMetric ? `${(userProfile.current_weekly_miles * 1.60934).toFixed(1)} km` : `${userProfile.current_weekly_miles} mi`} source="Strava" />
-          <IconRow icon="run-fast" label="Longest Recent Run" value={isMetric ? `${(userProfile.longest_recent_run * 1.60934).toFixed(1)} km` : `${userProfile.longest_recent_run} mi`} source="Strava" />
+          <IconRow icon="road-variant" label="Weekly Mileage" value={isMetric ? `${(userProfile.current_weekly_miles * 1.60934).toFixed(1)} km` : `${userProfile.current_weekly_miles} mi`} source="Strava" updatedAt={(userProfile as any).weekly_mileage_updated_at ?? lastSyncTime} />
+          <IconRow icon="run-fast" label="Longest Recent Run" value={isMetric ? `${(userProfile.longest_recent_run * 1.60934).toFixed(1)} km` : `${userProfile.longest_recent_run} mi`} source="Strava" updatedAt={(userProfile as any).longest_run_updated_at ?? lastSyncTime} />
           <XStack paddingVertical={12} paddingHorizontal={14} borderBottomWidth={0.5} borderBottomColor={colors.border} alignItems="center">
             <View width={28} height={28} borderRadius={14} backgroundColor={colors.cyanGhost} alignItems="center" justifyContent="center" marginRight={12}>
               <MaterialCommunityIcons name="calendar-check" size={14} color={colors.cyan} />
@@ -591,17 +621,28 @@ function Label({ text }: { text: string }) {
   );
 }
 
-function MiniStat({ value, label, source }: { value: string; label: string; source?: string }) {
+function MiniStat({ value, label, source, updatedAt }: { value: string; label: string; source?: string; updatedAt?: string | null }) {
+  const stale = source && updatedAt ? isStale(updatedAt, 14) : false;
   return (
     <YStack flex={1} backgroundColor={colors.surface} borderRadius={10} padding={10} alignItems="center" borderWidth={0.5} borderColor={colors.border}>
       <M color={colors.textPrimary} fontSize={16} fontWeight="700">{value}</M>
       <H color={colors.textTertiary} fontSize={8} letterSpacing={1} marginTop={2}>{label.toUpperCase()}</H>
-      {source && <B color={colors.cyan} fontSize={8} marginTop={1}>{source}</B>}
+      {source && (
+        <XStack alignItems="center" gap={3} marginTop={1}>
+          {source === 'HealthKit' && <AppleHealthLogo size={8} />}
+          {source === 'Strava' && <StravaLogo size={7} />}
+          <B color={stale ? colors.orange : colors.textTertiary} fontSize={7}>
+            {updatedAt ? formatRelativeTime(updatedAt) : source}
+          </B>
+        </XStack>
+      )}
     </YStack>
   );
 }
 
-function IconRow({ icon, iconColor, label, value, source }: { icon: string; iconColor?: string; label: string; value: string; source?: string }) {
+function IconRow({ icon, iconColor, label, value, source, updatedAt }: { icon: string; iconColor?: string; label: string; value: string; source?: string; updatedAt?: string | null }) {
+  const hasTime = updatedAt != null;
+  const stale = source === 'Strava' && hasTime && isStale(updatedAt!, 7);
   return (
     <XStack paddingVertical={12} paddingHorizontal={14} borderBottomWidth={0.5} borderBottomColor={colors.border} alignItems="center">
       <View width={28} height={28} borderRadius={14} backgroundColor={(iconColor ?? colors.cyan) + '15'} alignItems="center" justifyContent="center" marginRight={12}>
@@ -611,8 +652,11 @@ function IconRow({ icon, iconColor, label, value, source }: { icon: string; icon
         <B color={colors.textSecondary} fontSize={14}>{label}</B>
         {source && (
           <XStack alignItems="center" gap={4} marginTop={1}>
-            {source === 'Strava' && <StravaLogo size={10} />}
-            <B color={source === 'Strava' ? colors.strava : colors.cyan} fontSize={9}>auto-updated{source ? ` · ${source}` : ''}</B>
+            {source === 'Strava' && <StravaLogo size={9} />}
+            {source === 'HealthKit' && <AppleHealthLogo size={10} />}
+            <B color={stale ? colors.orange : colors.textTertiary} fontSize={9}>
+              {hasTime ? `${source} · ${formatRelativeTime(updatedAt!)}` : `auto · ${source}`}
+            </B>
           </XStack>
         )}
       </YStack>
