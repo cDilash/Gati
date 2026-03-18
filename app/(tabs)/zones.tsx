@@ -976,9 +976,45 @@ export default function RecoveryScreen() {
           ].map(p => (
             <XStack key={p.label} justifyContent="space-between" alignItems="center" paddingVertical="$3" paddingHorizontal="$3" borderBottomWidth={0.5} borderBottomColor="$border">
               <B color="$color" fontSize={15} fontWeight="600">{p.label}</B>
-              <M color="$accent" fontSize={17} fontWeight="800">{p.time}</M>
+              <M color={colors.cyan} fontSize={17} fontWeight="800">{p.time}</M>
             </XStack>
           ))}
+
+          {/* Race predictor trend — show improvement since plan generation */}
+          {(() => {
+            const activePlan = useAppStore.getState().activePlan;
+            if (!activePlan) return null;
+            const startVdot = activePlan.vdot_at_generation;
+            const currentVdot = vdot;
+            const diff = currentVdot - startVdot;
+            const startMarathon = predictMarathonTime(startVdot);
+            const currentMarathon = predictMarathonTime(currentVdot);
+            const timeDiff = startMarathon - currentMarathon; // positive = faster
+
+            if (Math.abs(diff) < 0.3) return null; // No meaningful change
+
+            return (
+              <YStack paddingHorizontal="$3" paddingVertical="$3" borderTopWidth={0.5} borderTopColor="$border">
+                <H color="$textSecondary" fontSize={11} letterSpacing={1} textTransform="uppercase" marginBottom="$2">Training Progress</H>
+                <XStack justifyContent="space-between" alignItems="center">
+                  <YStack>
+                    <B color="$textSecondary" fontSize={12}>VDOT at plan start</B>
+                    <M color="$textTertiary" fontSize={14} fontWeight="600">{startVdot.toFixed(1)}</M>
+                  </YStack>
+                  <MaterialCommunityIcons name={diff > 0 ? 'arrow-right' : 'arrow-left'} size={16} color={diff > 0 ? colors.cyan : colors.orange} />
+                  <YStack alignItems="flex-end">
+                    <B color="$textSecondary" fontSize={12}>Current</B>
+                    <M color={diff > 0 ? colors.cyan : colors.orange} fontSize={14} fontWeight="700">{currentVdot.toFixed(1)}</M>
+                  </YStack>
+                </XStack>
+                <B color={diff > 0 ? colors.cyan : colors.orange} fontSize={12} marginTop="$2">
+                  {diff > 0
+                    ? `Marathon prediction improved by ${formatTime(Math.abs(timeDiff))} since training started`
+                    : `Marathon prediction ${formatTime(Math.abs(timeDiff))} slower than plan start — may need VDOT reassessment`}
+                </B>
+              </YStack>
+            );
+          })()}
         </YStack>
       </CollapsibleSection>
 
