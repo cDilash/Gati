@@ -501,13 +501,62 @@ export default function SetupScreen() {
     );
   };
 
+  // Injury chips — orange styling (caution)
+  const InjuryChipSelect = () => (
+    <XStack flexWrap="wrap" gap={8}>
+      {INJURIES.map(opt => {
+        const active = injuries.includes(opt);
+        return (
+          <YStack key={opt} paddingHorizontal={14} paddingVertical={8} borderRadius={10}
+            backgroundColor={active ? colors.orangeGhost : colors.surface} borderWidth={1}
+            borderColor={active ? colors.orangeDim : colors.border}
+            pressStyle={{opacity:0.7}} onPress={()=>toggleInjury(opt)}>
+            <XStack alignItems="center" gap={4}>
+              {active && <MaterialCommunityIcons name="check" size={12} color={colors.orange} />}
+              <B color={active ? colors.orange : colors.textSecondary} fontSize={13} fontWeight={active?'600':'400'}>{opt}</B>
+            </XStack>
+          </YStack>
+        );
+      })}
+    </XStack>
+  );
+
   const renderStep6 = () => (
     <ScrollView flex={1} contentContainerStyle={{paddingHorizontal:24,paddingTop:8,paddingBottom:32}}>
-      <H color="$color" fontSize={32} letterSpacing={1} marginBottom="$2">Coaching Context</H>
-      <B color="$textSecondary" fontSize={15} lineHeight={22} marginBottom="$7">Everything here is optional — skip ahead if you want.</B>
-      <FieldLabel text="Injury History" /><ChipSelect options={INJURIES} selected={injuries} onToggle={toggleInjury} />
-      <FieldLabel text="Known Weaknesses" /><ChipSelect options={WEAKNESSES} selected={weaknesses} onToggle={toggleWeakness} />
-      <FieldLabel text="Scheduling Notes" /><Input height={44} backgroundColor={colors.surface} borderColor={colors.border} borderRadius={12} color={colors.textPrimary} fontSize={16} fontFamily="$body" paddingHorizontal={14} placeholder="e.g. Travel for work on Wednesdays..." placeholderTextColor="$textTertiary" multiline numberOfLines={3} value={schedulingNotes} onChangeText={setSchedulingNotes} minHeight={80} />
+      <H color={colors.textPrimary} fontSize={28} letterSpacing={1} marginBottom={4}>Coaching Context</H>
+      <B color={colors.textSecondary} fontSize={14} lineHeight={20} marginBottom={20}>Optional — helps the AI personalize your plan.</B>
+
+      {/* Injury History — orange (caution) */}
+      <XStack alignItems="center" gap={6} marginBottom={8}>
+        <MaterialCommunityIcons name="medical-bag" size={14} color={colors.orange} />
+        <B color={colors.textTertiary} fontSize={12}>Injury History</B>
+      </XStack>
+      <InjuryChipSelect />
+
+      {/* Known Weaknesses — cyan (improvement) */}
+      <XStack alignItems="center" gap={6} marginTop={20} marginBottom={8}>
+        <MaterialCommunityIcons name="alert-circle-outline" size={14} color={colors.cyan} />
+        <B color={colors.textTertiary} fontSize={12}>Known Weaknesses</B>
+      </XStack>
+      <ChipSelect options={WEAKNESSES} selected={weaknesses} onToggle={toggleWeakness} />
+
+      {/* Scheduling Notes */}
+      <XStack alignItems="center" gap={6} marginTop={20} marginBottom={4}>
+        <MaterialCommunityIcons name="calendar-text-outline" size={14} color={colors.textTertiary} />
+        <B color={colors.textTertiary} fontSize={12}>Scheduling Notes</B>
+      </XStack>
+      <Input height={80} backgroundColor={colors.surface} borderColor={colors.border} borderRadius={12} color={colors.textPrimary} fontSize={16} fontFamily="$body" paddingHorizontal={14} paddingVertical={10} placeholder="e.g. Travel for work on Wednesdays..." placeholderTextColor="$textTertiary" multiline value={schedulingNotes} onChangeText={setSchedulingNotes} />
+      <B color={colors.textTertiary} fontSize={11} marginTop={4}>Tell us about constraints — travel, shifts, family. The AI will work around these.</B>
+
+      {/* AI context note */}
+      <YStack backgroundColor={colors.surface} borderRadius={14} padding={14} marginTop={24} flexDirection="row" gap={12} alignItems="flex-start">
+        <View width={32} height={32} borderRadius={16} backgroundColor={colors.cyanGhost} alignItems="center" justifyContent="center">
+          <MaterialCommunityIcons name="robot-outline" size={16} color={colors.cyan} />
+        </View>
+        <B color={colors.textTertiary} fontSize={12} lineHeight={17} flex={1} fontStyle="italic">
+          Your AI coach will use this context to build a personalized plan that works around your injuries, targets your weaknesses, and fits your life.
+        </B>
+      </YStack>
       <YStack height={20} />
     </ScrollView>
   );
@@ -563,16 +612,25 @@ export default function SetupScreen() {
 
       {/* Nav bar */}
       {showNav && (
-        <XStack justifyContent="space-between" alignItems="center" paddingHorizontal={24} paddingVertical={12} paddingBottom={36}>
-          <YStack paddingVertical={10} paddingHorizontal={16} pressStyle={{opacity:0.7}} onPress={handleBack}>
-            <B color={colors.textSecondary} fontSize={15} fontWeight="500">Back</B>
+        step === 6 ? (
+          <YStack paddingHorizontal={24} paddingVertical={12} paddingBottom={36} gap={8}>
+            <GradientButton label="Generate Plan" onPress={handleNext} size="lg" />
+            <YStack paddingVertical={8} alignItems="center" pressStyle={{opacity:0.7}} onPress={handleBack}>
+              <B color={colors.textTertiary} fontSize={14}>Back</B>
+            </YStack>
           </YStack>
-          <YStack backgroundColor={canAdvance() ? colors.cyan : colors.surfaceHover} paddingVertical={12} paddingHorizontal={28} borderRadius={12} alignItems="center"
-            pressStyle={canAdvance()?{opacity:0.8}:undefined}
-            onPress={canAdvance()?handleNext:undefined}>
-            <B color={canAdvance() ? colors.background : colors.textTertiary} fontSize={15} fontWeight="700">{step===6?'Generate Plan':'Next'}</B>
-          </YStack>
-        </XStack>
+        ) : (
+          <XStack justifyContent="space-between" alignItems="center" paddingHorizontal={24} paddingVertical={12} paddingBottom={36}>
+            <YStack paddingVertical={10} paddingHorizontal={16} pressStyle={{opacity:0.7}} onPress={handleBack}>
+              <B color={colors.textSecondary} fontSize={15} fontWeight="500">Back</B>
+            </YStack>
+            <YStack backgroundColor={canAdvance() ? colors.cyan : colors.surfaceHover} paddingVertical={12} paddingHorizontal={28} borderRadius={12} alignItems="center"
+              pressStyle={canAdvance()?{opacity:0.8}:undefined}
+              onPress={canAdvance()?handleNext:undefined}>
+              <B color={canAdvance() ? colors.background : colors.textTertiary} fontSize={15} fontWeight="700">Next</B>
+            </YStack>
+          </XStack>
+        )
       )}
     </KeyboardAvoidingView>
   );
