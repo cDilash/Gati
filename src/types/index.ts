@@ -565,3 +565,22 @@ export interface PMCData {
   totalDays: number;
   projectedDays: number;
 }
+
+// ─── Garmin Connect Health Data ──────────────────────────────
+
+export interface GarminHealthData {
+  date: string;
+  hrvLastNightAvg: number | null;    // RMSSD ms
+  hrvWeeklyAvg: number | null;
+  hrvBaselineLow: number | null;
+  hrvBaselineHigh: number | null;
+  hrvStatus: string | null;          // BALANCED, UNBALANCED, LOW, POOR
+  vo2max: number | null;             // ml/kg/min
+  bodyBatteryMorning: number | null; // 0-100
+  stressAvg: number | null;          // 1-100
+  respiratoryRate: number | null;    // breaths/min
+  spo2Avg: number | null;            // %
+  trainingReadiness: number | null;  // 0-100
+  restingHr: number | null;          // bpm
+  fetchedAt: string;
+}

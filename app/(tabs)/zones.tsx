@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { Alert, Pressable, LayoutChangeEvent, PanResponder, GestureResponderEvent } from 'react-native';
 import { ScrollView, YStack, XStack, Text, View, Spinner } from 'tamagui';
 import Svg, { Path, Circle, Line, Defs, LinearGradient, Stop, Rect as SvgRect } from 'react-native-svg';
@@ -597,94 +597,128 @@ function SleepCard({ signal, sleepTrend }: {
         </YStack>
       )}
 
-      {/* Sleep line graph */}
-      {recentNights.length >= 3 && (
-        <YStack marginTop="$2" paddingTop="$3" borderTopWidth={1} borderTopColor="$border">
-          <B color="$textTertiary" fontSize={11} marginBottom="$2">Last {recentNights.length} nights</B>
+      {/* Sleep stacked bar chart */}
+      {recentNights.length >= 3 && (() => {
+        const barGraphH = 140;
+        const barPadT = 30; // tooltip room
+        const barPadB = 4;
+        const barChartH = barGraphH - barPadT - barPadB;
+        const maxHrs = Math.max(...sleepHours, 8) + 0.5;
+        const barGap = 12;
+        const barW = sleepGraphW > 0 ? (sleepGraphW - (recentNights.length - 1) * barGap) / recentNights.length : 28;
+        const barStartX = 0;
 
-          <View style={{ height: sGraphH }} onLayout={(e) => setSleepGraphW(e.nativeEvent.layout.width)}
-            {...(sleepGraphW > 0 ? sleepScrubber.panResponder.panHandlers : {})}>
-            {sleepGraphW > 0 && (
-              <>
-                <Svg width={sleepGraphW} height={sGraphH}>
-                  <Defs>
-                    <LinearGradient id="sleepFill" x1="0" y1="0" x2="0" y2="1">
-                      <Stop offset="0" stopColor={colors.cyan} stopOpacity="0.2" />
-                      <Stop offset="1" stopColor={colors.cyan} stopOpacity="0.02" />
-                    </LinearGradient>
-                  </Defs>
+        // Build bar x positions for scrubber
+        const barCenters = recentNights.map((_, i) => barStartX + i * (barW + barGap) + barW / 2);
+        const barScrubber = useGraphScrubber(barCenters);
+        const barSelIdx = barScrubber.activeIdx;
 
-                  {/* Good sleep threshold */}
-                  <Line x1={0} y1={goodLineY} x2={sChartW} y2={goodLineY}
-                    stroke={colors.cyan} strokeWidth={1} strokeDasharray="4,4" strokeOpacity={0.4} />
+        const thresholdY = barPadT + barChartH - (7 / maxHrs) * barChartH;
 
-                  {/* Scrubber vertical line */}
-                  {sleepSelIdx !== null && sleepPoints[sleepSelIdx] && (
-                    <Line x1={sleepPoints[sleepSelIdx].x} y1={sPadT} x2={sleepPoints[sleepSelIdx].x} y2={sPadT + sChartH}
-                      stroke={colors.textPrimary} strokeWidth={1} strokeOpacity={0.4} />
+        return (
+          <YStack marginTop="$2" paddingTop="$3" borderTopWidth={1} borderTopColor="$border">
+            <B color="$textTertiary" fontSize={11} marginBottom="$2">Last {recentNights.length} nights</B>
+
+            <View style={{ height: barGraphH }} onLayout={(e) => setSleepGraphW(e.nativeEvent.layout.width)}
+              {...(sleepGraphW > 0 ? barScrubber.panResponder.panHandlers : {})}>
+              {sleepGraphW > 0 && (
+                <>
+                  <Svg width={sleepGraphW} height={barGraphH}>
+                    {/* 7hr threshold line */}
+                    <Line x1={0} y1={thresholdY} x2={sleepGraphW} y2={thresholdY}
+                      stroke={colors.textTertiary} strokeWidth={1} strokeDasharray="4,4" strokeOpacity={0.3} />
+
+                    {/* Stacked bars */}
+                    {recentNights.map((night, i) => {
+                      const x = barStartX + i * (barW + barGap);
+                      const totalHrs = night.totalMinutes / 60;
+                      const totalBarH = (totalHrs / maxHrs) * barChartH;
+                      const barBottom = barPadT + barChartH;
+                      const hasStages = night.stages && (night.stages.deepMinutes + night.stages.lightMinutes + night.stages.remMinutes) > 0;
+                      const isActive = barSelIdx === i;
+                      const isLast = i === recentNights.length - 1 && barSelIdx === null;
+
+                      if (!hasStages) {
+                        // Single cyan bar (no stage data)
+                        return (
+                          <SvgRect key={i} x={x} y={barBottom - totalBarH} width={barW} height={totalBarH}
+                            rx={4} fill={colors.cyan} opacity={isActive || isLast ? 1 : 0.6} />
+                        );
+                      }
+
+                      const { deepMinutes, lightMinutes, remMinutes, awakeMinutes } = night.stages!;
+                      const bedTotal = deepMinutes + lightMinutes + remMinutes + awakeMinutes;
+                      if (bedTotal === 0) return null;
+
+                      // Heights proportional to total bar height
+                      const deepH = (deepMinutes / bedTotal) * totalBarH;
+                      const lightH = (lightMinutes / bedTotal) * totalBarH;
+                      const remH = (remMinutes / bedTotal) * totalBarH;
+                      const awakeH = (awakeMinutes / bedTotal) * totalBarH;
+
+                      const opacity = isActive || isLast ? 1 : 0.7;
+
+                      // Stack bottom→top: deep, light, rem, awake
+                      let y = barBottom;
+                      return (
+                        <React.Fragment key={i}>
+                          {deepH > 0 && <SvgRect x={x} y={y - deepH} width={barW} height={deepH} fill={sleepStageColors.deep} opacity={opacity} />}
+                          {(() => { y -= deepH; return null; })()}
+                          {lightH > 0 && <SvgRect x={x} y={y - lightH} width={barW} height={lightH} fill={sleepStageColors.light} opacity={opacity} />}
+                          {(() => { y -= lightH; return null; })()}
+                          {remH > 0 && <SvgRect x={x} y={y - remH} width={barW} height={remH} fill={sleepStageColors.rem} opacity={opacity} />}
+                          {(() => { y -= remH; return null; })()}
+                          {awakeH > 0 && <SvgRect x={x} y={y - awakeH} width={barW} height={awakeH} fill={colors.orange} opacity={opacity * 0.7} rx={4} />}
+                          {/* Top rounded cap */}
+                          <SvgRect x={x} y={barBottom - totalBarH} width={barW} height={Math.min(4, totalBarH)} rx={4} fill="transparent" />
+                        </React.Fragment>
+                      );
+                    })}
+                  </Svg>
+
+                  {/* Tooltip */}
+                  {barSelIdx !== null && recentNights[barSelIdx] && (
+                    <View style={{
+                      position: 'absolute',
+                      left: Math.max(0, Math.min(barCenters[barSelIdx] - 55, sleepGraphW - 110)),
+                      top: 0,
+                      backgroundColor: colors.surfaceHover, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5,
+                      borderWidth: 0.5, borderColor: colors.border,
+                    }}>
+                      <XStack alignItems="center" gap={6}>
+                        <M color="$color" fontSize={14} fontWeight="800">{(recentNights[barSelIdx].totalMinutes / 60).toFixed(1)} hrs</M>
+                        <B color="$textTertiary" fontSize={10}>{formatNightLabel(recentNights[barSelIdx].date)}</B>
+                      </XStack>
+                      {recentNights[barSelIdx].stages && (
+                        <XStack gap={6} marginTop={2}>
+                          <M color={sleepStageColors.deep} fontSize={10}>{(recentNights[barSelIdx].stages!.deepMinutes / 60).toFixed(1)}h deep</M>
+                          <M color={sleepStageColors.rem} fontSize={10}>{(recentNights[barSelIdx].stages!.remMinutes / 60).toFixed(1)}h REM</M>
+                        </XStack>
+                      )}
+                    </View>
                   )}
+                </>
+              )}
+            </View>
 
-                  {/* Fill + line */}
-                  <Path d={buildFillPath(sleepPoints, sPadT + sChartH)} fill="url(#sleepFill)" />
-                  <Path d={buildSmoothPath(sleepPoints)} fill="none" stroke={colors.cyan} strokeWidth={2} />
-
-                  {/* Dots */}
-                  {sleepPoints.map((p, i) => {
-                    const hrs = sleepHours[i];
-                    const dotColor = sleepHoursColor(hrs);
-                    const isActive = sleepSelIdx === i;
-                    const isLast = i === sleepPoints.length - 1 && sleepSelIdx === null;
-                    const r = isActive ? 7 : isLast ? 4 : 2.5;
-                    return (
-                      <Circle key={i} cx={p.x} cy={p.y} r={r}
-                        fill={isActive || isLast ? dotColor : dotColor + '66'}
-                        stroke={isActive ? colors.textPrimary : isLast ? colors.surface : 'none'}
-                        strokeWidth={isActive ? 2 : isLast ? 2 : 0} />
-                    );
-                  })}
-                </Svg>
-
-                {/* Tooltip follows scrubber */}
-                {sleepSelIdx !== null && sleepPoints[sleepSelIdx] && (
-                  <View style={{
-                    position: 'absolute',
-                    left: Math.max(0, Math.min(sleepPoints[sleepSelIdx].x - 50, sleepGraphW - 100)),
-                    top: 0,
-                    backgroundColor: colors.surfaceHover, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5,
-                    borderWidth: 0.5, borderColor: colors.border,
-                  }}>
-                    <XStack alignItems="center" gap={6}>
-                      <M color="$color" fontSize={15} fontWeight="800">{sleepHours[sleepSelIdx].toFixed(1)} hrs</M>
-                      <B color="$textTertiary" fontSize={11}>
-                        {formatNightLabel(recentNights[sleepSelIdx].date)}
-                      </B>
-                    </XStack>
-                    {recentNights[sleepSelIdx].bedStart && (
-                      <B color="$textTertiary" fontSize={10}>
-                        {formatTime12h(recentNights[sleepSelIdx].bedStart)} → {formatTime12h(recentNights[sleepSelIdx].bedEnd)}
-                      </B>
-                    )}
-                  </View>
-                )}
-              </>
+            {/* Day labels + hours below — positioned to match bar centers */}
+            {sleepGraphW > 0 && (
+              <View style={{ height: 30, position: 'relative' }}>
+                {recentNights.map((night, i) => {
+                  const hrs = night.totalMinutes / 60;
+                  const cx = barStartX + i * (barW + barGap) + barW / 2;
+                  return (
+                    <View key={i} style={{ position: 'absolute', left: cx - 20, width: 40, alignItems: 'center', top: 4 }}>
+                      <B color="$textTertiary" fontSize={9}>{formatDayLabel(night.date)}</B>
+                      <M color={sleepHoursColor(hrs)} fontSize={10} fontWeight="600">{hrs.toFixed(1)}</M>
+                    </View>
+                  );
+                })}
+              </View>
             )}
-          </View>
-
-          {/* Day labels below graph */}
-          <XStack justifyContent="space-between" marginTop={4}>
-            {recentNights.map((night, i) => (
-              <YStack key={i} alignItems="center" flex={1}>
-                <B color="$textTertiary" fontSize={9}>{formatDayLabel(night.date)}</B>
-              </YStack>
-            ))}
-          </XStack>
-
-          {/* 7hr threshold label */}
-          <XStack marginTop="$1">
-            <B color="$textTertiary" fontSize={10}>— 7 hrs (good sleep threshold)</B>
-          </XStack>
-        </YStack>
-      )}
+          </YStack>
+        );
+      })()}
     </YStack>
   );
 }

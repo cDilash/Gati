@@ -89,6 +89,9 @@ interface AppState {
   // Training Load (PMC)
   pmcData: import('./types').PMCData | null;
 
+  // Garmin Connect
+  garminHealth: import('./types').GarminHealthData | null;
+
   // Cross-Training
   todayCrossTraining: CrossTraining | null;
   weekCrossTraining: CrossTraining[];
@@ -146,6 +149,7 @@ interface AppState {
   logCrossTraining: (type: CrossTrainingType, notes?: string) => void;
   deleteCrossTrainingEntry: (id: string) => void;
   calculateTrainingLoad: () => void;
+  syncGarminHealth: () => Promise<void>;
 }
 
 // ─── Store ──────────────────────────────────────────────────
@@ -172,6 +176,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   healthSnapshot: null,
   recoveryStatus: null,
   pmcData: null,
+  garminHealth: null,
   todayCrossTraining: null,
   weekCrossTraining: [],
   isSyncing: false,
@@ -1045,7 +1050,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       ? (async () => { try { await state.checkWeeklyReview(); } catch {} })()
       : Promise.resolve();
 
-    await Promise.allSettled([stravaPromise, healthPromise, reviewPromise]);
+    const garminPromise = (async () => { try { await state.syncGarminHealth(); } catch {} })();
+
+    await Promise.allSettled([stravaPromise, healthPromise, reviewPromise, garminPromise]);
 
     // Step 3: Recalculate volumes after all syncs complete
     if (state.activePlan) {
@@ -1246,6 +1253,21 @@ export const useAppStore = create<AppState>((set, get) => ({
       console.log(`[PMC] Calculated: CTL=${pmcData.currentCTL.toFixed(1)} ATL=${pmcData.currentATL.toFixed(1)} TSB=${pmcData.currentTSB.toFixed(1)} (${pmcData.totalDays}d hist, ${pmcData.projectedDays}d proj)`);
     } catch (e) {
       console.warn('[PMC] Calculation failed:', e);
+    }
+  },
+
+  // ─── Garmin Connect Health ────────────────────────────────
+
+  syncGarminHealth: async () => {
+    try {
+      const { getLatestGarminData } = require('./garmin/garminData');
+      const data = await getLatestGarminData();
+      if (data) {
+        set({ garminHealth: data });
+        console.log(`[Garmin] Synced: HRV=${data.hrvLastNightAvg ?? 'N/A'}ms, BB=${data.bodyBatteryMorning ?? 'N/A'}, VO2=${data.vo2max ?? 'N/A'}`);
+      }
+    } catch (e) {
+      console.warn('[Garmin] Sync failed:', e);
     }
   },
 }));
