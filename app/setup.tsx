@@ -147,34 +147,42 @@ export default function SetupScreen() {
   const toggleInjury = (i:string) => { if(i==='None'){setInjuries(p=>p.includes('None')?[]:['None']);return;} setInjuries(p=>{const w=p.filter(x=>x!=='None');return w.includes(i)?w.filter(x=>x!==i):[...w,i];}); };
   const toggleWeakness = (w:string) => setWeaknesses(p=>p.includes(w)?p.filter(x=>x!==w):[...p,w]);
 
-  const openDurationPicker = (cv:string, target:'race'|'finish') => { const s=parseRaceTime(cv);if(s&&s>0){setPickerDuration(Math.floor(s/60)*60);setPickerSeconds(s%60);}else{setPickerDuration(target==='finish'?3.5*3600:25*60);setPickerSeconds(0);} target==='race'?setShowRaceTimePicker(true):setShowFinishTimePicker(true); };
+  const openDurationPicker = (cv:string, target:'race'|'finish') => {
+    const s=parseRaceTime(cv);
+    if(s&&s>0){setPickerDuration(Math.floor(s/60)*60);setPickerSeconds(s%60);}
+    else if(target==='finish'){setPickerDuration(3.5*3600);setPickerSeconds(0);}
+    else{
+      // Smart defaults by race distance
+      const defaults: Record<string,number> = {'5K':25*60,'10K':55*60,'Half Marathon':2*3600};
+      setPickerDuration(defaults[raceDistance]??55*60);setPickerSeconds(0);
+    }
+    target==='race'?setShowRaceTimePicker(true):setShowFinishTimePicker(true);
+  };
   const confirmDurationPicker = (target:'race'|'finish') => { const t=pickerDuration+pickerSeconds;if(t<=0)return;const h=Math.floor(t/3600),m=Math.floor((t%3600)/60),s=t%60;const f=h>0?`${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`:`${m}:${String(s).padStart(2,'0')}`;target==='race'?(() => {setRaceTime(f);setShowRaceTimePicker(false);})():(() => {setTargetFinishTime(f);setShowFinishTimePicker(false);})(); };
 
   const SECONDS_OPTIONS = Array.from({length:60},(_,i)=>i);
 
-  // Duration picker modal (keeps RN Modal + Pressable for touch handling)
+  // Duration picker modal — countdown wheel + seconds grid
   const DurationPickerModal = ({visible,onClose,onConfirm,title}:{visible:boolean;onClose:()=>void;onConfirm:()=>void;title:string}) => (
     <Modal visible={visible} transparent animationType="slide">
       <Pressable style={{flex:1,backgroundColor:'rgba(0,0,0,0.6)',justifyContent:'flex-end'}} onPress={onClose}>
         <Pressable style={{backgroundColor:colors.surface,borderTopLeftRadius:20,borderTopRightRadius:20,padding:24,paddingBottom:40}} onPress={e=>e.stopPropagation()}>
-          <H color="$color" fontSize={22} textAlign="center" marginBottom="$5" letterSpacing={1}>{title}</H>
+          <H color={colors.textPrimary} fontSize={20} textAlign="center" letterSpacing={1}>{title}</H>
+          <B color={colors.textTertiary} fontSize={12} textAlign="center" marginTop={2} marginBottom={12}>Hours and minutes</B>
           <DateTimePicker value={new Date(2000,0,1,Math.floor(pickerDuration/3600),Math.floor((pickerDuration%3600)/60),0)} mode="countdown" display="spinner" minuteInterval={1} themeVariant="dark" onChange={(_,d)=>{if(d)setPickerDuration(d.getHours()*3600+d.getMinutes()*60);}} />
-          <YStack marginTop="$1" marginBottom="$2">
-            <H color="$textSecondary" fontSize={13} textTransform="uppercase" letterSpacing={1} marginBottom="$2" textAlign="center">Seconds</H>
-            <RNScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{paddingHorizontal:8,gap:6}}>
-              {SECONDS_OPTIONS.map(sec=>(
-                <Pressable key={sec} onPress={()=>setPickerSeconds(sec)} style={{width:40,height:36,borderRadius:8,backgroundColor:pickerSeconds===sec?colors.cyan:colors.surfaceHover,justifyContent:'center',alignItems:'center',borderWidth:1,borderColor:pickerSeconds===sec?colors.cyan:colors.border}}>
-                  <M color={pickerSeconds===sec?'white':'$textSecondary'} fontSize={15} fontWeight="600">{String(sec).padStart(2,'0')}</M>
-                </Pressable>
-              ))}
-            </RNScrollView>
+          <H color={colors.textTertiary} fontSize={11} letterSpacing={1} marginTop={8} marginBottom={8} textAlign="center">SECONDS</H>
+          <XStack flexWrap="wrap" gap={6} justifyContent="center">
+            {[0,5,10,15,20,25,30,35,40,45,50,55].map(sec=>(
+              <Pressable key={sec} onPress={()=>setPickerSeconds(sec)} style={{width:48,height:40,borderRadius:10,backgroundColor:pickerSeconds===sec?colors.cyan:colors.surfaceHover,justifyContent:'center',alignItems:'center',borderWidth:1,borderColor:pickerSeconds===sec?colors.cyan:colors.border}}>
+                <M color={pickerSeconds===sec?colors.background:colors.textSecondary} fontSize={15} fontWeight="700">{String(sec).padStart(2,'0')}</M>
+              </Pressable>
+            ))}
+          </XStack>
+          <YStack alignItems="center" marginTop={16} marginBottom={4}>
+            <GradientText text={(()=>{const t=pickerDuration+pickerSeconds;const h=Math.floor(t/3600),m=Math.floor((t%3600)/60),s=t%60;return h>0?`${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`:`${m}:${String(s).padStart(2,'0')}`;})()}
+              style={{fontSize:28,fontWeight:'800'}} />
           </YStack>
-          <M color="$accent" fontSize={28} fontWeight="800" textAlign="center" marginTop="$2">
-            {(()=>{const t=pickerDuration+pickerSeconds;const h=Math.floor(t/3600),m=Math.floor((t%3600)/60),s=t%60;return h>0?`${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`:`${m}:${String(s).padStart(2,'0')}`;})()}
-          </M>
-          <YStack backgroundColor="$accent" borderRadius="$5" paddingVertical="$3" alignItems="center" marginTop="$5" pressStyle={{opacity:0.8}} onPress={onConfirm}>
-            <B color="white" fontSize={16} fontWeight="700">Confirm</B>
-          </YStack>
+          <YStack marginTop={8}><GradientButton label="Confirm" onPress={onConfirm} /></YStack>
         </Pressable>
       </Pressable>
     </Modal>
@@ -339,7 +347,7 @@ export default function SetupScreen() {
       <FieldLabel text="Race Name (optional)" /><Input height={44} backgroundColor={colors.surface} borderColor={colors.border} borderRadius={12} color={colors.textPrimary} fontSize={16} fontFamily="$body" paddingHorizontal={14} placeholder="e.g. Chicago Marathon" placeholderTextColor="$textTertiary" value={raceName} onChangeText={setRaceName} />
       <FieldLabel text="Race Date *" />
       <YStack backgroundColor="$surface" borderRadius="$4" borderWidth={1} borderColor="$border" paddingHorizontal="$4" paddingVertical="$4" height={52} pressStyle={{opacity:0.8}} onPress={()=>setShowDatePicker(true)}><B color={raceDate?'$color':'$textTertiary'} fontSize={16}>{raceDate||'Tap to select race date'}</B></YStack>
-      {showDatePicker&&(<Modal visible transparent animationType="slide"><Pressable style={{flex:1,backgroundColor:'rgba(0,0,0,0.6)',justifyContent:'flex-end'}} onPress={()=>setShowDatePicker(false)}><Pressable style={{backgroundColor:colors.surface,borderTopLeftRadius:20,borderTopRightRadius:20,padding:24,paddingBottom:40}} onPress={e=>e.stopPropagation()}><H color="$color" fontSize={22} textAlign="center" marginBottom="$5" letterSpacing={1}>Race Date</H><DateTimePicker value={raceDate?new Date(raceDate+'T00:00:00'):new Date(Date.now()+120*86400000)} mode="date" display="spinner" minimumDate={new Date()} themeVariant="dark" onChange={(_,d)=>{if(d){setRaceDate(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`);}}} /><YStack backgroundColor="$accent" borderRadius="$5" paddingVertical="$3" alignItems="center" marginTop="$5" pressStyle={{opacity:0.8}} onPress={()=>setShowDatePicker(false)}><B color="white" fontSize={16} fontWeight="700">Done</B></YStack></Pressable></Pressable></Modal>)}
+      {showDatePicker&&(<Modal visible transparent animationType="slide"><Pressable style={{flex:1,backgroundColor:'rgba(0,0,0,0.6)',justifyContent:'flex-end'}} onPress={()=>setShowDatePicker(false)}><Pressable style={{backgroundColor:colors.surface,borderTopLeftRadius:20,borderTopRightRadius:20,padding:24,paddingBottom:40}} onPress={e=>e.stopPropagation()}><H color={colors.textPrimary} fontSize={20} textAlign="center" letterSpacing={1}>Race Date</H><B color={colors.textTertiary} fontSize={12} textAlign="center" marginTop={2} marginBottom={12}>When is your marathon?</B><DateTimePicker value={raceDate?new Date(raceDate+'T00:00:00'):new Date(Date.now()+120*86400000)} mode="date" display="spinner" minimumDate={new Date()} themeVariant="dark" onChange={(_,d)=>{if(d){setRaceDate(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`);}}} /><YStack marginTop={8}><GradientButton label="Done" onPress={()=>setShowDatePicker(false)} /></YStack></Pressable></Pressable></Modal>)}
       <FieldLabel text="Course Profile" /><SegmentedControl options={COURSE_PROFILES} selected={courseProfile} onSelect={setCourseProfile} />
       <FieldLabel text="Goal Type" /><SegmentedControl options={GOAL_TYPES} selected={goalType} onSelect={setGoalType} />
       {(goalType==='Time Goal'||goalType==='BQ')&&(<><FieldLabel text="Target Finish Time" /><YStack backgroundColor="$surface" borderRadius="$4" borderWidth={1} borderColor="$border" paddingHorizontal="$4" paddingVertical="$4" height={52} pressStyle={{opacity:0.8}} onPress={()=>openDurationPicker(targetFinishTime,'finish')}><B color={targetFinishTime?'$color':'$textTertiary'} fontSize={16}>{targetFinishTime||'Tap to set (e.g. 3:30:00)'}</B></YStack><DurationPickerModal visible={showFinishTimePicker} onClose={()=>setShowFinishTimePicker(false)} onConfirm={()=>confirmDurationPicker('finish')} title="Target Finish Time" /></>)}
