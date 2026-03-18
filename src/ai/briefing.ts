@@ -262,3 +262,155 @@ Respond with ONLY the strategy text.`;
     return null;
   }
 }
+
+// ─── Rest Day Briefing ──────────────────────────────────────
+
+export interface RestDayBriefing {
+  whyResting: string;       // 2-3 sentences about yesterday's effort
+  tips: { emoji: string; title: string; detail: string }[];  // 3-4 recovery tips
+}
+
+export async function generateRestDayBriefing(
+  yesterdayWorkouts: Workout[],
+  yesterdayMetrics: PerformanceMetric[],
+  paceZones: PaceZones,
+  profile: UserProfile,
+  currentWeek: TrainingWeek | null,
+  recoveryInfo?: string | null,
+): Promise<RestDayBriefing | null> {
+  if (!isGeminiAvailable()) return null;
+
+  const today = new Date().toISOString().split('T')[0];
+  const cacheKey = `rest_day_briefing_${today}`;
+  const cached = getCachedAIContent('rest_briefing', cacheKey);
+  if (cached) {
+    try { return JSON.parse(cached); } catch {}
+  }
+
+  try {
+    // Build yesterday context
+    let yesterdayContext = 'No workout data from yesterday.';
+    if (yesterdayMetrics.length > 0) {
+      const m = yesterdayMetrics[0];
+      const pace = m.avg_pace_sec_per_mile ? formatPace(m.avg_pace_sec_per_mile) : '?';
+      yesterdayContext = `Yesterday: ${m.distance_miles.toFixed(1)}mi @ ${pace}/mi${m.avg_hr ? `, HR ${m.avg_hr}` : ''}${m.duration_minutes ? `, ${Math.round(m.duration_minutes)}min` : ''}`;
+      if (yesterdayWorkouts.length > 0) {
+        yesterdayContext += ` (${yesterdayWorkouts[0].title} — ${yesterdayWorkouts[0].workout_type})`;
+      }
+    } else if (yesterdayWorkouts.length > 0) {
+      const w = yesterdayWorkouts[0];
+      if (w.status === 'skipped') {
+        yesterdayContext = `Yesterday's ${w.title} was skipped.`;
+      } else if (w.workout_type === 'rest') {
+        yesterdayContext = 'Yesterday was also a rest day.';
+      } else {
+        yesterdayContext = `Yesterday: ${w.title} (${w.target_distance_miles ?? 0}mi planned)`;
+      }
+    }
+
+    const prompt = `You are a marathon running coach writing a rest day note for your athlete. Return a JSON object with exactly this structure:
+{
+  "whyResting": "2-3 sentences explaining why today is a rest day, referencing yesterday's effort and what the body needs. Be specific with numbers from the data. Encouraging but factual.",
+  "tips": [
+    {"emoji": "💧", "title": "Hydration", "detail": "1-2 sentences of specific advice"},
+    {"emoji": "🍎", "title": "Nutrition", "detail": "1-2 sentences"},
+    {"emoji": "🧘", "title": "Movement", "detail": "1-2 sentences"},
+    {"emoji": "😴", "title": "Sleep", "detail": "1-2 sentences"}
+  ]
+}
+
+CONTEXT:
+${yesterdayContext}
+Week ${currentWeek?.week_number ?? '?'}, ${currentWeek?.phase ?? '?'} phase.
+Pace zones: E ${formatPaceRange(paceZones.E)}, M ${formatPaceRange(paceZones.M)}
+${recoveryInfo || 'Recovery data: not available'}
+
+RULES:
+- "whyResting" MUST reference yesterday's specific workout data (distance, type, effort)
+- Tips must be actionable and specific, not generic platitudes
+- If yesterday was a long run, emphasize glycogen refueling and hydration
+- If yesterday was threshold/interval, emphasize protein and sleep
+- If recovery data shows low score, acknowledge it
+- If yesterday was skipped or rest, adjust tone (back-to-back rest is fine during cutback weeks)
+- Keep each tip to 1-2 sentences MAX
+- Return ONLY valid JSON, no markdown fences`;
+
+    const text = await sendStructuredMessage(
+      'You are a concise running coach. Return valid JSON only.',
+      prompt,
+    );
+
+    // Parse response
+    let briefing: RestDayBriefing;
+    try {
+      const cleaned = text.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+      briefing = JSON.parse(cleaned);
+    } catch {
+      // Try to extract JSON from response
+      const match = text.match(/\{[\s\S]*\}/);
+      if (match) {
+        briefing = JSON.parse(match[0]);
+      } else {
+        return null;
+      }
+    }
+
+    // Validate structure
+    if (!briefing.whyResting || !Array.isArray(briefing.tips) || briefing.tips.length === 0) {
+      return null;
+    }
+
+    // Cache it
+    setCachedAIContent('rest_briefing', cacheKey, JSON.stringify(briefing));
+    return briefing;
+  } catch (error) {
+    console.warn('[RestDayBriefing] Failed:', error);
+    return null;
+  }
+}
+
+// ─── Skip Briefing ──────────────────────────────────────────
+
+export async function generateSkipBriefing(
+  skippedWorkout: Workout,
+  weekVolume: { actual: number; target: number; workoutsLeft: number },
+  skipsThisWeek: number,
+  recoveryInfo?: string | null,
+): Promise<string | null> {
+  if (!isGeminiAvailable()) return null;
+
+  const today = new Date().toISOString().split('T')[0];
+  const cacheKey = `skip_briefing_${today}`;
+  const cached = getCachedAIContent('skip_briefing', cacheKey);
+  if (cached) return cached;
+
+  try {
+    const prompt = `You are a marathon running coach. Your athlete just skipped today's workout. Write 2-3 sentences of encouragement. Be specific, reference the data, and be constructive — not generic.
+
+SKIPPED: ${skippedWorkout.title} (${skippedWorkout.target_distance_miles ?? 0}mi, ${skippedWorkout.workout_type})
+WEEK VOLUME: ${weekVolume.actual.toFixed(1)} of ${weekVolume.target.toFixed(1)} mi completed (${Math.round((weekVolume.actual / Math.max(weekVolume.target, 1)) * 100)}%)
+WORKOUTS LEFT THIS WEEK: ${weekVolume.workoutsLeft}
+SKIPS THIS WEEK: ${skipsThisWeek}
+${recoveryInfo || ''}
+
+RULES:
+- If recovery is low, affirm the skip was smart
+- If this is the 2nd+ skip, gently note it without guilt
+- Suggest a constructive next step (add easy miles tomorrow, or just focus on the next quality session)
+- NEVER say "it's okay to skip" in a dismissive way — be a coach, not a therapist
+- 2-3 sentences MAX
+
+Respond with ONLY the text.`;
+
+    const text = await sendStructuredMessage(
+      'You are a concise, encouraging running coach.',
+      prompt,
+    );
+
+    const result = text.trim();
+    setCachedAIContent('skip_briefing', cacheKey, result);
+    return result;
+  } catch {
+    return null;
+  }
+}

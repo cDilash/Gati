@@ -1,7 +1,7 @@
 /**
  * Workout Detail Screen — Tamagui migration.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { Alert } from 'react-native';
 import { ScrollView, YStack, XStack, Text, View } from 'tamagui';
 import { useLocalSearchParams } from 'expo-router';
@@ -13,6 +13,7 @@ import { formatPace } from '../../src/engine/vdot';
 import { PerformanceMetric, IntervalStep } from '../../src/types';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { METRIC_ICONS } from '../../src/utils/workoutIcons';
+import { RouteMap } from '../../src/components/RouteMap';
 
 const H = (props: any) => <Text fontFamily="$heading" {...props} />;
 const B = (props: any) => <Text fontFamily="$body" {...props} />;
@@ -56,14 +57,42 @@ export default function WorkoutDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { workouts, weeks, markWorkoutComplete, markWorkoutSkipped, fetchPostRunAnalysis, postRunAnalysis } = useAppStore();
   const [metric, setMetric] = useState<PerformanceMetric | null>(null);
+  const [stravaDetail, setStravaDetail] = useState<any>(null);
 
   const workout = workouts.find(w => w.id === id);
   const week = workout ? weeks.find(w => w.week_number === workout.week_number) : null;
 
   useEffect(() => {
     if (!workout) return;
-    try { const { getMetricsForWorkout } = require('../../src/db/database'); const m = getMetricsForWorkout(workout.id); if (m.length > 0) setMetric(m[0]); } catch {}
+    try {
+      const { getMetricsForWorkout, getDatabase } = require('../../src/db/database');
+      const m = getMetricsForWorkout(workout.id);
+      if (m.length > 0) {
+        setMetric(m[0]);
+        // Load Strava detail for route map
+        const db = getDatabase();
+        const d = m[0].strava_activity_id
+          ? db.getFirstSync('SELECT polyline_encoded, summary_polyline_encoded, hr_stream_json, pace_stream_json, elevation_stream_json FROM strava_activity_detail WHERE strava_activity_id = ?', [m[0].strava_activity_id])
+          : db.getFirstSync('SELECT polyline_encoded, summary_polyline_encoded, hr_stream_json, pace_stream_json, elevation_stream_json FROM strava_activity_detail WHERE performance_metric_id = ?', [m[0].id]);
+        if (d) setStravaDetail(d);
+      }
+    } catch {}
   }, [workout?.id, workout?.status]);
+
+  // Parse streams for RouteMap
+  const parsedStreams = useMemo(() => {
+    const parse = (json: string | null | undefined): number[] | undefined => {
+      if (!json) return undefined;
+      try { const arr = JSON.parse(json); return Array.isArray(arr) ? arr : undefined; } catch { return undefined; }
+    };
+    return {
+      hr: parse(stravaDetail?.hr_stream_json),
+      pace: parse(stravaDetail?.pace_stream_json),
+      elevation: parse(stravaDetail?.elevation_stream_json),
+    };
+  }, [stravaDetail]);
+
+  const routePolyline = stravaDetail?.polyline_encoded || stravaDetail?.summary_polyline_encoded || null;
 
   if (!workout) return <YStack flex={1} backgroundColor="$background" justifyContent="center" alignItems="center"><B color="$textSecondary" fontSize={16}>Workout not found</B></YStack>;
 
@@ -117,6 +146,25 @@ export default function WorkoutDetailScreen() {
               {step.description ? <B color="$textSecondary" fontSize={13} marginTop={2}>{step.description}</B> : null}
             </YStack>
           ))}
+        </YStack>
+      )}
+
+      {/* Route Map */}
+      {routePolyline && metric && (
+        <YStack marginBottom="$3" borderRadius={14} overflow="hidden">
+          <RouteMap
+            polyline={routePolyline}
+            height={200}
+            strokeWidth={4}
+            showGradient
+            showMarkers
+            showReplay
+            totalDistanceMiles={metric.distance_miles}
+            totalDurationSec={metric.duration_minutes ? metric.duration_minutes * 60 : undefined}
+            hrStream={parsedStreams.hr}
+            paceStream={parsedStreams.pace}
+            elevationStream={parsedStreams.elevation}
+          />
         </YStack>
       )}
 

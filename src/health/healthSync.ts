@@ -14,7 +14,7 @@ import { HealthSnapshot } from "../types";
 
 const CACHE_TTL_MS = 2 * 60 * 60 * 1000; // 2 hours
 
-export async function syncHealthData(): Promise<HealthSnapshot | null> {
+export async function syncHealthData(forceRefresh: boolean = false): Promise<HealthSnapshot | null> {
   // Guard 1: HealthKit available?
   if (!isHealthKitAvailable()) {
     console.log("[HealthKit] Not available — skipping sync");
@@ -28,11 +28,15 @@ export async function syncHealthData(): Promise<HealthSnapshot | null> {
     return null;
   }
 
-  // Guard 3: Check cache — don't re-fetch within 2 hours
-  const cached = getCachedSnapshot();
-  if (cached) {
-    console.log("[HealthKit] Using cached snapshot");
-    return cached;
+  // Guard 3: Check cache — don't re-fetch within 2 hours (skip if forced)
+  if (!forceRefresh) {
+    const cached = getCachedSnapshot();
+    if (cached) {
+      console.log("[HealthKit] Using cached snapshot");
+      return cached;
+    }
+  } else {
+    console.log("[HealthKit] Force refresh — bypassing cache");
   }
 
   // Fetch all health data in parallel — each one independent
@@ -67,45 +71,44 @@ export async function syncHealthData(): Promise<HealthSnapshot | null> {
     if (r.status === 'rejected') console.log(`[HealthKit] ${name} REJECTED:`, r.reason?.message || r.reason);
   }
 
-  // Today's values with staleness check (48-hour window)
+  // Today's values — use most recent available, track staleness
   const now = Date.now();
-  const STALENESS_THRESHOLD_MS = 48 * 60 * 60 * 1000; // 48 hours
 
-  // Resting HR: use only if most recent sample is within 48 hours
+  // Resting HR: use most recent sample (track age for display)
   let todayRHR: number | null = null;
   let restingHRAge: number | null = null;
   if (restingHRData.length > 0) {
     const mostRecentDate = new Date(restingHRData[0].date + 'T12:00:00').getTime();
     restingHRAge = Math.round((now - mostRecentDate) / 3600000); // hours
-    if (now - mostRecentDate <= STALENESS_THRESHOLD_MS) {
-      todayRHR = restingHRData[0].value;
-    }
+    // Use the value regardless of age — let the UI decide if it's too stale
+    todayRHR = restingHRData[0].value;
+    console.log(`[HealthKit] RHR: ${todayRHR} bpm, most recent date: ${restingHRData[0].date}, age: ${restingHRAge}h, ${restingHRData.length} samples`);
+  } else {
+    console.log('[HealthKit] RHR: NO SAMPLES returned from HealthKit');
   }
 
   const todayHRV = hrvData.length > 0 ? hrvData[0].value : null;
+  if (hrvData.length > 0) {
+    console.log(`[HealthKit] HRV: ${todayHRV} ms, date: ${hrvData[0].date}, ${hrvData.length} samples`);
+  } else {
+    console.log('[HealthKit] HRV: NO SAMPLES returned from HealthKit');
+  }
 
-  // Sleep: use only if from last night (today's date - 1) or the night before (today's date - 2)
-  // Sleep dated "2026-03-16" means the night OF March 16 (went to bed that evening)
+  // Sleep: use most recent non-incomplete sleep data
   let todaySleep: number | null = null;
   let sleepAge: number | null = null;
   if (sleepData.length > 0) {
-    const todayDate = new Date().toISOString().split('T')[0];
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    const yesterdayDate = yesterday.toISOString().split('T')[0];
-    const dayBefore = new Date();
-    dayBefore.setDate(dayBefore.getDate() - 2);
-    const dayBeforeDate = dayBefore.toISOString().split('T')[0];
-
     const sleepDate = sleepData[0].date;
     const mostRecentSleepMs = new Date(sleepDate + 'T12:00:00').getTime();
     sleepAge = Math.round((now - mostRecentSleepMs) / 3600000);
 
-    const isFresh = sleepDate === todayDate || sleepDate === yesterdayDate || sleepDate === dayBeforeDate;
     const isIncomplete = sleepData[0].isLikelyIncomplete;
-    if (isFresh && !isIncomplete) {
+    if (!isIncomplete) {
       todaySleep = sleepData[0].totalMinutes / 60;
     }
+    console.log(`[HealthKit] Sleep: ${sleepData[0].totalMinutes} min, date: ${sleepDate}, age: ${sleepAge}h, incomplete: ${isIncomplete}, ${sleepData.length} nights`);
+  } else {
+    console.log('[HealthKit] Sleep: NO SAMPLES returned from HealthKit');
   }
 
   const todayResp = respData.length > 0 ? respData[0].value : null;

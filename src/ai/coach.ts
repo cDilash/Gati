@@ -284,6 +284,28 @@ Keep responses to 2-4 paragraphs max unless the athlete asks for detailed analys
     parts.push('');
   }
 
+  // Training load (PMC) if available
+  try {
+    const store = require('../store').useAppStore;
+    const pmcData = store.getState().pmcData;
+    if (pmcData && pmcData.totalDays >= 7) {
+      const { detectTrainingPhase } = require('../components/PMCSummary');
+      const phase = detectTrainingPhase(pmcData);
+      parts.push('TRAINING LOAD (PMC):');
+      parts.push(`  Fitness (CTL): ${pmcData.currentCTL.toFixed(1)}${pmcData.peakCTL > 0 ? ` (peak: ${pmcData.peakCTL.toFixed(1)})` : ''}`);
+      parts.push(`  Fatigue (ATL): ${pmcData.currentATL.toFixed(1)}`);
+      parts.push(`  Form (TSB): ${pmcData.currentTSB.toFixed(1)} (${pmcData.currentTSB > 10 ? 'fresh' : pmcData.currentTSB > 0 ? 'neutral' : pmcData.currentTSB > -20 ? 'fatigued' : 'overreaching'})`);
+      parts.push(`  Phase: ${phase}`);
+      const acwr = pmcData.currentCTL > 0 ? (pmcData.currentATL / pmcData.currentCTL).toFixed(2) : 'N/A';
+      parts.push(`  ACWR: ${acwr} (safe: 0.8-1.3)`);
+      if (pmcData.raceDayTSB != null) {
+        parts.push(`  Projected race day form: ${pmcData.raceDayTSB.toFixed(1)}`);
+      }
+      parts.push(`  Data quality: ${pmcData.dataQuality} (${pmcData.hrMethodPercent}% HR-based)`);
+      parts.push('');
+    }
+  } catch {}
+
   // Shoe warnings
   const wornShoes = shoes.filter(s => s.totalMiles > s.maxMiles * 0.8);
   if (wornShoes.length > 0) {

@@ -86,6 +86,9 @@ interface AppState {
   healthSnapshot: HealthSnapshot | null;
   recoveryStatus: RecoveryStatus | null;
 
+  // Training Load (PMC)
+  pmcData: import('./types').PMCData | null;
+
   // Cross-Training
   todayCrossTraining: CrossTraining | null;
   weekCrossTraining: CrossTraining[];
@@ -100,7 +103,7 @@ interface AppState {
   proactiveSuggestion: {
     message: string;
     workoutId: string;
-    action: 'swap_to_easy';
+    action: 'swap_to_easy' | 'add_rest_day' | 'reduce_workout';
     workoutTitle: string;
     ctSuggestion?: import('./ai/crossTrainingAdvisor').SwapSuggestion;
   } | null;
@@ -136,10 +139,11 @@ interface AppState {
   syncStravaConnection: () => void;
   refreshShoes: () => void;
   addManualRun: (date: string, distanceMiles: number, durationMinutes: number, rpe?: number) => void;
-  syncHealth: () => Promise<void>;
+  syncHealth: (forceRefresh?: boolean) => Promise<void>;
   syncAll: () => Promise<void>;
   logCrossTraining: (type: CrossTrainingType, notes?: string) => void;
   deleteCrossTrainingEntry: (id: string) => void;
+  calculateTrainingLoad: () => void;
 }
 
 // ─── Store ──────────────────────────────────────────────────
@@ -165,6 +169,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   raceStrategy: null,
   healthSnapshot: null,
   recoveryStatus: null,
+  pmcData: null,
   todayCrossTraining: null,
   weekCrossTraining: [],
   isSyncing: false,
@@ -332,6 +337,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         weekCrossTraining: weekCT,
       });
 
+      // Calculate training load (fire-and-forget)
+      try { get().calculateTrainingLoad(); } catch {}
+
       // Restore persisted suggestions
       try {
         const vdotNote = getSetting('pending_vdot_notification');
@@ -481,6 +489,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   markWorkoutComplete: (workoutId, stravaActivityId) => {
     updateWorkoutStatus(workoutId, 'completed', stravaActivityId);
     get().refreshState();
+    // Recalculate PMC (future projection changes)
+    try { get().calculateTrainingLoad(); } catch {}
   },
 
   markWorkoutSkipped: (workoutId) => {
@@ -793,6 +803,56 @@ export const useAppStore = create<AppState>((set, get) => ({
         })();
       }
 
+      // Recalculate PMC after new Strava data
+      try { get().calculateTrainingLoad(); } catch {}
+
+      // Fetch historical weather for new activities (fire-and-forget)
+      (async () => {
+        try {
+          const { fetchWeatherForActivities, backfillLocationData } = require('./strava/weather');
+          // Backfill location for old activities first
+          const backfilled = await backfillLocationData();
+          if (backfilled > 0) console.log(`[Sync] Backfilled location for ${backfilled} activities`);
+          // Then fetch weather for activities with coordinates
+          const count = await fetchWeatherForActivities();
+          if (count > 0) console.log(`[Sync] Fetched weather for ${count} activities`);
+        } catch {}
+      })();
+
+      // ACWR proactive warning (if no existing suggestion)
+      try {
+        const { pmcData, proactiveSuggestion } = get();
+        if (pmcData && !proactiveSuggestion && pmcData.currentCTL > 10) {
+          const acwr = pmcData.currentATL / pmcData.currentCTL;
+          if (acwr > 1.5) {
+            const db = require('./db/database').getDatabase();
+            const today = getToday();
+            const tomorrow = new Date(today + 'T00:00:00');
+            tomorrow.setDate(tomorrow.getDate() + 1);
+            const tomorrowStr = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(tomorrow.getDate()).padStart(2, '0')}`;
+
+            const nextWorkout = db.getFirstSync(
+              `SELECT id, title, workout_type, target_distance_miles FROM workout
+               WHERE scheduled_date = ? AND status = 'upcoming' AND workout_type != 'rest'
+               AND plan_id IN (SELECT id FROM training_plan WHERE status = 'active')`,
+              [tomorrowStr]
+            ) as { id: string; title: string; workout_type: string; target_distance_miles: number } | null;
+
+            if (nextWorkout) {
+              const suggestion = {
+                message: `Your training load ratio (ACWR) is ${acwr.toFixed(2)} — above the safe range of 0.8-1.3. High spikes in training volume relative to your fitness increase injury risk. Consider an extra rest day or reducing tomorrow's distance by 25%.`,
+                workoutId: nextWorkout.id,
+                action: 'reduce_workout' as const,
+                workoutTitle: nextWorkout.title,
+              };
+              set({ proactiveSuggestion: suggestion });
+              try { setSetting('pending_proactive_suggestion', JSON.stringify(suggestion)); } catch {}
+              console.log(`[PMC] ACWR warning: ${acwr.toFixed(2)} — suggested reducing ${nextWorkout.title}`);
+            }
+          }
+        }
+      } catch {}
+
       return result;
     } catch (e: any) {
       console.error('[Store] syncStrava error:', e.message);
@@ -872,11 +932,11 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   // ─── Health Sync ──────────────────────────────────────────
 
-  syncHealth: async () => {
+  syncHealth: async (forceRefresh) => {
     try {
       const { syncHealthData } = require('./health/healthSync');
       const { calculateRecoveryScore } = require('./health/recoveryScore');
-      const snapshot = await syncHealthData();
+      const snapshot = await syncHealthData(forceRefresh ?? false);
       if (snapshot) {
         const profile = get().userProfile;
         const recovery = calculateRecoveryScore(snapshot, {
@@ -1109,6 +1169,67 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ todayCrossTraining: getCrossTrainingForDate(today), proactiveSuggestion: null });
     } catch (e) {
       console.log('[Store] Cross-training delete failed:', e);
+    }
+  },
+
+  // ─── Training Load (PMC) ──────────────────────────────────
+
+  calculateTrainingLoad: () => {
+    try {
+      const { userProfile: profile, activePlan: plan, paceZones } = get();
+      if (!profile || !plan) return;
+
+      const today = getToday();
+      const {
+        getMetricsForDateRange,
+        getUpcomingWorkouts,
+        getPlanStartDate,
+        getPMCCache,
+        setPMCCache,
+        getAllMetrics,
+      } = require('./db/database');
+
+      // Get plan start date
+      const startDate = getPlanStartDate(plan.id);
+      if (!startDate) return;
+
+      // Build cache hash from metrics count + latest date
+      const allMetrics: import('./types').PerformanceMetric[] = getAllMetrics(500);
+      const dataHash = `${allMetrics.length}_${allMetrics[0]?.date ?? 'none'}_${today}`;
+
+      // Check cache
+      const cached = getPMCCache(dataHash);
+      if (cached) {
+        try {
+          const pmcData = JSON.parse(cached);
+          set({ pmcData });
+          console.log('[PMC] Loaded from cache');
+          return;
+        } catch {}
+      }
+
+      // Calculate fresh
+      const { buildFullPMC } = require('./engine/trainingLoad');
+      const metrics = getMetricsForDateRange(startDate, today);
+      const futureWorkouts = getUpcomingWorkouts(plan.id, today);
+
+      const pmcData = buildFullPMC(
+        metrics,
+        profile,
+        paceZones,
+        startDate,
+        today,
+        profile.race_date,
+        futureWorkouts,
+      );
+
+      // Cache it
+      try { setPMCCache(JSON.stringify(pmcData), dataHash); } catch {}
+
+      set({ pmcData });
+      console.log(`[PMC] Calculated: CTL=${pmcData.currentCTL.toFixed(1)} ATL=${pmcData.currentATL.toFixed(1)} TSB=${pmcData.currentTSB.toFixed(1)} (${pmcData.totalDays}d hist, ${pmcData.projectedDays}d proj)`);
+    } catch (e) {
+      console.warn('[PMC] Calculation failed:', e);
     }
   },
 }));

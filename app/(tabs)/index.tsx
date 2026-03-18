@@ -1,5 +1,5 @@
 import React, { useEffect, useCallback, useState, useMemo } from 'react';
-import { RefreshControl } from 'react-native';
+import { RefreshControl, TextInput, Pressable } from 'react-native';
 import { ScrollView, YStack, XStack, Text, View, Spinner, Button } from 'tamagui';
 import { useRouter } from 'expo-router';
 import { useAppStore } from '../../src/store';
@@ -57,6 +57,7 @@ export default function TodayScreen() {
   const postRunAnalysis = useAppStore(s => s.postRunAnalysis);
   const raceStrategy = useAppStore(s => s.raceStrategy);
   const recoveryStatus = useAppStore(s => s.recoveryStatus);
+  const currentWeek = useAppStore(s => s.currentWeek);
 
   const isSyncing = useAppStore(s => s.isSyncing);
   const vdotNotification = useAppStore(s => s.vdotNotification);
@@ -88,6 +89,36 @@ export default function TodayScreen() {
     if (isRaceWeek) fetchRaceStrategy();
   }, [activePlan?.id, todaysWorkout?.id, isRaceWeek]);
 
+  // Fetch rest day briefing when on a rest day
+  useEffect(() => {
+    if (!activePlan || !todaysWorkout || todaysWorkout.workout_type !== 'rest') return;
+    (async () => {
+      try {
+        const { generateRestDayBriefing } = require('../../src/ai/briefing');
+        const today = getToday();
+        const yesterday = new Date(today + 'T00:00:00');
+        yesterday.setDate(yesterday.getDate() - 1);
+        const yStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
+
+        const yWorkouts = workouts.filter((w: any) => w.scheduled_date === yStr);
+        const { getMetricsForDateRange } = require('../../src/db/database');
+        const yMetrics = getMetricsForDateRange(yStr, yStr);
+
+        const recoveryInfo = recoveryStatus
+          ? `Recovery score: ${recoveryStatus.score}/100 (${recoveryStatus.level})`
+          : null;
+
+        const result = await generateRestDayBriefing(
+          yWorkouts, yMetrics, paceZones,
+          userProfile, currentWeek, recoveryInfo,
+        );
+        if (result) setRestDayBriefing(result);
+      } catch (e) {
+        console.warn('[RestDay] Briefing failed:', e);
+      }
+    })();
+  }, [activePlan?.id, todaysWorkout?.id]);
+
   const handleComplete = useCallback(() => {
     if (!todaysWorkout) return;
     markWorkoutComplete(todaysWorkout.id);
@@ -114,6 +145,9 @@ export default function TodayScreen() {
   // ─── Cross-training modal ────────────────────────────────
   const [showCTModal, setShowCTModal] = useState(false);
   const [ctNotes, setCTNotes] = useState('');
+
+  // ─── Rest day briefing ─────────────────────────────────
+  const [restDayBriefing, setRestDayBriefing] = useState<{ whyResting: string; tips: { emoji: string; title: string; detail: string }[] } | null>(null);
 
   // ─── Sync complete flash ─────────────────────────────────
   const [showSyncDone, setShowSyncDone] = useState(false);
@@ -200,7 +234,9 @@ export default function TodayScreen() {
   if (!activePlan) {
     return (
       <YStack flex={1} backgroundColor="$background" justifyContent="center" alignItems="center" padding="$8">
-        <B fontSize={48} marginBottom="$4">🏃</B>
+        <View width={64} height={64} borderRadius={32} backgroundColor={colors.cyanGhost} alignItems="center" justifyContent="center" marginBottom="$4">
+          <MaterialCommunityIcons name="run-fast" size={36} color={colors.cyan} />
+        </View>
         <H color="$color" fontSize={28} letterSpacing={1} marginBottom="$2">No Training Plan</H>
         <B color="$textSecondary" fontSize={15} textAlign="center" lineHeight={22} marginBottom="$6">
           Set up your profile and generate a plan to get started.
@@ -281,10 +317,18 @@ export default function TodayScreen() {
           </XStack>
           <B color="$color" fontSize={14} lineHeight={20} marginBottom="$3">{proactiveSuggestion.message}</B>
           <YStack gap="$2">
-            {(proactiveSuggestion.ctSuggestion?.options ?? [
-              { label: 'Swap to Easy', action: 'swap_to_easy', description: '' },
-              { label: 'Keep as Planned', action: 'keep', description: '' },
-            ]).map((opt, i) => (
+            {(proactiveSuggestion.ctSuggestion?.options ?? (
+              proactiveSuggestion.action === 'reduce_workout'
+                ? [
+                    { label: 'Reduce 25%', action: 'reduce_distance', description: '' },
+                    { label: 'Add Rest Day', action: 'add_rest_day', description: '' },
+                    { label: 'Noted, Keep Plan', action: 'keep', description: '' },
+                  ]
+                : [
+                    { label: 'Swap to Easy', action: 'swap_to_easy', description: '' },
+                    { label: 'Keep as Planned', action: 'keep', description: '' },
+                  ]
+            )).map((opt, i) => (
               <YStack key={i}
                 backgroundColor={opt.action === 'keep' ? '$surfaceLight' : i === 0 ? '$warning' : '$surfaceLight'}
                 paddingVertical="$2" paddingHorizontal="$4" borderRadius="$4"
@@ -304,7 +348,14 @@ export default function TodayScreen() {
                       db.runSync(
                         `UPDATE workout SET target_distance_miles = target_distance_miles * 0.75,
                          modification_reason = ?, status = 'modified' WHERE id = ? AND status = 'upcoming'`,
-                        [`Reduced 25% from ${proactiveSuggestion.workoutTitle} — cross-training impact`, wId]
+                        [`Reduced 25% — ${proactiveSuggestion.action === 'reduce_workout' ? 'ACWR elevated' : 'cross-training impact'}`, wId]
+                      );
+                    } else if (opt.action === 'add_rest_day') {
+                      db.runSync(
+                        `UPDATE workout SET workout_type = 'rest', target_distance_miles = 0,
+                         target_pace_zone = NULL, modification_reason = 'Converted to rest — ACWR elevated',
+                         status = 'modified' WHERE id = ? AND status = 'upcoming'`,
+                        [wId]
                       );
                     }
                     // 'keep' = no DB change
@@ -344,28 +395,32 @@ export default function TodayScreen() {
             </XStack>
             {/* Readiness indicator */}
             {(() => {
-              // Calculate readiness from recent weeks
-              const recentWeeks = weeks.slice(Math.max(0, weeks.findIndex(w => w.week_number === currentWeekNumber) - 2));
-              const pastWorkouts = workouts.filter(w => w.workout_type !== 'rest' && (w.status === 'completed' || w.status === 'skipped' || w.status === 'partial'));
-              const completedCount = pastWorkouts.filter(w => w.status === 'completed' || w.status === 'partial').length;
-              const adherence = pastWorkouts.length > 0 ? completedCount / pastWorkouts.length : 1;
+              // Only count workouts that were DUE (scheduled before or on today, not future)
+              const today = getToday();
+              const pastDueWorkouts = workouts.filter(w =>
+                w.workout_type !== 'rest' && w.scheduled_date <= today &&
+                (w.status === 'completed' || w.status === 'skipped' || w.status === 'partial')
+              );
+              const completedCount = pastDueWorkouts.filter(w => w.status === 'completed' || w.status === 'partial').length;
+              const adherence = pastDueWorkouts.length > 0 ? completedCount / pastDueWorkouts.length : 1;
 
-              const volumeOnTrack = recentWeeks.length > 0 && recentWeeks.every(w => w.actual_volume >= w.target_volume * 0.7);
-
-              let readiness: 'on_track' | 'attention' | 'behind';
               let label: string;
               let readinessColor: string;
 
-              if (adherence >= 0.8 && volumeOnTrack) {
-                readiness = 'on_track';
-                label = 'You\'re on track';
+              // First week with < 3 past-due workouts: "Just getting started"
+              if (currentWeekNumber <= 1 && pastDueWorkouts.length < 3) {
+                label = 'Just getting started';
+                readinessColor = colors.cyan;
+              } else if (adherence >= 1.0 && pastDueWorkouts.length >= 10) {
+                label = 'Crushing it';
+                readinessColor = colors.cyan;
+              } else if (adherence >= 0.8) {
+                label = 'On track';
                 readinessColor = colors.cyan;
               } else if (adherence >= 0.6) {
-                readiness = 'attention';
-                label = 'Needs attention';
+                label = 'Catching up';
                 readinessColor = colors.orange;
               } else {
-                readiness = 'behind';
                 label = 'You\'re behind';
                 readinessColor = colors.error;
               }
@@ -374,7 +429,9 @@ export default function TodayScreen() {
                 <XStack marginTop="$3" paddingTop="$3" borderTopWidth={0.5} borderTopColor="$border" alignItems="center" gap="$2">
                   <View width={10} height={10} borderRadius={5} backgroundColor={readinessColor} />
                   <B color={readinessColor} fontSize={13} fontWeight="600">{label}</B>
-                  <B color="$textTertiary" fontSize={11}> · {Math.round(adherence * 100)}% adherence</B>
+                  {pastDueWorkouts.length >= 3 && (
+                    <B color="$textTertiary" fontSize={11}> · {Math.round(adherence * 100)}% adherence</B>
+                  )}
                 </XStack>
               );
             })()}
@@ -449,10 +506,19 @@ export default function TodayScreen() {
                 <YStack>
                   <XStack justifyContent="space-between" alignItems="baseline" marginBottom="$3">
                     <YStack>
-                      <M color="$color" fontSize={20} fontWeight="800">{Math.round(totalActual)} mi</M>
-                      <B color="$textTertiary" fontSize={11}>of {Math.round(totalPlanned)} mi planned</B>
+                      {totalActual < 1 ? (
+                        <>
+                          <M color="$color" fontSize={18} fontWeight="800">{Math.round(totalPlanned)} mi journey</M>
+                          <B color="$textTertiary" fontSize={11}>to {userProfile?.race_name ?? 'race day'}</B>
+                        </>
+                      ) : (
+                        <>
+                          <M color="$color" fontSize={20} fontWeight="800">{Math.round(totalActual)} mi</M>
+                          <B color="$textTertiary" fontSize={11}>of {Math.round(totalPlanned)} mi planned</B>
+                        </>
+                      )}
                     </YStack>
-                    <M color={pct >= 90 ? colors.cyan : pct >= 70 ? '$color' : colors.orange} fontSize={14} fontWeight="700">{pct}%</M>
+                    {totalActual >= 1 && <M color={pct >= 90 ? colors.cyan : pct >= 70 ? '$color' : colors.orange} fontSize={14} fontWeight="700">{pct}%</M>}
                   </XStack>
                   <View style={{ height: chartH }}>
                     {(() => {
@@ -479,6 +545,9 @@ export default function TodayScreen() {
                     <B color="$textTertiary" fontSize={10}>Week 1</B>
                     <B color="$textTertiary" fontSize={10}>Week {weeks.length}</B>
                   </XStack>
+                  {totalActual < 1 && (
+                    <B color="$textTertiary" fontSize={11} textAlign="center" marginTop={6}>Your progress will show here as you complete runs</B>
+                  )}
                 </YStack>
               );
             })()}
@@ -503,16 +572,17 @@ export default function TodayScreen() {
       )}
 
       {/* Taper Experience (last 21 days before race) */}
-      {daysUntilRace <= 21 && daysUntilRace > 0 && currentPhase === 'taper' && (
+      {daysUntilRace <= 21 && daysUntilRace >= 0 && currentPhase === 'taper' && (
         <YStack backgroundColor="$surface" borderRadius="$6" padding="$4" marginBottom="$4" borderLeftWidth={3}
           borderLeftColor={daysUntilRace <= 7 ? colors.orange : colors.cyan}>
           <H color={daysUntilRace <= 7 ? colors.orange : colors.cyan} fontSize={13} letterSpacing={1.5} textTransform="uppercase" marginBottom="$3">
-            {daysUntilRace <= 7 ? 'Race Week' : daysUntilRace <= 14 ? 'Taper — 2 Weeks Out' : 'Taper — 3 Weeks Out'}
+            {daysUntilRace === 0 ? 'Race Day' : daysUntilRace <= 7 ? 'Race Week' : daysUntilRace <= 14 ? 'Taper — 2 Weeks Out' : 'Taper — 3 Weeks Out'}
           </H>
 
           {/* Daily taper tip */}
           <B color="$color" fontSize={14} lineHeight={21} marginBottom="$3">
-            {daysUntilRace <= 1 ? "Tomorrow is race day. Trust your training. You're ready."
+            {daysUntilRace === 0 ? "Today is the day. Trust your training. You are ready for this."
+            : daysUntilRace <= 1 ? "Tomorrow is race day. Trust your training. You're ready."
             : daysUntilRace <= 3 ? "Don't try anything new — no new shoes, food, or gear on race day. Stick to what you've trained with."
             : daysUntilRace <= 5 ? "Volume is low this week and that's by design. Feeling restless is normal — it means you're rested."
             : daysUntilRace <= 7 ? "This week is about freshness, not fitness. Short easy runs, lots of sleep, and trust the process."
@@ -579,6 +649,58 @@ export default function TodayScreen() {
         </YStack>
       )}
 
+      {/* Race Day Card */}
+      {daysUntilRace === 0 && (
+        <YStack backgroundColor="$surface" borderRadius="$6" padding="$5" marginBottom="$4" borderWidth={1} borderColor={colors.cyanDim}>
+          {/* Hero */}
+          <YStack alignItems="center" marginBottom="$4">
+            <View width={64} height={64} borderRadius={32} backgroundColor={colors.cyanGhost} alignItems="center" justifyContent="center" marginBottom="$3">
+              <MaterialCommunityIcons name="trophy" size={34} color={colors.cyan} />
+            </View>
+            <H color="$color" fontSize={28} letterSpacing={1.5}>RACE DAY</H>
+            {userProfile?.race_name && <B color={colors.cyan} fontSize={15} fontWeight="600" marginTop={2}>{userProfile.race_name}</B>}
+            <B color="$textTertiary" fontSize={12} marginTop={2}>
+              {new Date(getToday() + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
+            </B>
+          </YStack>
+
+          {/* Pacing Strategy */}
+          {raceStrategy && (
+            <YStack paddingTop="$3" borderTopWidth={0.5} borderTopColor="$border" marginBottom="$4">
+              <H color={colors.cyan} fontSize={12} letterSpacing={1.5} textTransform="uppercase" marginBottom="$2">Your Pacing Strategy</H>
+              <B color="$textSecondary" fontSize={14} lineHeight={21}>{raceStrategy}</B>
+            </YStack>
+          )}
+
+          {/* Final Reminders */}
+          <YStack paddingTop="$3" borderTopWidth={0.5} borderTopColor="$border" marginBottom="$4">
+            <H color={colors.cyan} fontSize={12} letterSpacing={1.5} textTransform="uppercase" marginBottom="$3">Final Reminders</H>
+            {[
+              { icon: 'run-fast', tip: 'Start slow. The first 3 miles should feel embarrassingly easy.' },
+              { icon: 'water-outline', tip: 'Take water at EVERY aid station. Don\'t skip early ones.' },
+              { icon: 'food-apple-outline', tip: 'First gel at mile 5, then every 4-5 miles after.' },
+              { icon: 'heart-pulse', tip: `If HR goes above ${userProfile?.max_hr ? Math.round(userProfile.max_hr * 0.88) : 170} before mile 15, you're going too fast.` },
+              { icon: 'head-outline', tip: 'Miles 18-22 are where it gets hard. Break it into 1-mile chunks.' },
+            ].map(({ icon, tip }, i) => (
+              <XStack key={i} gap="$3" alignItems="flex-start" marginBottom="$2">
+                <View width={28} height={28} borderRadius={14} backgroundColor={colors.cyanGhost} alignItems="center" justifyContent="center">
+                  <MaterialCommunityIcons name={icon as any} size={15} color={colors.cyan} />
+                </View>
+                <B color="$textSecondary" fontSize={13} lineHeight={19} flex={1}>{tip}</B>
+              </XStack>
+            ))}
+          </YStack>
+
+          {/* Trust Your Training */}
+          <YStack paddingTop="$3" borderTopWidth={0.5} borderTopColor="$border" alignItems="center" paddingVertical="$4">
+            <H color={colors.cyan} fontSize={14} letterSpacing={1.5} textTransform="uppercase" marginBottom="$2">Trust Your Training</H>
+            <B color="$textSecondary" fontSize={14} lineHeight={20} textAlign="center">
+              You've put in {currentWeekNumber} weeks and {Math.round(weeks.reduce((s, w) => s + w.actual_volume, 0))} miles.{'\n'}You are ready for this.
+            </B>
+          </YStack>
+        </YStack>
+      )}
+
       {/* Briefing */}
       {!isRestDay && preWorkoutBriefing && (
         <YStack backgroundColor="$surface" borderRadius="$6" padding="$4" marginBottom="$4" borderLeftWidth={3} borderLeftColor="$accent">
@@ -590,19 +712,174 @@ export default function TodayScreen() {
         </YStack>
       )}
 
-      {/* Rest Day */}
+      {/* Rest Day — personalized coaching card */}
       {isRestDay && (
-        <YStack backgroundColor="$surface" borderRadius="$6" padding="$6" alignItems="center" marginBottom="$4">
-          <B fontSize={40} marginBottom="$3">😴</B>
-          <H color="$color" fontSize={28} letterSpacing={1} marginBottom="$1">Rest Day</H>
-          <B color="$textSecondary" fontSize={14} textAlign="center" lineHeight={20}>
-            Recovery is where the gains happen. Take it easy today.
-          </B>
+        <YStack backgroundColor="$surface" borderRadius="$6" padding="$5" marginBottom="$4">
+          {/* Header */}
+          <YStack alignItems="center" marginBottom="$3">
+            <View width={56} height={56} borderRadius={28} backgroundColor={colors.cyanGhost} alignItems="center" justifyContent="center" marginBottom="$2">
+              <MaterialCommunityIcons name="weather-night" size={30} color={colors.cyan} />
+            </View>
+            <H color="$color" fontSize={26} letterSpacing={1}>Rest Day</H>
+            <B color="$textTertiary" fontSize={13}>
+              {new Date(getToday() + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+            </B>
+          </YStack>
+
+          {/* WHY YOU'RE RESTING — AI generated */}
+          {restDayBriefing?.whyResting && (
+            <YStack paddingTop="$3" borderTopWidth={0.5} borderTopColor="$border">
+              <H color={colors.cyan} fontSize={12} letterSpacing={1.5} textTransform="uppercase" marginBottom="$2">
+                Why You're Resting
+              </H>
+              <B color="$textSecondary" fontSize={13} lineHeight={20}>
+                {restDayBriefing.whyResting}
+              </B>
+            </YStack>
+          )}
+
+          {/* RECOVERY PLAN — AI generated tips */}
+          {restDayBriefing?.tips && restDayBriefing.tips.length > 0 && (
+            <YStack marginTop="$4" paddingTop="$3" borderTopWidth={0.5} borderTopColor="$border">
+              <H color={colors.cyan} fontSize={12} letterSpacing={1.5} textTransform="uppercase" marginBottom="$3">
+                Today's Recovery Plan
+              </H>
+              <YStack gap="$3">
+                {restDayBriefing.tips.map((tip, i) => {
+                  const tipIconMap: Record<string, string> = {
+                    'Hydration': 'water-outline', 'Water': 'water-outline',
+                    'Nutrition': 'food-apple-outline', 'Food': 'food-apple-outline', 'Fuel': 'food-apple-outline',
+                    'Movement': 'yoga', 'Stretching': 'yoga', 'Mobility': 'yoga', 'Walk': 'walk',
+                    'Sleep': 'bed-outline', 'Rest': 'bed-outline',
+                  };
+                  const iconName = tipIconMap[tip.title] ?? 'checkbox-blank-circle-outline';
+                  return (
+                    <XStack key={i} gap="$3" alignItems="flex-start">
+                      <View width={32} height={32} borderRadius={16} backgroundColor={colors.cyanGhost} alignItems="center" justifyContent="center">
+                        <MaterialCommunityIcons name={iconName as any} size={18} color={colors.cyan} />
+                      </View>
+                      <YStack flex={1}>
+                        <B color="$color" fontSize={13} fontWeight="600">{tip.title}</B>
+                        <B color="$textSecondary" fontSize={12} lineHeight={18} marginTop={1}>{tip.detail}</B>
+                      </YStack>
+                    </XStack>
+                  );
+                })}
+              </YStack>
+            </YStack>
+          )}
+
+          {/* THIS WEEK SO FAR — mini timeline */}
+          {currentWeek && (() => {
+            const weekWorkouts = workouts
+              .filter((w: any) => w.week_number === currentWeek.week_number)
+              .sort((a: any, b: any) => a.scheduled_date.localeCompare(b.scheduled_date));
+            if (weekWorkouts.length === 0) return null;
+            const today = getToday();
+            const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+            return (
+              <YStack marginTop="$4" paddingTop="$3" borderTopWidth={0.5} borderTopColor="$border">
+                <H color={colors.cyan} fontSize={12} letterSpacing={1.5} textTransform="uppercase" marginBottom="$2">
+                  This Week
+                </H>
+                <YStack gap={4}>
+                  {weekWorkouts.filter((w: any) => w.workout_type !== 'rest' || w.scheduled_date === today).map((w: any) => {
+                    const isToday = w.scheduled_date === today;
+                    const isPast = w.scheduled_date < today;
+                    const dayName = DAYS[new Date(w.scheduled_date + 'T12:00:00').getDay()];
+                    // Softer color for skipped easy/recovery — red only for quality sessions
+                    const isQualitySkip = w.status === 'skipped' && ['threshold', 'tempo', 'interval', 'intervals', 'marathon_pace', 'long_run', 'long'].includes(w.workout_type);
+                    const skipColor = isQualitySkip ? colors.error : colors.textTertiary;
+                    const iconName = w.status === 'completed' ? 'check-circle'
+                      : w.status === 'skipped' ? (isQualitySkip ? 'close-circle' : 'minus-circle')
+                      : w.status === 'partial' ? 'circle-half-full'
+                      : isToday ? 'moon-waning-crescent'
+                      : 'chevron-right';
+                    const iconColor = w.status === 'completed' ? colors.success
+                      : w.status === 'skipped' ? skipColor
+                      : w.status === 'partial' ? colors.orange
+                      : isToday ? colors.cyan
+                      : colors.textTertiary;
+                    const textColor = w.status === 'completed' ? colors.success
+                      : w.status === 'skipped' ? skipColor
+                      : isToday ? colors.textPrimary
+                      : colors.textSecondary;
+                    return (
+                      <XStack key={w.id} alignItems="center" gap="$2">
+                        <View width={20} alignItems="center">
+                          <MaterialCommunityIcons name={iconName as any} size={14} color={iconColor} />
+                        </View>
+                        <B color={colors.textTertiary} fontSize={12} width={30}>{dayName}</B>
+                        <B color={textColor} fontSize={12} fontWeight={isToday ? '700' : '400'} flex={1}>
+                          {isToday && w.workout_type === 'rest' ? 'Rest' : w.title}
+                          {w.status === 'completed' && w.target_distance_miles ? ` ${w.target_distance_miles.toFixed(1)}mi` : ''}
+                          {!isPast && !isToday && w.target_distance_miles ? ` ${w.target_distance_miles.toFixed(1)}mi` : ''}
+                        </B>
+                      </XStack>
+                    );
+                  })}
+                </YStack>
+              </YStack>
+            );
+          })()}
+
+          {/* Cross-training: quick chips OR logged badge */}
+          {!isRaceWeek && (
+            <YStack marginTop="$4" paddingTop="$3" borderTopWidth={0.5} borderTopColor="$border">
+              {todayCrossTraining ? (
+                <XStack alignItems="center" justifyContent="space-between">
+                  <XStack alignItems="center" gap="$2">
+                    <View width={22} height={22} borderRadius={11} alignItems="center" justifyContent="center"
+                      backgroundColor={todayCrossTraining.impact === 'high' ? colors.orangeGhost : todayCrossTraining.impact === 'positive' ? colors.cyanGhost : colors.surfaceHover}>
+                      <MaterialCommunityIcons name="check" size={12}
+                        color={todayCrossTraining.impact === 'high' ? colors.orange : todayCrossTraining.impact === 'positive' ? colors.cyan : colors.textSecondary} />
+                    </View>
+                    <B fontSize={12} fontWeight="600"
+                      color={todayCrossTraining.impact === 'high' ? colors.orange : todayCrossTraining.impact === 'positive' ? colors.cyan : colors.textSecondary}>
+                      {CROSS_TRAINING_LABELS[todayCrossTraining.type]} logged
+                    </B>
+                  </XStack>
+                  <B color="$textTertiary" fontSize={11} onPress={() => deleteCrossTrainingEntry(todayCrossTraining.id)}>Remove</B>
+                </XStack>
+              ) : (
+                <YStack>
+                  <XStack alignItems="center" gap="$2" marginBottom="$2">
+                    <MaterialCommunityIcons name="dumbbell" size={13} color={colors.textTertiary} />
+                    <B color="$textTertiary" fontSize={12}>Cross-training today?</B>
+                  </XStack>
+                  <XStack gap="$2" flexWrap="wrap">
+                    {([
+                      { type: 'leg_day' as CrossTrainingType, label: 'Leg Day' },
+                      { type: 'upper_body' as CrossTrainingType, label: 'Upper Body' },
+                      { type: 'full_body' as CrossTrainingType, label: 'Gym' },
+                    ]).map(({ type, label }) => (
+                      <YStack key={type} backgroundColor={colors.surfaceHover}
+                        paddingHorizontal="$3" paddingVertical="$2" borderRadius={20}
+                        borderWidth={0.5} borderColor="$border"
+                        pressStyle={{ opacity: 0.7, backgroundColor: colors.border }}
+                        onPress={() => logCrossTraining(type)}>
+                        <B color="$textSecondary" fontSize={12} fontWeight="600">{label}</B>
+                      </YStack>
+                    ))}
+                    <YStack backgroundColor={colors.surfaceHover}
+                      paddingHorizontal="$3" paddingVertical="$2" borderRadius={20}
+                      borderWidth={0.5} borderColor="$border"
+                      pressStyle={{ opacity: 0.7, backgroundColor: colors.border }}
+                      onPress={() => setShowCTModal(true)}>
+                      <B color="$textTertiary" fontSize={12} fontWeight="600">More</B>
+                    </YStack>
+                  </XStack>
+                </YStack>
+              )}
+            </YStack>
+          )}
+
+          {/* Tomorrow preview */}
           {tomorrowWorkout && (
-            <YStack marginTop="$5" paddingTop="$4" borderTopWidth={1} borderTopColor="$border" width="100%">
-              <H color="$textTertiary" fontSize={13} textTransform="uppercase" letterSpacing={1.5} marginBottom="$1">Tomorrow</H>
-              <B color="$color" fontSize={16} fontWeight="600">{tomorrowWorkout.title}</B>
-              <M color="$textSecondary" fontSize={13} marginTop={2}>
+            <YStack marginTop="$4" paddingTop="$3" borderTopWidth={0.5} borderTopColor="$border">
+              <H color="$textTertiary" fontSize={12} textTransform="uppercase" letterSpacing={1.5} marginBottom="$1">Tomorrow</H>
+              <B color="$color" fontSize={15} fontWeight="600">{tomorrowWorkout.title}</B>
+              <M color="$textSecondary" fontSize={12} marginTop={2}>
                 {WORKOUT_TYPE_LABELS[tomorrowWorkout.workout_type] ?? tomorrowWorkout.workout_type}
                 {tomorrowWorkout.target_distance_miles ? ` · ${tomorrowWorkout.target_distance_miles.toFixed(1)} mi` : ''}
               </M>
@@ -613,7 +890,10 @@ export default function TodayScreen() {
 
       {/* Today's Workout */}
       {!isRestDay && todaysWorkout && (
-        <YStack backgroundColor="$surface" borderRadius="$6" padding="$5" marginBottom="$4" borderWidth={1} borderColor="$border">
+        <YStack backgroundColor="$surface" borderRadius="$6" padding="$5" marginBottom="$4"
+          borderWidth={1} borderColor={todaysWorkout.status === 'skipped' ? colors.orangeDim : todaysWorkout.status === 'partial' ? colors.orangeDim : '$border'}
+          borderLeftWidth={todaysWorkout.status === 'skipped' || todaysWorkout.status === 'partial' ? 3 : 1}
+          borderLeftColor={todaysWorkout.status === 'skipped' ? colors.orange : todaysWorkout.status === 'partial' ? colors.orange : '$border'}>
           <B color="$textTertiary" fontSize={12} fontWeight="600" textTransform="uppercase" letterSpacing={0.5} marginBottom="$1">
             {formatDateLong(todaysWorkout.scheduled_date)}
           </B>
@@ -703,7 +983,44 @@ export default function TodayScreen() {
           {/* Status badges */}
           {todaysWorkout.status === 'completed' && (
             <YStack backgroundColor="$successMuted" paddingVertical="$3" borderRadius="$4" alignItems="center" marginTop="$1">
-              <B color="$color" fontSize={14} fontWeight="600">Completed</B>
+              <XStack alignItems="center" gap="$2">
+                <MaterialCommunityIcons name="check-circle" size={16} color={colors.success} />
+                <B color="$color" fontSize={14} fontWeight="600">Completed</B>
+              </XStack>
+            </YStack>
+          )}
+          {todaysWorkout.status === 'partial' && (
+            <YStack marginTop="$1">
+              <XStack alignItems="center" gap="$2" marginBottom="$2">
+                <MaterialCommunityIcons name="circle-half-full" size={16} color={colors.orange} />
+                <H color={colors.orange} fontSize={12} letterSpacing={1} textTransform="uppercase">Partial Completion</H>
+              </XStack>
+              {todaysMetric && todaysWorkout.target_distance_miles && (
+                <YStack marginBottom="$2">
+                  <XStack justifyContent="space-between" marginBottom={4}>
+                    <M color="$color" fontSize={14} fontWeight="700">
+                      {todaysMetric.distance_miles.toFixed(1)} of {todaysWorkout.target_distance_miles.toFixed(1)} mi
+                    </M>
+                    <M color={colors.orange} fontSize={14} fontWeight="700">
+                      {Math.round((todaysMetric.distance_miles / todaysWorkout.target_distance_miles) * 100)}%
+                    </M>
+                  </XStack>
+                  <View backgroundColor="$border" borderRadius={2} height={4}>
+                    <View backgroundColor={colors.orange} borderRadius={2} height={4}
+                      width={`${Math.min(Math.round((todaysMetric.distance_miles / todaysWorkout.target_distance_miles) * 100), 100)}%` as any} />
+                  </View>
+                </YStack>
+              )}
+              <YStack backgroundColor={colors.surfaceHover} borderRadius={12} padding="$3">
+                <XStack alignItems="flex-start" gap="$2">
+                  <MaterialCommunityIcons name="robot-outline" size={16} color={colors.cyan} style={{ marginTop: 2 }} />
+                  <B color="$textSecondary" fontSize={13} lineHeight={19} flex={1}>
+                    {todaysMetric
+                      ? `You still covered ${todaysMetric.distance_miles.toFixed(1)} miles — that's solid work. Falling short on a ${todaysWorkout.workout_type === 'long_run' || todaysWorkout.workout_type === 'long' ? 'long run often comes down to fueling or pacing' : 'hard effort happens — listen to your body'}.`
+                      : 'Partial completion is still progress. Listen to your body and focus on recovery.'}
+                  </B>
+                </XStack>
+              </YStack>
             </YStack>
           )}
 
@@ -749,11 +1066,76 @@ export default function TodayScreen() {
               )}
             </YStack>
           )}
-          {todaysWorkout.status === 'skipped' && (
-            <YStack backgroundColor="$dangerMuted" paddingVertical="$3" borderRadius="$4" alignItems="center" marginTop="$1">
-              <B color="$color" fontSize={14} fontWeight="600">Skipped</B>
-            </YStack>
-          )}
+          {todaysWorkout.status === 'skipped' && (() => {
+            // Skip coaching card
+            const weekW = workouts.filter((w: any) => w.week_number === todaysWorkout.week_number);
+            const weekVolActual = currentWeek?.actual_volume ?? 0;
+            const weekVolTarget = currentWeek?.target_volume ?? 0;
+            const workoutsLeft = weekW.filter((w: any) => w.status === 'upcoming' && w.workout_type !== 'rest').length;
+            const skipsThisWeek = weekW.filter((w: any) => w.status === 'skipped').length;
+            const volPct = weekVolTarget > 0 ? Math.round((weekVolActual / weekVolTarget) * 100) : 0;
+            const tomorrowW = (() => {
+              const today = getToday();
+              const tmrw = new Date(today + 'T00:00:00');
+              tmrw.setDate(tmrw.getDate() + 1);
+              const s = `${tmrw.getFullYear()}-${String(tmrw.getMonth() + 1).padStart(2, '0')}-${String(tmrw.getDate()).padStart(2, '0')}`;
+              return workouts.find((w: any) => w.scheduled_date === s);
+            })();
+
+            return (
+              <YStack marginTop="$3">
+                {/* Skip header */}
+                <XStack alignItems="center" gap="$2" marginBottom="$3">
+                  <MaterialCommunityIcons name="close-circle" size={16} color={colors.orange} />
+                  <H color={colors.orange} fontSize={12} letterSpacing={1} textTransform="uppercase">Workout Skipped</H>
+                </XStack>
+                <B color="$textTertiary" fontSize={13} textDecorationLine="line-through" marginBottom="$3">
+                  {todaysWorkout.title} · {todaysWorkout.target_distance_miles?.toFixed(1) ?? '?'} mi
+                </B>
+
+                {/* Coach encouragement */}
+                <YStack backgroundColor={colors.surfaceHover} borderRadius={12} padding="$3" marginBottom="$3">
+                  <XStack alignItems="flex-start" gap="$2">
+                    <MaterialCommunityIcons name="robot-outline" size={16} color={colors.cyan} style={{ marginTop: 2 }} />
+                    <B color="$textSecondary" fontSize={13} lineHeight={19} flex={1}>
+                      {skipsThisWeek >= 2
+                        ? `You've skipped ${skipsThisWeek} workouts this week. Consider talking to your coach about adjusting the plan.`
+                        : 'One missed day won\'t derail your training. Consistency over perfection — focus on tomorrow.'}
+                    </B>
+                  </XStack>
+                </YStack>
+
+                {/* Volume progress */}
+                <YStack marginBottom="$3">
+                  <XStack justifyContent="space-between" marginBottom={4}>
+                    <B color="$textTertiary" fontSize={11}>This week's volume</B>
+                    <M color="$textSecondary" fontSize={11} fontWeight="600">
+                      {weekVolActual.toFixed(1)} of {weekVolTarget.toFixed(1)} mi ({volPct}%)
+                    </M>
+                  </XStack>
+                  <View backgroundColor="$border" borderRadius={2} height={4}>
+                    <View backgroundColor={volPct >= 80 ? colors.cyan : volPct >= 50 ? colors.orange : colors.textTertiary}
+                      borderRadius={2} height={4} width={`${Math.min(volPct, 100)}%` as any} />
+                  </View>
+                  {workoutsLeft > 0 && (
+                    <B color="$textTertiary" fontSize={11} marginTop={4}>{workoutsLeft} workout{workoutsLeft > 1 ? 's' : ''} left this week</B>
+                  )}
+                </YStack>
+
+                {/* Tomorrow preview */}
+                {tomorrowW && tomorrowW.workout_type !== 'rest' && (
+                  <YStack paddingTop="$3" borderTopWidth={0.5} borderTopColor="$border">
+                    <H color="$textTertiary" fontSize={11} textTransform="uppercase" letterSpacing={1.5} marginBottom="$1">Tomorrow</H>
+                    <B color="$color" fontSize={14} fontWeight="600">{tomorrowW.title}</B>
+                    <M color="$textSecondary" fontSize={12} marginTop={2}>
+                      {WORKOUT_TYPE_LABELS[tomorrowW.workout_type] ?? tomorrowW.workout_type}
+                      {tomorrowW.target_distance_miles ? ` · ${tomorrowW.target_distance_miles.toFixed(1)} mi` : ''}
+                    </M>
+                  </YStack>
+                )}
+              </YStack>
+            );
+          })()}
         </YStack>
       )}
 
@@ -767,39 +1149,37 @@ export default function TodayScreen() {
           <B color="$textSecondary" fontSize={14} lineHeight={21}>{postRunAnalysis}</B>
         </YStack>
       )}
-      {/* Cross-Training (hidden in race week) */}
-      {isRaceWeek ? null : todayCrossTraining ? (
-        <XStack backgroundColor="$surface" borderRadius="$6" padding="$3" marginBottom="$4" alignItems="center"
-          pressStyle={{ opacity: 0.8 }} onPress={() => {
-            const { Alert } = require('react-native');
-            Alert.alert('Cross-Training', `${CROSS_TRAINING_LABELS[todayCrossTraining.type]}${todayCrossTraining.notes ? `\n${todayCrossTraining.notes}` : ''}`, [
-              { text: 'Delete', style: 'destructive', onPress: () => deleteCrossTrainingEntry(todayCrossTraining.id) },
-              { text: 'OK' },
-            ]);
-          }}>
-          <View width={32} height={32} borderRadius={16} alignItems="center" justifyContent="center" marginRight="$3"
-            backgroundColor={todayCrossTraining.impact === 'high' ? colors.error + '22' : todayCrossTraining.impact === 'moderate' ? colors.orange + '22' : todayCrossTraining.impact === 'positive' ? colors.cyan + '22' : colors.textTertiary + '22'}>
-            <MaterialCommunityIcons name="dumbbell" size={16}
-              color={todayCrossTraining.impact === 'high' ? colors.error : todayCrossTraining.impact === 'moderate' ? colors.orange : todayCrossTraining.impact === 'positive' ? colors.cyan : colors.textTertiary} />
-          </View>
-          <YStack flex={1}>
-            <B color="$color" fontSize={13} fontWeight="600">{CROSS_TRAINING_LABELS[todayCrossTraining.type]}</B>
-            <B color="$textTertiary" fontSize={11}>{todayCrossTraining.impact} impact · tap to manage</B>
-          </YStack>
-        </XStack>
-      ) : (
-        <XStack backgroundColor="$surface" borderRadius="$6" padding="$3" marginBottom="$4" alignItems="center"
-          pressStyle={{ opacity: 0.8 }} onPress={() => setShowCTModal(true)}>
-          <View width={32} height={32} borderRadius={16} backgroundColor="$surfaceLight" alignItems="center" justifyContent="center" marginRight="$3">
-            <MaterialCommunityIcons name="dumbbell" size={16} color={colors.textSecondary} />
-          </View>
-          <B color="$textSecondary" fontSize={13} fontWeight="500">Log Cross-Training</B>
-        </XStack>
+      {/* Cross-Training — on run days: small outlined pill button */}
+      {!isRaceWeek && !isRestDay && (
+        todayCrossTraining ? (
+          <XStack alignItems="center" justifyContent="center" marginBottom="$4" gap="$2">
+            <MaterialCommunityIcons name="check-circle" size={14}
+              color={todayCrossTraining.impact === 'high' ? colors.orange : todayCrossTraining.impact === 'positive' ? colors.cyan : colors.textSecondary} />
+            <B fontSize={12} fontWeight="600"
+              color={todayCrossTraining.impact === 'high' ? colors.orange : todayCrossTraining.impact === 'positive' ? colors.cyan : colors.textSecondary}>
+              {CROSS_TRAINING_LABELS[todayCrossTraining.type]} logged
+            </B>
+            <B color="$textTertiary" fontSize={11} marginLeft="$1"
+              onPress={() => deleteCrossTrainingEntry(todayCrossTraining.id)}>
+              ✕
+            </B>
+          </XStack>
+        ) : (
+          <XStack alignSelf="center" marginBottom="$4"
+            borderWidth={1} borderColor="$border" borderRadius={20}
+            paddingHorizontal="$4" paddingVertical="$2" gap="$2" alignItems="center"
+            pressStyle={{ opacity: 0.7, borderColor: colors.textTertiary }}
+            onPress={() => setShowCTModal(true)}>
+            <MaterialCommunityIcons name="dumbbell" size={14} color={colors.textTertiary} />
+            <B color="$textTertiary" fontSize={12} fontWeight="600">Log Cross-Training</B>
+          </XStack>
+        )
       )}
 
-      {/* Cross-Training Modal */}
+      {/* Cross-Training Modal — 2-column impact-colored grid */}
       {showCTModal && (
         <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end', zIndex: 100 }}>
+          <Pressable style={{ flex: 1 }} onPress={() => { setShowCTModal(false); setCTNotes(''); }} />
           <View style={{ backgroundColor: colors.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, paddingBottom: 40 }}>
             {/* Drag handle */}
             <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginBottom: 16 }} />
@@ -808,32 +1188,66 @@ export default function TodayScreen() {
               <B color="$textTertiary" fontSize={18} onPress={() => { setShowCTModal(false); setCTNotes(''); }}>✕</B>
             </XStack>
 
-            {/* Options grid */}
-            {([
-              { type: 'leg_day' as CrossTrainingType, icon: 'weight-lifter', color: colors.error },
-              { type: 'upper_body' as CrossTrainingType, icon: 'arm-flex', color: colors.textTertiary },
-              { type: 'full_body' as CrossTrainingType, icon: 'dumbbell', color: colors.orange },
-              { type: 'cycling' as CrossTrainingType, icon: 'bicycle', color: colors.orange },
-              { type: 'swimming' as CrossTrainingType, icon: 'swim', color: colors.orange },
-              { type: 'yoga_mobility' as CrossTrainingType, icon: 'meditation', color: colors.cyan },
-              { type: 'other' as CrossTrainingType, icon: 'pencil', color: colors.textTertiary },
-            ] as const).map(({ type, icon, color }) => (
-              <XStack key={type} backgroundColor={colors.surfaceHover} borderRadius={12} padding="$3" marginBottom="$2" alignItems="center"
-                pressStyle={{ opacity: 0.7, backgroundColor: colors.border }}
-                onPress={() => {
-                  logCrossTraining(type, ctNotes);
-                  setShowCTModal(false);
-                  setCTNotes('');
-                }}>
-                <View width={36} height={36} borderRadius={18} backgroundColor={color + '22'} alignItems="center" justifyContent="center" marginRight="$3">
-                  <MaterialCommunityIcons name={icon as any} size={18} color={color} />
-                </View>
-                <YStack flex={1}>
-                  <B color="$color" fontSize={14} fontWeight="600">{CROSS_TRAINING_LABELS[type]}</B>
-                  <B color="$textTertiary" fontSize={11}>{CROSS_TRAINING_IMPACT[type]} impact</B>
-                </YStack>
+            {/* 2-column grid */}
+            <XStack flexWrap="wrap" gap={10}>
+              {([
+                { type: 'leg_day' as CrossTrainingType, icon: 'weight-lifter', impact: 'high' as const },
+                { type: 'upper_body' as CrossTrainingType, icon: 'arm-flex', impact: 'low' as const },
+                { type: 'full_body' as CrossTrainingType, icon: 'dumbbell', impact: 'moderate' as const },
+                { type: 'cycling' as CrossTrainingType, icon: 'bicycle', impact: 'moderate' as const },
+                { type: 'swimming' as CrossTrainingType, icon: 'swim', impact: 'moderate' as const },
+                { type: 'yoga_mobility' as CrossTrainingType, icon: 'meditation', impact: 'positive' as const },
+                { type: 'other' as CrossTrainingType, icon: 'pencil', impact: 'low' as const },
+              ]).map(({ type, icon, impact }) => {
+                const impactColor = impact === 'high' ? colors.orange
+                  : impact === 'positive' ? colors.cyan
+                  : impact === 'moderate' ? colors.orangeDim
+                  : colors.textTertiary;
+                const bgColor = impact === 'high' ? colors.orangeGhost
+                  : impact === 'positive' ? colors.cyanGhost
+                  : colors.surfaceHover;
+                const borderColor = impact === 'high' ? colors.orangeDim
+                  : impact === 'positive' ? colors.cyanDim
+                  : impact === 'moderate' ? colors.orangeGhost
+                  : colors.border;
+                return (
+                  <YStack key={type}
+                    width="48%"
+                    backgroundColor={bgColor}
+                    borderRadius={14} padding="$3"
+                    borderWidth={1} borderColor={borderColor}
+                    pressStyle={{ opacity: 0.7, scale: 0.97 }}
+                    onPress={() => {
+                      logCrossTraining(type, ctNotes || undefined);
+                      setShowCTModal(false);
+                      setCTNotes('');
+                    }}>
+                    <View width={32} height={32} borderRadius={16}
+                      backgroundColor={impactColor + '22'}
+                      alignItems="center" justifyContent="center" marginBottom="$2">
+                      <MaterialCommunityIcons name={icon as any} size={16} color={impactColor} />
+                    </View>
+                    <B color="$color" fontSize={13} fontWeight="600">{CROSS_TRAINING_LABELS[type]}</B>
+                    <B color={impactColor} fontSize={11} marginTop={2}>{impact} impact</B>
+                  </YStack>
+                );
+              })}
+            </XStack>
+
+            {/* Notes input */}
+            <YStack marginTop="$4">
+              <B color="$textTertiary" fontSize={11} marginBottom="$1">Notes (optional)</B>
+              <XStack backgroundColor={colors.surfaceHover} borderRadius={10} paddingHorizontal="$3" paddingVertical="$2"
+                borderWidth={1} borderColor={ctNotes ? colors.cyanDim : colors.border}>
+                <TextInput
+                  value={ctNotes}
+                  onChangeText={setCTNotes}
+                  placeholder='e.g., "heavy squats, 5x5"'
+                  placeholderTextColor={colors.textTertiary}
+                  style={{ flex: 1, color: colors.textPrimary, fontFamily: 'Exo2_400Regular', fontSize: 13 }}
+                />
               </XStack>
-            ))}
+            </YStack>
           </View>
         </View>
       )}

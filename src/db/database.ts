@@ -120,6 +120,17 @@ export function initializeDatabase(): void {
     { table: 'user_profile', column: 'does_strength_training', type: 'INTEGER DEFAULT 0' },
     { table: 'user_profile', column: 'leg_day_weekday', type: 'INTEGER' },
     { table: 'ai_cache', column: 'model_used', type: 'TEXT' },
+    { table: 'user_profile', column: 'avatar_base64', type: 'TEXT' },
+    { table: 'strava_activity_detail', column: 'location_city', type: 'TEXT' },
+    { table: 'strava_activity_detail', column: 'location_state', type: 'TEXT' },
+    { table: 'strava_activity_detail', column: 'location_country', type: 'TEXT' },
+    { table: 'strava_activity_detail', column: 'start_lat', type: 'REAL' },
+    { table: 'strava_activity_detail', column: 'start_lng', type: 'REAL' },
+    { table: 'strava_activity_detail', column: 'weather_temp_f', type: 'REAL' },
+    { table: 'strava_activity_detail', column: 'weather_humidity', type: 'INTEGER' },
+    { table: 'strava_activity_detail', column: 'weather_wind_mph', type: 'REAL' },
+    { table: 'strava_activity_detail', column: 'weather_condition', type: 'TEXT' },
+    { table: 'strava_activity_detail', column: 'weather_fetched', type: 'INTEGER DEFAULT 0' },
   ];
   for (const { table, column, type } of newColumns) {
     try { database.execSync(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`); } catch {}
@@ -786,6 +797,49 @@ export function recalculateWeeklyVolumes(): void {
       [actualVolume, week.id]
     );
   }
+}
+
+// ─── Training Load Cache ─────────────────────────────────────
+
+export function getPMCCache(dataHash: string): string | null {
+  try {
+    const db = getDatabase();
+    const row = db.getFirstSync<{ pmc_json: string }>(
+      'SELECT pmc_json FROM training_load_cache WHERE id = 1 AND data_hash = ?',
+      dataHash,
+    );
+    return row?.pmc_json ?? null;
+  } catch { return null; }
+}
+
+export function setPMCCache(pmcJson: string, dataHash: string): void {
+  try {
+    const db = getDatabase();
+    db.runSync(
+      `INSERT OR REPLACE INTO training_load_cache (id, pmc_json, data_hash, calculated_at)
+       VALUES (1, ?, ?, datetime('now'))`,
+      pmcJson,
+      dataHash,
+    );
+  } catch (e) { console.warn('[DB] PMC cache write failed:', e); }
+}
+
+export function getUpcomingWorkouts(planId: string, fromDate: string): import('../types').Workout[] {
+  const db = getDatabase();
+  return db.getAllSync<import('../types').Workout>(
+    `SELECT * FROM workout WHERE plan_id = ? AND status = 'upcoming' AND scheduled_date >= ? ORDER BY scheduled_date`,
+    planId,
+    fromDate,
+  );
+}
+
+export function getPlanStartDate(planId: string): string | null {
+  const db = getDatabase();
+  const row = db.getFirstSync<{ d: string }>(
+    'SELECT MIN(scheduled_date) as d FROM workout WHERE plan_id = ? AND week_number = 1',
+    planId,
+  );
+  return row?.d ?? null;
 }
 
 // ─── Utilities ──────────────────────────────────────────────

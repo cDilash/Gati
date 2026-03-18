@@ -157,6 +157,23 @@ function buildReviewMessage(
   parts.push(`Pace zones: E ${formatPaceRange(paceZones.E)}, M ${formatPaceRange(paceZones.M)}, T ${formatPaceRange(paceZones.T)}`);
   parts.push('');
 
+  // PMC training load context
+  try {
+    const store = require('../store').useAppStore;
+    const pmcData = store.getState().pmcData;
+    if (pmcData && pmcData.totalDays >= 7) {
+      parts.push('TRAINING LOAD (PMC):');
+      parts.push(`  Fitness (CTL): ${pmcData.currentCTL.toFixed(1)}, Fatigue (ATL): ${pmcData.currentATL.toFixed(1)}, Form (TSB): ${pmcData.currentTSB.toFixed(1)}`);
+      const acwrVal = pmcData.currentCTL > 0 ? pmcData.currentATL / pmcData.currentCTL : 0;
+      const acwrStr = acwrVal > 0 ? acwrVal.toFixed(2) : 'N/A';
+      parts.push(`  ACWR: ${acwrStr}${acwrVal > 1.5 ? ' ⚠️ ELEVATED — injury risk' : acwrVal > 1.3 ? ' (approaching limit)' : ' (safe range)'}`);
+      if (pmcData.raceDayTSB != null) {
+        parts.push(`  Projected race day form: ${pmcData.raceDayTSB.toFixed(1)}`);
+      }
+      parts.push('');
+    }
+  } catch {}
+
   if (upcomingWeek) {
     parts.push(`NEXT WEEK (${upcomingWeek.week_number}): ${upcomingWeek.phase} phase, ${upcomingWeek.target_volume}mi target${upcomingWeek.is_cutback ? ' (cutback)' : ''}`);
     const keyWorkouts = upcomingWorkouts

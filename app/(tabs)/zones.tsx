@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { Alert, Pressable, LayoutChangeEvent, PanResponder, GestureResponderEvent } from 'react-native';
 import { ScrollView, YStack, XStack, Text, View, Spinner } from 'tamagui';
 import Svg, { Path, Circle, Line, Defs, LinearGradient, Stop, Rect as SvgRect } from 'react-native-svg';
@@ -15,6 +15,8 @@ import { colors, semantic, zoneColors, sleepStageColors } from '../../src/theme/
 import { calculateInjuryRisk } from '../../src/health/injuryRisk';
 import { GradientText } from '../../src/theme/GradientText';
 import { GradientBorder } from '../../src/theme/GradientBorder';
+import { PMCChart } from '../../src/components/PMCChart';
+import { PMCSummary, generatePMCInsight } from '../../src/components/PMCSummary';
 
 const ZONE_NAMES: PaceZoneName[] = ['E', 'M', 'T', 'I', 'R'];
 const ZONE_FULL_NAMES: Record<PaceZoneName, string> = { E: 'Easy', M: 'Marathon', T: 'Threshold', I: 'Interval', R: 'Repetition' };
@@ -82,13 +84,21 @@ function RecoveryHero({ recovery, snapshot }: { recovery: RecoveryStatus | null;
   const syncHealth = useAppStore(s => s.syncHealth);
   const [connecting, setConnecting] = useState(false);
 
+  // Check if HealthKit is available on this device
+  let hkAvailable = false;
+  try {
+    const { isHealthKitAvailable } = require('../../src/health/availability');
+    hkAvailable = isHealthKitAvailable();
+  } catch {}
+
+  // Determine if HealthKit has been connected before (snapshot exists from a previous sync)
+  const hasBeenConnected = !!snapshot || (hkAvailable && recovery != null);
+
   if (!recovery || recovery.level === 'unknown') {
-    // No HealthKit data — show connect prompt
     const handleConnect = async () => {
       setConnecting(true);
       try {
-        const { isHealthKitAvailable } = require('../../src/health/availability');
-        if (!isHealthKitAvailable()) {
+        if (!hkAvailable) {
           Alert.alert('Not Available', 'Apple Health is not available on this device.');
           setConnecting(false);
           return;
@@ -96,7 +106,7 @@ function RecoveryHero({ recovery, snapshot }: { recovery: RecoveryStatus | null;
         const { requestHealthKitPermissions } = require('../../src/health/permissions');
         const granted = await requestHealthKitPermissions();
         if (granted) {
-          await syncHealth();
+          await syncHealth(true); // force refresh — bypass 2-hour cache
         } else {
           Alert.alert('Denied', 'Enable in Settings → Privacy → Health.');
         }
@@ -106,6 +116,26 @@ function RecoveryHero({ recovery, snapshot }: { recovery: RecoveryStatus | null;
       setConnecting(false);
     };
 
+    if (hasBeenConnected) {
+      // HealthKit is connected but we don't have enough signals for a score
+      return (
+        <YStack backgroundColor="$surface" borderRadius="$6" padding="$6" alignItems="center">
+          <MaterialCommunityIcons name="heart-pulse" size={40} color={colors.textTertiary} />
+          <H color="$color" fontSize={20} letterSpacing={1} marginTop="$3">Recovery Data</H>
+          <B color="$textSecondary" fontSize={14} textAlign="center" lineHeight={20} marginTop="$2" marginBottom="$4">
+            {recovery?.signalCount === 1
+              ? 'Only 1 recovery signal available. Need at least 2 of 3 (resting HR, HRV, sleep) for a score. Wear your watch overnight.'
+              : 'Waiting for recovery data. Wear your Apple Watch overnight to collect resting HR, HRV, and sleep.'}
+          </B>
+          <YStack backgroundColor={colors.surfaceHover} borderRadius="$5" paddingHorizontal="$8" paddingVertical="$3"
+            pressStyle={{ opacity: 0.8 }} onPress={handleConnect}>
+            {connecting ? <Spinner size="small" color="white" /> : <B color={colors.cyan} fontSize={14} fontWeight="700">Refresh Health Data</B>}
+          </YStack>
+        </YStack>
+      );
+    }
+
+    // Never connected — show connect prompt
     return (
       <YStack backgroundColor="$surface" borderRadius="$6" padding="$6" alignItems="center">
         <MaterialCommunityIcons name="heart-pulse" size={40} color={colors.textTertiary} />
@@ -132,7 +162,7 @@ function RecoveryHero({ recovery, snapshot }: { recovery: RecoveryStatus | null;
       {/* Score Circle */}
       <View width={100} height={100} borderRadius={50} borderWidth={4} borderColor={color}
         backgroundColor={color + '15'} alignItems="center" justifyContent="center">
-        <M color={color} fontSize={36} fontWeight="800">{recovery.score}</M>
+        <GradientText text={String(recovery.score)} style={{ fontSize: 36, fontWeight: '800' }} />
       </View>
       <H color={color} fontSize={22} letterSpacing={1.5} marginTop="$3" textTransform="uppercase">{label}</H>
       <B color="$textSecondary" fontSize={13} marginTop="$1">Based on {recovery.signalCount}/3 signals</B>
@@ -272,8 +302,8 @@ function RestingHRCard({ signal, trendData }: {
               <Svg width={width} height={graphH}>
                 <Defs>
                   <LinearGradient id="rhrFill" x1="0" y1="0" x2="0" y2="1">
-                    <Stop offset="0" stopColor={statusColor} stopOpacity="0.25" />
-                    <Stop offset="1" stopColor={statusColor} stopOpacity="0.02" />
+                    <Stop offset="0" stopColor={colors.cyan} stopOpacity="0.2" />
+                    <Stop offset="1" stopColor={colors.cyan} stopOpacity="0.02" />
                   </LinearGradient>
                   <LinearGradient id="rhrDanger" x1="0" y1="0" x2="0" y2="1">
                     <Stop offset="0" stopColor={colors.error} stopOpacity="0.12" />
@@ -299,13 +329,13 @@ function RestingHRCard({ signal, trendData }: {
                     stroke={colors.textPrimary} strokeWidth={1} strokeOpacity={0.4} />
                 )}
 
-                {/* Main line */}
-                <Path d={buildSmoothPath(points)} fill="none" stroke={statusColor} strokeWidth={2} />
+                {/* Main line — cyan base, dots show deviations */}
+                <Path d={buildSmoothPath(points)} fill="none" stroke={colors.cyan} strokeWidth={2} />
 
-                {/* Dots */}
+                {/* Dots — colored by value vs baseline */}
                 {points.map((p, i) => {
                   const v = data[i].value;
-                  const dotColor = v >= dangerThreshold ? colors.error : v > baseline + 2 ? colors.orange : statusColor;
+                  const dotColor = v >= dangerThreshold ? colors.error : v > baseline + 2 ? colors.orange : colors.cyan;
                   const isActive = activeIdx === i;
                   const isLast = i === points.length - 1 && activeIdx === null;
                   const r = isActive ? 7 : isLast ? 4 : 2.5;
@@ -579,8 +609,8 @@ function SleepCard({ signal, sleepTrend }: {
                 <Svg width={sleepGraphW} height={sGraphH}>
                   <Defs>
                     <LinearGradient id="sleepFill" x1="0" y1="0" x2="0" y2="1">
-                      <Stop offset="0" stopColor={statusColor} stopOpacity="0.2" />
-                      <Stop offset="1" stopColor={statusColor} stopOpacity="0.02" />
+                      <Stop offset="0" stopColor={colors.cyan} stopOpacity="0.2" />
+                      <Stop offset="1" stopColor={colors.cyan} stopOpacity="0.02" />
                     </LinearGradient>
                   </Defs>
 
@@ -596,7 +626,7 @@ function SleepCard({ signal, sleepTrend }: {
 
                   {/* Fill + line */}
                   <Path d={buildFillPath(sleepPoints, sPadT + sChartH)} fill="url(#sleepFill)" />
-                  <Path d={buildSmoothPath(sleepPoints)} fill="none" stroke={statusColor} strokeWidth={2} />
+                  <Path d={buildSmoothPath(sleepPoints)} fill="none" stroke={colors.cyan} strokeWidth={2} />
 
                   {/* Dots */}
                   {sleepPoints.map((p, i) => {
@@ -691,7 +721,7 @@ function HRZoneRow({ label, name, min, max, index }: { label: string; name: stri
         <B color="$color" fontSize={14} fontWeight="600">{label}</B>
         <B color="$textSecondary" fontSize={12}>{name}</B>
       </YStack>
-      <M color={colors.orange} fontSize={14} fontWeight="600">{min} - {max} bpm</M>
+      <M color={hrColors[index]} fontSize={14} fontWeight="600">{min} - {max} bpm</M>
     </XStack>
   );
 }
@@ -741,6 +771,8 @@ export default function RecoveryScreen() {
   const todaysWorkout = useAppStore(s => s.todaysWorkout);
   const weeks = useAppStore(s => s.weeks);
   const workouts = useAppStore(s => s.workouts);
+  const pmcData = useAppStore(s => s.pmcData);
+  const [pmcInsight, setPmcInsight] = useState<string | null>(null);
 
   if (!userProfile || !paceZones) {
     return (
@@ -752,6 +784,13 @@ export default function RecoveryScreen() {
       </YStack>
     );
   }
+
+  // Fetch PMC insight (fire-and-forget, cached weekly)
+  const currentWeekNum = useAppStore(s => s.currentWeekNumber);
+  useEffect(() => {
+    if (!pmcData || pmcData.totalDays < 7) return;
+    generatePMCInsight(pmcData, currentWeekNum).then(setPmcInsight).catch(() => {});
+  }, [pmcData?.currentCTL, currentWeekNum]);
 
   const vdot = userProfile.vdot_score;
   const hasHR = userProfile.max_hr != null && userProfile.rest_hr != null;
@@ -879,22 +918,34 @@ export default function RecoveryScreen() {
               {/* 7-day steps bar chart */}
               {healthSnapshot.stepsTrend && healthSnapshot.stepsTrend.length >= 3 && (
                 <YStack marginTop="$3" paddingTop="$3" borderTopWidth={0.5} borderTopColor={colors.border}>
-                  <XStack height={60} alignItems="flex-end" gap={4}>
+                  <View height={60}>
+                    {/* 8K target reference line */}
                     {(() => {
                       const trend = healthSnapshot.stepsTrend;
-                      const maxSteps = Math.max(...trend.map(d => d.steps), 1);
-                      return trend.map((d, i) => {
-                        const height = Math.max(4, (d.steps / maxSteps) * 52);
-                        const isToday = i === trend.length - 1;
-                        return (
-                          <YStack key={i} flex={1} alignItems="center">
-                            <View width="100%" height={height} borderRadius={3}
-                              backgroundColor={isToday ? colors.cyan : colors.cyan + '55'} />
-                          </YStack>
-                        );
-                      });
+                      const maxSteps = Math.max(...trend.map(d => d.steps), 8000);
+                      const targetY = 60 - (8000 / maxSteps) * 52;
+                      return (
+                        <View style={{ position: 'absolute', top: targetY, left: 0, right: 0, height: 1, borderStyle: 'dashed', borderTopWidth: 1, borderTopColor: colors.textTertiary, opacity: 0.3 }} />
+                      );
                     })()}
-                  </XStack>
+                    <XStack height={60} alignItems="flex-end" gap={4}>
+                      {(() => {
+                        const trend = healthSnapshot.stepsTrend;
+                        const maxSteps = Math.max(...trend.map(d => d.steps), 8000);
+                        return trend.map((d, i) => {
+                          const height = Math.max(4, (d.steps / maxSteps) * 52);
+                          const isToday = i === trend.length - 1;
+                          return (
+                            <YStack key={i} flex={1} alignItems="center">
+                              <View width="100%" height={height} borderRadius={3}
+                                backgroundColor={isToday ? colors.cyan + 'AA' : colors.cyan + '55'}
+                                borderWidth={isToday ? 1 : 0} borderColor={colors.cyan} borderStyle="dashed" />
+                            </YStack>
+                          );
+                        });
+                      })()}
+                    </XStack>
+                  </View>
                   <XStack gap={4} marginTop={4}>
                     {healthSnapshot.stepsTrend.map((d, i) => {
                       const isToday = i === healthSnapshot.stepsTrend.length - 1;
@@ -934,7 +985,20 @@ export default function RecoveryScreen() {
         </GradientBorder>
       )}
 
-      {/* SECTION 4: Pace Zones (collapsible) */}
+      {/* SECTION 4: Training Load (PMC) */}
+      {pmcData && pmcData.totalDays >= 7 && (
+        <YStack marginTop="$4">
+          <H color="$textSecondary" fontSize={14} letterSpacing={1.5} textTransform="uppercase" marginBottom="$3">
+            Training Load
+          </H>
+          <PMCSummary pmcData={pmcData} aiInsight={pmcInsight} />
+          <YStack marginTop="$3">
+            <PMCChart data={pmcData.daily} raceDateStr={userProfile?.race_date} height={260} />
+          </YStack>
+        </YStack>
+      )}
+
+      {/* SECTION 5: Pace Zones (collapsible) */}
       <CollapsibleSection title="Pace Zones">
         <YStack backgroundColor="$surface" borderRadius="$6" overflow="hidden">
           {ZONE_NAMES.map(zone => <PaceZoneRow key={zone} zone={zone} paceZones={paceZones} />)}

@@ -3,7 +3,7 @@
  * Shows actual stats, route map, splits, vs-plan comparison, and AI analysis.
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { ScrollView as RNScrollView, Pressable, Dimensions } from 'react-native';
 import { YStack, XStack, Text, View, Spinner } from 'tamagui';
 import { useRouter } from 'expo-router';
@@ -69,6 +69,19 @@ export default function PostRunModal() {
       }
     };
   }, [summary?.workoutId]);
+
+  // Parse Strava streams for RouteMap color modes
+  const parsedStreams = useMemo(() => {
+    const parse = (json: string | null | undefined): number[] | undefined => {
+      if (!json) return undefined;
+      try { const arr = JSON.parse(json); return Array.isArray(arr) ? arr : undefined; } catch { return undefined; }
+    };
+    return {
+      hr: parse(detail?.hr_stream_json),
+      pace: parse(detail?.pace_stream_json),
+      elevation: parse(detail?.elevation_stream_json),
+    };
+  }, [detail]);
 
   const handleDismiss = () => {
     router.back();
@@ -141,7 +154,19 @@ export default function PostRunModal() {
       {/* Section 2: Route Map */}
       {detail?.polyline_encoded && (
         <YStack marginHorizontal={16} marginBottom={12} borderRadius={14} overflow="hidden">
-          <RouteMap polyline={detail.polyline_encoded} height={220} strokeColor={colors.cyan} strokeWidth={4} />
+          <RouteMap
+            polyline={detail.polyline_encoded}
+            height={220}
+            strokeWidth={4}
+            showGradient
+            showMarkers
+            showReplay
+            totalDistanceMiles={metric?.distance_miles}
+            totalDurationSec={metric?.duration_minutes ? metric.duration_minutes * 60 : undefined}
+            hrStream={parsedStreams.hr}
+            paceStream={parsedStreams.pace}
+            elevationStream={parsedStreams.elevation}
+          />
         </YStack>
       )}
 

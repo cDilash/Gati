@@ -35,6 +35,7 @@ export interface UserProfile {
   vdot_updated_at: string | null;
   vdot_source: 'manual' | 'strava_race' | 'strava_best_effort' | 'ai_adaptation' | null;
   vdot_confidence: 'high' | 'moderate' | 'low' | null;
+  avatar_base64: string | null;
   updated_at: string;
 }
 
@@ -277,6 +278,11 @@ export interface StravaActivityDetail extends StravaActivity {
   segmentEfforts: StravaSegmentEffort[];
   timezone: string | null;
   utcOffset: number | null;
+  locationCity: string | null;
+  locationState: string | null;
+  locationCountry: string | null;
+  startLat: number | null;
+  startLng: number | null;
 }
 
 export interface StravaBestEffort {
@@ -351,6 +357,7 @@ export interface BackupData {
     athlete_name: string | null;
   } | null;
   crossTraining?: any[];
+  trainingLoadCache?: any[];
 }
 
 export interface BackupInfo {
@@ -499,4 +506,62 @@ export interface WeeklyDigest {
   nextWeekPreview: string;
   adaptationNeeded: boolean;
   adaptationReason: string | null;
+}
+
+// ─── Training Load (PMC) ─────────────────────────────────────
+
+export type TRIMPMethod = 'hr' | 'pace' | 'simple' | 'rest';
+
+export interface TRIMPInput {
+  durationMinutes: number;
+  distanceMiles: number;
+  avgHR: number | null;
+  maxHR: number | null;        // athlete's max HR
+  restHR: number | null;       // athlete's resting HR
+  gender: 'male' | 'female';
+  avgPaceSecPerMile: number | null;
+  paceZones: PaceZones | null;
+}
+
+export interface TRIMPResult {
+  score: number;               // the training stress value
+  method: TRIMPMethod;         // which calculation method was used
+  intensity: number;           // 0-1 normalized intensity
+}
+
+export interface DailyTrainingLoad {
+  date: string;
+  trimp: number;
+  method: TRIMPMethod;
+  workoutCount: number;
+  workoutTypes: string[];      // e.g. ['easy', 'threshold']
+}
+
+export interface PMCDayData {
+  date: string;
+  trimp: number;
+  ctl: number;                 // Chronic Training Load (fitness)
+  atl: number;                 // Acute Training Load (fatigue)
+  tsb: number;                 // Training Stress Balance (form)
+  workoutCount: number;
+  workoutTypes: string[];
+  method: TRIMPMethod;
+  isProjected: boolean;        // true for future dates
+}
+
+export type PMCDataQuality = 'high' | 'moderate' | 'low';
+
+export interface PMCData {
+  daily: PMCDayData[];
+  currentCTL: number;
+  currentATL: number;
+  currentTSB: number;
+  peakCTL: number;
+  peakCTLDate: string | null;
+  raceDayTSB: number | null;
+  raceDayProjectedCTL: number | null;
+  dataQuality: PMCDataQuality;
+  hrMethodPercent: number;     // % of days using HR-based TRIMP
+  totalDays: number;
+  projectedDays: number;
 }

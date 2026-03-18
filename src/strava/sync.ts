@@ -157,8 +157,9 @@ function saveStravaDetail(
       distance_stream_json, elevation_stream_json,
       cadence_stream_json, time_stream_json,
       segment_efforts_json, timezone, utc_offset,
-      activity_name, activity_type, description)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      activity_name, activity_type, description,
+      location_city, location_state, location_country, start_lat, start_lng)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     id,
     metricId,
     detail.id,
@@ -190,6 +191,11 @@ function saveStravaDetail(
     detail.name || null,
     detail.type || 'Run',
     detail.description || null,
+    detail.locationCity || null,
+    detail.locationState || null,
+    detail.locationCountry || null,
+    detail.startLat ?? null,
+    detail.startLng ?? null,
   );
 }
 

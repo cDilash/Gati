@@ -156,6 +156,11 @@ function mapActivityDetail(raw: any): StravaActivityDetail {
     segmentEfforts: (raw.segment_efforts ?? []).map(mapSegmentEffort),
     timezone: raw.timezone ?? null,
     utcOffset: raw.utc_offset ?? null,
+    locationCity: raw.location_city ?? null,
+    locationState: raw.location_state ?? null,
+    locationCountry: raw.location_country ?? null,
+    startLat: Array.isArray(raw.start_latlng) && raw.start_latlng.length >= 2 ? raw.start_latlng[0] : null,
+    startLng: Array.isArray(raw.start_latlng) && raw.start_latlng.length >= 2 ? raw.start_latlng[1] : null,
   };
 }
 

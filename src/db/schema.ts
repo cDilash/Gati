@@ -189,6 +189,16 @@ CREATE TABLE IF NOT EXISTS strava_activity_detail (
   activity_name TEXT,
   activity_type TEXT,
   description TEXT,
+  location_city TEXT,
+  location_state TEXT,
+  location_country TEXT,
+  start_lat REAL,
+  start_lng REAL,
+  weather_temp_f REAL,
+  weather_humidity INTEGER,
+  weather_wind_mph REAL,
+  weather_condition TEXT,
+  weather_fetched INTEGER DEFAULT 0,
   FOREIGN KEY (performance_metric_id) REFERENCES performance_metric(id)
 );`;
 
@@ -233,6 +243,16 @@ CREATE TABLE IF NOT EXISTS cross_training (
 export const CREATE_CROSS_TRAINING_DATE_INDEX = `
 CREATE INDEX IF NOT EXISTS idx_cross_training_date ON cross_training(date);`;
 
+// ─── Training Load Cache ────────────────────────────────────
+
+export const CREATE_TRAINING_LOAD_CACHE = `
+CREATE TABLE IF NOT EXISTS training_load_cache (
+  id INTEGER PRIMARY KEY DEFAULT 1,
+  pmc_json TEXT NOT NULL,
+  data_hash TEXT NOT NULL,
+  calculated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);`;
+
 // ─── Indexes ────────────────────────────────────────────────
 
 export const CREATE_WORKOUT_DATE_INDEX = `
@@ -265,4 +285,5 @@ export const ALL_TABLES = [
   CREATE_HEALTH_DATE_INDEX,
   CREATE_CROSS_TRAINING,
   CREATE_CROSS_TRAINING_DATE_INDEX,
+  CREATE_TRAINING_LOAD_CACHE,
 ];

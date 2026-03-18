@@ -1,145 +1,72 @@
+/**
+ * Settings Screen — profile, connections, plan management with premium styling.
+ */
+
 import { useState, useCallback } from 'react';
 import React from 'react';
-import { Alert } from 'react-native';
+import { Alert, Pressable } from 'react-native';
 import { ScrollView, YStack, XStack, Text, View, Spinner } from 'tamagui';
 import { useRouter } from 'expo-router';
 import { useAppStore } from '../../src/store';
 import { useSettingsStore } from '../../src/stores/settingsStore';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { colors } from '../../src/theme/colors';
+import { GradientText } from '../../src/theme/GradientText';
+import { UserAvatar } from '../../src/components/UserAvatar';
+import { StravaLogo } from '../../src/components/StravaLogo';
 
 const H = (props: any) => <Text fontFamily="$heading" {...props} />;
 const B = (props: any) => <Text fontFamily="$body" {...props} />;
+const M = (props: any) => <Text fontFamily="$mono" {...props} />;
+
+// ─── Reusable components ─────────────────────────────────────
 
 function SectionHeader({ title }: { title: string }) {
-  return <H color="$textSecondary" fontSize={14} textTransform="uppercase" letterSpacing={1.5} marginTop="$6" marginBottom="$3" marginLeft="$1">{title}</H>;
+  return <H color={colors.textSecondary} fontSize={12} textTransform="uppercase" letterSpacing={1.5} marginTop={24} marginBottom={10} marginLeft={4}>{title}</H>;
 }
 
-function SettingsRow({ label, subtitle, onPress, loading, destructive, disabled, rightElement }: {
-  label: string; subtitle?: string; onPress?: () => void; loading?: boolean; destructive?: boolean; disabled?: boolean; rightElement?: React.ReactNode;
+function SettingsRow({ icon, iconColor, label, subtitle, onPress, loading, destructive, rightElement }: {
+  icon?: string; iconColor?: string; label: string; subtitle?: string; onPress?: () => void; loading?: boolean;
+  destructive?: boolean; rightElement?: React.ReactNode;
 }) {
   return (
-    <XStack alignItems="center" paddingVertical="$3" paddingHorizontal="$4" borderBottomWidth={0.5} borderBottomColor="$border"
-      opacity={disabled ? 0.5 : 1} pressStyle={onPress && !disabled ? { backgroundColor: '$surfaceLight' } : undefined}
-      onPress={disabled || loading || !onPress ? undefined : onPress}>
-      <YStack flex={1}>
-        <B color={destructive ? '$danger' : disabled ? '$textTertiary' : '$color'} fontSize={16} fontWeight="500">{label}</B>
-        {subtitle && <B color="$textSecondary" fontSize={13} marginTop={2}>{subtitle}</B>}
-      </YStack>
-      {loading ? <Spinner size="small" color="$accent" /> : rightElement ?? null}
+    <Pressable onPress={loading || !onPress ? undefined : onPress} style={({ pressed }) => ({ opacity: pressed && onPress ? 0.7 : 1 })}>
+      <XStack alignItems="center" paddingVertical={12} paddingHorizontal={14} borderBottomWidth={0.5} borderBottomColor={colors.border}>
+        {icon && (
+          <View width={28} height={28} borderRadius={14} backgroundColor={(iconColor ?? colors.cyan) + '15'} alignItems="center" justifyContent="center" marginRight={12}>
+            <MaterialCommunityIcons name={icon as any} size={14} color={iconColor ?? colors.cyan} />
+          </View>
+        )}
+        <YStack flex={1}>
+          <B color={destructive ? colors.orange : colors.textPrimary} fontSize={15} fontWeight="500">{label}</B>
+          {subtitle && <B color={colors.textTertiary} fontSize={12} marginTop={1}>{subtitle}</B>}
+        </YStack>
+        {loading ? <Spinner size="small" color={colors.cyan} /> : rightElement ?? null}
+      </XStack>
+    </Pressable>
+  );
+}
+
+function StatusDot({ on }: { on: boolean }) {
+  return (
+    <XStack alignItems="center" gap={6}>
+      <View width={8} height={8} borderRadius={4} backgroundColor={on ? colors.success : colors.error} />
+      <B color={on ? colors.success : colors.textTertiary} fontSize={12} fontWeight="600">{on ? 'ON' : 'OFF'}</B>
     </XStack>
   );
 }
 
-function StatusDot({ connected }: { connected: boolean }) {
-  return <View width={10} height={10} borderRadius={5} backgroundColor={connected ? '$success' : '$danger'} />;
-}
-
-function UnitsToggle() {
-  const units = useSettingsStore(s => s.units);
-  const setUnits = useSettingsStore(s => s.setUnits);
+function SmallButton({ label, onPress, color }: { label: string; onPress: () => void; color?: string }) {
   return (
-    <>
-      <SectionHeader title="Units" />
-      <XStack backgroundColor="$surface" borderRadius="$6" overflow="hidden">
-        <YStack flex={1} paddingVertical="$3" alignItems="center"
-          backgroundColor={units === 'imperial' ? '$accent' : 'transparent'}
-          pressStyle={{ opacity: 0.8 }} onPress={() => setUnits('imperial')}>
-          <B color={units === 'imperial' ? 'white' : '$textSecondary'} fontSize={15} fontWeight={units === 'imperial' ? '700' : '500'}>Imperial</B>
-          <B color={units === 'imperial' ? 'white' : '$textTertiary'} fontSize={11} marginTop={2}>mi, lbs, ft</B>
-        </YStack>
-        <YStack flex={1} paddingVertical="$3" alignItems="center"
-          backgroundColor={units === 'metric' ? '$accent' : 'transparent'}
-          pressStyle={{ opacity: 0.8 }} onPress={() => setUnits('metric')}>
-          <B color={units === 'metric' ? 'white' : '$textSecondary'} fontSize={15} fontWeight={units === 'metric' ? '700' : '500'}>Metric</B>
-          <B color={units === 'metric' ? 'white' : '$textTertiary'} fontSize={11} marginTop={2}>km, kg, cm</B>
-        </YStack>
-      </XStack>
-    </>
+    <Pressable onPress={onPress} style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}>
+      <View paddingHorizontal={12} paddingVertical={5} borderRadius={12} borderWidth={1} borderColor={color ?? colors.cyan}>
+        <B color={color ?? colors.cyan} fontSize={11} fontWeight="700">{label}</B>
+      </View>
+    </Pressable>
   );
 }
 
-const M = (props: any) => <Text fontFamily="$mono" {...props} />;
-
-function HealthDataSection() {
-  const healthSnapshot = useAppStore(s => s.healthSnapshot);
-  const recoveryStatus = useAppStore(s => s.recoveryStatus);
-  const syncHealth = useAppStore(s => s.syncHealth);
-  const [isConnecting, setIsConnecting] = useState(false);
-
-  // Check if HealthKit is available (only on real device)
-  let hkAvailable = false;
-  try {
-    const { isHealthKitAvailable } = require('../../src/health/availability');
-    hkAvailable = isHealthKitAvailable();
-  } catch {}
-
-  // Don't show section at all on simulator / no HealthKit
-  if (!hkAvailable && !healthSnapshot) return null;
-
-  const handleConnect = async () => {
-    setIsConnecting(true);
-    try {
-      const { requestHealthKitPermissions } = require('../../src/health/permissions');
-      const granted = await requestHealthKitPermissions();
-      if (granted) {
-        await syncHealth();
-        Alert.alert('Connected', 'Apple Health data synced.');
-      } else {
-        Alert.alert('Denied', 'HealthKit permissions were denied. Enable in Settings → Privacy → Health.');
-      }
-    } catch (e: any) {
-      Alert.alert('Error', e.message ?? 'Failed to connect.');
-    }
-    setIsConnecting(false);
-  };
-
-  if (!healthSnapshot) {
-    return (
-      <>
-        <SectionHeader title="Apple Health" />
-        <YStack backgroundColor="$surface" borderRadius="$6" overflow="hidden">
-          <SettingsRow label="Connect Apple Health" subtitle="Sync resting HR, HRV, and sleep for recovery scoring" onPress={handleConnect} loading={isConnecting} />
-        </YStack>
-      </>
-    );
-  }
-
-  const lastSync = healthSnapshot.cachedAt ? new Date(healthSnapshot.cachedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Unknown';
-
-  return (
-    <>
-      <SectionHeader title="Apple Health" />
-      <YStack backgroundColor="$surface" borderRadius="$6" overflow="hidden">
-        <SettingsRow label="Status" subtitle={`Connected · Last sync: ${lastSync}`} rightElement={<StatusDot connected />} />
-        {healthSnapshot.restingHR !== null && (
-          <SettingsRow label="Resting Heart Rate" rightElement={<M color="$color" fontSize={15} fontWeight="700">{healthSnapshot.restingHR} bpm</M>} />
-        )}
-        {healthSnapshot.hrvRMSSD !== null && (
-          <SettingsRow label="Heart Rate Variability" rightElement={<M color="$color" fontSize={15} fontWeight="700">{healthSnapshot.hrvRMSSD} ms</M>} />
-        )}
-        {healthSnapshot.sleepHours !== null && (
-          <SettingsRow label="Last Night's Sleep" rightElement={<M color="$color" fontSize={15} fontWeight="700">{healthSnapshot.sleepHours} hrs</M>} />
-        )}
-        {recoveryStatus && recoveryStatus.level !== 'unknown' && (
-          <SettingsRow label="Recovery Score" rightElement={
-            <M color={recoveryStatus.score >= 80 ? '$success' : recoveryStatus.score >= 60 ? '$warning' : '$danger'} fontSize={15} fontWeight="700">
-              {recoveryStatus.score}/100
-            </M>
-          } />
-        )}
-        <SettingsRow label="Sync Now" onPress={async () => {
-          try {
-            const { getDatabase } = require('../../src/db/database');
-            getDatabase().execSync('DROP TABLE IF EXISTS health_snapshot');
-            const { CREATE_HEALTH_SNAPSHOT, CREATE_HEALTH_DATE_INDEX } = require('../../src/db/schema');
-            getDatabase().execSync(CREATE_HEALTH_SNAPSHOT);
-            getDatabase().execSync(CREATE_HEALTH_DATE_INDEX);
-          } catch {}
-          try { await syncHealth(); } catch {}
-        }} />
-      </YStack>
-    </>
-  );
-}
+// ─── Main Screen ─────────────────────────────────────────────
 
 export default function SettingsScreen() {
   const router = useRouter();
@@ -150,21 +77,28 @@ export default function SettingsScreen() {
   const lastSyncTime = useAppStore(s => s.lastSyncTime);
   const syncStrava = useAppStore(s => s.syncStrava);
   const syncStravaConnection = useAppStore(s => s.syncStravaConnection);
+  const syncHealth = useAppStore(s => s.syncHealth);
+  const healthSnapshot = useAppStore(s => s.healthSnapshot);
+  const units = useSettingsStore(s => s.units);
+  const setUnits = useSettingsStore(s => s.setUnits);
 
   const [isGenerating, setIsGenerating] = useState(false);
   const [isBackingUp, setIsBackingUp] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
+  const [isHealthSyncing, setIsHealthSyncing] = useState(false);
 
   const formatLastSync = useCallback((iso: string | null): string => {
-    if (!iso) return 'Never';
+    if (!iso) return 'Not synced yet';
     const m = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
     if (m < 1) return 'Just now';
     if (m < 60) return `${m}m ago`;
     const h = Math.floor(m / 60);
     return h < 24 ? `${h}h ago` : `${Math.floor(h / 24)}d ago`;
   }, []);
+
+  // ─── Handlers ─────────────────────────────────────────
 
   const handleConnectStrava = useCallback(async () => {
     setIsConnecting(true);
@@ -192,6 +126,12 @@ export default function SettingsScreen() {
     catch (e: any) { Alert.alert('Failed', e.message ?? 'Error.'); }
     finally { setIsSyncing(false); }
   }, [syncStrava]);
+
+  const handleSyncHealth = useCallback(async () => {
+    setIsHealthSyncing(true);
+    try { await syncHealth(true); } catch {}
+    setIsHealthSyncing(false);
+  }, [syncHealth]);
 
   const handleBackup = useCallback(async () => {
     setIsBackingUp(true);
@@ -227,67 +167,176 @@ export default function SettingsScreen() {
 
   const handleRegeneratePlan = useCallback(() => {
     if (!userProfile) { Alert.alert('No Profile', 'Set up your profile first.'); return; }
-    Alert.alert('Regenerate Plan', 'Delete current plan and create a new one? Workout history preserved.', [
+    Alert.alert('Regenerate Plan', 'Delete current plan and create a new one? Workout history will be preserved.', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Regenerate', style: 'destructive', onPress: async () => {
         setIsGenerating(true);
         try {
           const r = await generatePlan();
-          Alert.alert(r.success ? 'Plan Generated' : 'Failed', r.success ? (r.violations ? `Done.\n\n${r.violations}` : 'Done.') : (r.error ?? 'Error.'));
+          Alert.alert(r.success ? 'Plan Generated' : 'Failed', r.success ? 'Done.' : (r.error ?? 'Error.'));
         } catch (e: any) { Alert.alert('Error', e.message ?? 'Failed.'); }
         finally { setIsGenerating(false); }
       }},
     ]);
   }, [userProfile, generatePlan]);
 
-  return (
-    <ScrollView flex={1} backgroundColor="$background" contentContainerStyle={{ padding: 16 }} showsVerticalScrollIndicator={false}>
-      {/* Units */}
-      <UnitsToggle />
+  // ─── HealthKit availability ────────────────────────────
+  let hkAvailable = false;
+  try { const { isHealthKitAvailable } = require('../../src/health/availability'); hkAvailable = isHealthKitAvailable(); } catch {}
 
-      {/* Strava */}
-      <SectionHeader title="Strava" />
-      <YStack backgroundColor="$surface" borderRadius="$6" overflow="hidden">
-        <SettingsRow label="Connection Status" subtitle={isStravaConnected ? 'Connected' : 'Not connected'} rightElement={<StatusDot connected={isStravaConnected} />} />
+  return (
+    <ScrollView flex={1} backgroundColor={colors.background} contentContainerStyle={{ padding: 16, paddingBottom: 60 }} showsVerticalScrollIndicator={false}>
+
+      {/* ─── Compact Profile Card (links to full Profile) ── */}
+      {userProfile && (
+        <Pressable onPress={() => router.push('/profile')} style={({ pressed }) => ({ opacity: pressed ? 0.8 : 1 })}>
+          <XStack backgroundColor={colors.surface} borderRadius={14} padding={14} alignItems="center" marginBottom={4}>
+            <UserAvatar size={44} name={userProfile.name} avatarBase64={userProfile.avatar_base64 ?? null} />
+            <YStack flex={1} marginLeft={12}>
+              <B color={colors.textPrimary} fontSize={16} fontWeight="600">{userProfile.name ?? 'Athlete'}</B>
+              <XStack alignItems="center" gap={6} marginTop={1}>
+                <M color={colors.textSecondary} fontSize={12}>VDOT {userProfile.vdot_score}</M>
+                {userProfile.weight_kg && <B color={colors.textTertiary} fontSize={12}>· {Math.round(userProfile.weight_kg * 2.20462)} lbs</B>}
+              </XStack>
+            </YStack>
+            <XStack alignItems="center" gap={2}>
+              <B color={colors.cyan} fontSize={12} fontWeight="600">View Profile</B>
+              <MaterialCommunityIcons name="chevron-right" size={16} color={colors.cyan} />
+            </XStack>
+          </XStack>
+        </Pressable>
+      )}
+
+      {/* ─── Units ───────────────────────────────────────── */}
+      <SectionHeader title="Units" />
+      <XStack backgroundColor={colors.surface} borderRadius={14} overflow="hidden">
+        <Pressable style={{ flex: 1 }} onPress={() => setUnits('imperial')}>
+          <YStack paddingVertical={12} alignItems="center"
+            backgroundColor={units === 'imperial' ? colors.cyan : 'transparent'}>
+            <B color={units === 'imperial' ? colors.background : colors.textSecondary} fontSize={14} fontWeight={units === 'imperial' ? '700' : '500'}>Imperial</B>
+            <B color={units === 'imperial' ? colors.background : colors.textTertiary} fontSize={10} marginTop={1}>mi, lbs, ft</B>
+          </YStack>
+        </Pressable>
+        <Pressable style={{ flex: 1 }} onPress={() => setUnits('metric')}>
+          <YStack paddingVertical={12} alignItems="center"
+            backgroundColor={units === 'metric' ? colors.cyan : 'transparent'}>
+            <B color={units === 'metric' ? colors.background : colors.textSecondary} fontSize={14} fontWeight={units === 'metric' ? '700' : '500'}>Metric</B>
+            <B color={units === 'metric' ? colors.background : colors.textTertiary} fontSize={10} marginTop={1}>km, kg, cm</B>
+          </YStack>
+        </Pressable>
+      </XStack>
+
+      {/* ─── Strava ──────────────────────────────────────── */}
+      <XStack alignItems="center" gap={6} marginTop={24} marginBottom={10} marginLeft={4}>
+        <StravaLogo size={14} />
+        <H color={colors.textSecondary} fontSize={12} textTransform="uppercase" letterSpacing={1.5}>Strava</H>
+      </XStack>
+      <YStack backgroundColor={colors.surface} borderRadius={14} overflow="hidden">
+        <SettingsRow icon="link-variant" iconColor={colors.strava} label="Connection" rightElement={<StatusDot on={isStravaConnected} />} />
         {isStravaConnected ? (
           <>
-            <SettingsRow label="Last Sync" subtitle={formatLastSync(lastSyncTime)} />
-            <SettingsRow label="Sync Now" onPress={handleSyncStrava} loading={isSyncing} />
-            <SettingsRow label="Disconnect Strava" onPress={handleDisconnectStrava} destructive />
+            <SettingsRow icon="sync" iconColor={colors.cyan} label="Last Sync" subtitle={formatLastSync(lastSyncTime)}
+              rightElement={<SmallButton label="Sync" onPress={handleSyncStrava} />} loading={isSyncing} />
+            <SettingsRow icon="link-off" iconColor={colors.orange} label="Disconnect" onPress={handleDisconnectStrava} destructive />
           </>
         ) : (
-          <SettingsRow label="Connect Strava" onPress={handleConnectStrava} loading={isConnecting} />
+          <SettingsRow icon="link-variant" iconColor={colors.strava} label="Connect Strava" onPress={handleConnectStrava} loading={isConnecting} />
         )}
       </YStack>
 
-      {/* Cloud Backup */}
+      {/* ─── Apple Health ────────────────────────────────── */}
+      {(hkAvailable || healthSnapshot) && (
+        <>
+          <SectionHeader title="Apple Health" />
+          <YStack backgroundColor={colors.surface} borderRadius={14} overflow="hidden">
+            <SettingsRow icon="heart-pulse" iconColor={colors.cyan} label="Status"
+              rightElement={<StatusDot on={!!healthSnapshot} />} />
+            {healthSnapshot && (
+              <>
+                <SettingsRow icon="pulse" iconColor={colors.cyan} label="Active Signals"
+                  subtitle={[
+                    healthSnapshot.restingHR != null ? 'RHR' : null,
+                    healthSnapshot.hrvRMSSD != null ? 'HRV' : null,
+                    healthSnapshot.sleepHours != null ? 'Sleep' : null,
+                    healthSnapshot.steps != null ? 'Steps' : null,
+                  ].filter(Boolean).join(' · ') || 'None'} />
+                <SettingsRow icon="sync" iconColor={colors.cyan} label="Sync Health Data"
+                  rightElement={<SmallButton label="Sync" onPress={handleSyncHealth} />} loading={isHealthSyncing} />
+              </>
+            )}
+            {!healthSnapshot && (
+              <SettingsRow icon="heart-plus" iconColor={colors.cyan} label="Connect Apple Health"
+                subtitle="Sync resting HR, HRV, and sleep" onPress={async () => {
+                  try {
+                    const { requestHealthKitPermissions } = require('../../src/health/permissions');
+                    const granted = await requestHealthKitPermissions();
+                    if (granted) { await syncHealth(true); Alert.alert('Connected', 'Apple Health synced.'); }
+                    else Alert.alert('Denied', 'Enable in Settings → Privacy → Health.');
+                  } catch (e: any) { Alert.alert('Error', e.message ?? 'Failed.'); }
+                }} />
+            )}
+          </YStack>
+        </>
+      )}
+
+      {/* ─── Cloud Backup ────────────────────────────────── */}
       <SectionHeader title="Cloud Backup" />
-      <YStack backgroundColor="$surface" borderRadius="$6" overflow="hidden">
-        <SettingsRow label="Backup to Cloud" subtitle="Save all data to Supabase" onPress={handleBackup} loading={isBackingUp} />
-        <SettingsRow label="Restore from Cloud" subtitle="Replace local data with backup" onPress={handleRestore} loading={isRestoring} destructive />
+      <YStack backgroundColor={colors.surface} borderRadius={14} overflow="hidden">
+        <SettingsRow icon="cloud-check-outline" iconColor={colors.cyan} label="Backup to Cloud"
+          subtitle="Save all data to Supabase" onPress={handleBackup} loading={isBackingUp} />
+        <SettingsRow icon="cloud-download-outline" iconColor={colors.orange} label="Restore from Cloud"
+          subtitle="Replace local data with backup" onPress={handleRestore} loading={isRestoring} destructive />
       </YStack>
 
-      {/* Training Plan */}
+      {/* ─── Training Plan ───────────────────────────────── */}
       <SectionHeader title="Training Plan" />
-      <YStack backgroundColor="$surface" borderRadius="$6" overflow="hidden">
-        <SettingsRow
-          label="Regenerate Plan"
-          subtitle={activePlan ? 'Delete current plan and create a new one' : 'Generate your first training plan'}
-          onPress={handleRegeneratePlan} loading={isGenerating}
-          destructive={!!activePlan} disabled={!userProfile}
-        />
+      <YStack backgroundColor={colors.surface} borderRadius={14} overflow="hidden">
+        {activePlan && (
+          <SettingsRow icon="calendar-check" iconColor={colors.cyan} label="Current Plan"
+            subtitle={`Generated ${new Date(activePlan.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} · VDOT ${activePlan.vdot_at_generation}`} />
+        )}
+        <SettingsRow icon="refresh" iconColor={colors.orange} label="Regenerate Plan"
+          subtitle={activePlan ? 'Delete current plan and create new' : 'Generate your first plan'}
+          onPress={handleRegeneratePlan} loading={isGenerating} destructive={!!activePlan} />
       </YStack>
 
-      {/* Health Data */}
-      <HealthDataSection />
-
-      {/* About */}
-      <SectionHeader title="About" />
-      <YStack backgroundColor="$surface" borderRadius="$6" overflow="hidden">
-        <SettingsRow label="Marathon Coach v2.0" />
+      {/* ─── Account ──────────────────────────────────────── */}
+      <SectionHeader title="Account" />
+      <YStack backgroundColor={colors.surface} borderRadius={14} overflow="hidden">
+        {(() => {
+          const [email, setEmail] = React.useState<string | null>(null);
+          const [signingOut, setSigningOut] = React.useState(false);
+          React.useEffect(() => {
+            (async () => { try { const { getCurrentUser } = require('../../src/backup/auth'); const u = await getCurrentUser(); setEmail(u?.email ?? null); } catch {} })();
+          }, []);
+          if (email) {
+            return (
+              <>
+                <SettingsRow icon="email-outline" iconColor={colors.cyan} label={email} rightElement={
+                  <XStack alignItems="center" gap={4}><View width={6} height={6} borderRadius={3} backgroundColor={colors.success} /><B color={colors.textTertiary} fontSize={11}>Signed in</B></XStack>
+                } />
+                <SettingsRow icon="logout" iconColor={colors.orange} label="Sign Out" destructive onPress={() => {
+                  Alert.alert('Sign Out', 'Your local data will remain.', [
+                    { text: 'Cancel', style: 'cancel' },
+                    { text: 'Sign Out', style: 'destructive', onPress: async () => {
+                      try { const { signOut } = require('../../src/backup/auth'); await signOut(); setEmail(null); } catch {}
+                    }},
+                  ]);
+                }} />
+              </>
+            );
+          }
+          return <SettingsRow icon="login" iconColor={colors.cyan} label="Sign In" subtitle="Enable cloud backup" onPress={() => router.push('/setup')} />;
+        })()}
       </YStack>
 
-      <YStack height={32} />
+      {/* ─── App Info ────────────────────────────────────── */}
+      <YStack alignItems="center" marginTop={32} marginBottom={16}>
+        <GradientText text="Gati" style={{ fontSize: 20, fontWeight: '800' }} />
+        <B color={colors.textTertiary} fontSize={12} marginTop={2}>Marathon Coach</B>
+        <B color={colors.textTertiary} fontSize={11} marginTop={2}>Version 2.0.0</B>
+        <B color={colors.textTertiary} fontSize={10} marginTop={4}>Built with AI · Powered by Gemini</B>
+      </YStack>
     </ScrollView>
   );
 }

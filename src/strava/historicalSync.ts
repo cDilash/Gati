@@ -1,6 +1,6 @@
 /**
  * Historical Strava sync for initial baseline.
- * When a user first connects Strava, we pull ~8 weeks of past activities
+ * When a user first connects Strava, we pull ~6 months of past activities
  * to establish ACWR baseline and populate training history.
  */
 
@@ -24,8 +24,8 @@ export type ProgressCallback = (progress: HistoricalSyncProgress) => void;
 export async function syncHistoricalActivities(
   onProgress?: ProgressCallback,
 ): Promise<{ imported: number; matched: number }> {
-  // 8 weeks ago as Unix timestamp
-  const eightWeeksAgo = Math.floor((Date.now() - 56 * 86400000) / 1000);
+  // 6 months ago as Unix timestamp
+  const sixMonthsAgo = Math.floor((Date.now() - 180 * 86400000) / 1000);
 
   onProgress?.({
     phase: 'syncing',
@@ -33,9 +33,9 @@ export async function syncHistoricalActivities(
     matched: 0,
   });
 
-  // Call sync with historical window — fetches up to 200 activities from 8 weeks ago
+  // Call sync with historical window — fetches up to 200 activities from 6 months ago
   const result = await syncStravaActivities({
-    afterTimestamp: eightWeeksAgo,
+    afterTimestamp: sixMonthsAgo,
     perPage: 200,
   });
 

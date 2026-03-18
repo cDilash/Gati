@@ -39,6 +39,9 @@ export function serializeDatabase(): BackupData {
   let crossTraining: any[] = [];
   try { crossTraining = db.getAllSync<any>('SELECT * FROM cross_training'); } catch {}
 
+  let trainingLoadCache: any[] = [];
+  try { trainingLoadCache = db.getAllSync<any>('SELECT * FROM training_load_cache'); } catch {}
+
   let appSettings: any[] = [];
   try { appSettings = db.getAllSync<any>('SELECT * FROM app_settings'); } catch {}
 
@@ -82,6 +85,7 @@ export function serializeDatabase(): BackupData {
     stravaDetails,
     stravaTokens,
     crossTraining,
+    trainingLoadCache,
   };
 }
 
@@ -199,6 +203,7 @@ export async function restoreDatabase(
       db.execSync('DELETE FROM shoes');
       db.execSync('DELETE FROM user_profile');
       try { db.execSync('DELETE FROM cross_training'); } catch {}
+      try { db.execSync('DELETE FROM training_load_cache'); } catch {}
       try { db.execSync('DELETE FROM app_settings'); } catch {}
 
       // ── Restore user profile (all columns, with ?? fallbacks for old backups)
@@ -439,6 +444,16 @@ export async function restoreDatabase(
             h.steps ?? null,
             h.signal_count ?? 0,
             h.cached_at ?? new Date().toISOString(),
+          );
+        } catch {}
+      }
+
+      // ── Restore training load cache
+      for (const tlc of (data as any).trainingLoadCache ?? []) {
+        try {
+          db.runSync(
+            `INSERT OR REPLACE INTO training_load_cache (id, pmc_json, data_hash, calculated_at) VALUES (?, ?, ?, ?)`,
+            tlc.id ?? 1, tlc.pmc_json, tlc.data_hash ?? '', tlc.calculated_at ?? new Date().toISOString(),
           );
         } catch {}
       }

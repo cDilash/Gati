@@ -13,26 +13,33 @@ export async function getHRVSamples(daysBack: number = 14): Promise<HRVResult[]>
   startDate.setDate(startDate.getDate() - daysBack);
 
   return new Promise((resolve) => {
-    AppleHealthKit.getHeartRateVariabilitySamples(
-      {
-        startDate: startDate.toISOString(),
-        endDate: new Date().toISOString(),
-        ascending: false,
-        limit: daysBack,
-      },
-      (error: string, results: any[]) => {
-        if (error) {
-          console.log("[HealthKit] HRV error:", error);
-          resolve([]);
-          return;
+    try {
+      AppleHealthKit.getHeartRateVariabilitySamples(
+        {
+          startDate: startDate.toISOString(),
+          endDate: new Date().toISOString(),
+          ascending: false,
+          limit: daysBack,
+        },
+        (error: string, results: any[]) => {
+          // TurboModule proxy may pass results as first arg
+          const data = Array.isArray(error) ? error : (results || []);
+          if (error && !Array.isArray(error)) {
+            console.log("[HealthKit] HRV error:", error);
+            resolve([]);
+            return;
+          }
+          console.log("[HealthKit] HRV raw count:", data?.length ?? 0);
+          const mapped = (data || []).map((r: any) => ({
+            value: Math.round(r.value * 10) / 10,
+            date: r.startDate?.split("T")[0] || "",
+          }));
+          resolve(mapped);
         }
-        console.log("[HealthKit] HRV raw count:", results?.length ?? 0);
-        const mapped = (results || []).map((r: any) => ({
-          value: Math.round(r.value * 10) / 10,
-          date: r.startDate?.split("T")[0] || "",
-        }));
-        resolve(mapped);
-      }
-    );
+      );
+    } catch (e) {
+      console.log("[HealthKit] HRV call failed:", e);
+      resolve([]);
+    }
   });
 }

@@ -73,6 +73,7 @@ export async function getSleepData(daysBack: number = 14): Promise<SleepResult[]
   startDate.setDate(startDate.getDate() - daysBack);
 
   return new Promise((resolve) => {
+    try {
     AppleHealthKit.getSleepSamples(
       {
         startDate: startDate.toISOString(),
@@ -81,12 +82,16 @@ export async function getSleepData(daysBack: number = 14): Promise<SleepResult[]
         limit: daysBack * 20,
       },
       (error: string, results: any[]) => {
-        if (error) {
+        // TurboModule proxy may pass results as first arg
+        const data = Array.isArray(error) ? error : (results || []);
+        if (error && !Array.isArray(error)) {
           console.log("[HealthKit] Sleep error:", error);
           resolve([]);
           return;
         }
-        console.log("[HealthKit] Sleep raw count:", results?.length ?? 0);
+        console.log("[HealthKit] Sleep raw count:", data?.length ?? 0);
+        // Reassign for downstream code
+        results = data;
 
         if (results?.length > 0) {
           const uniqueValues = [...new Set(results.map(r => String(r.value)))];
@@ -213,5 +218,9 @@ export async function getSleepData(daysBack: number = 14): Promise<SleepResult[]
         resolve(mapped);
       }
     );
+    } catch (e) {
+      console.log("[HealthKit] Sleep call failed:", e);
+      resolve([]);
+    }
   });
 }
