@@ -235,21 +235,73 @@ export default function SetupScreen() {
 
   const renderStep3 = () => (
     <ScrollView flex={1} contentContainerStyle={{paddingHorizontal:24,paddingTop:8,paddingBottom:32}}>
-      <H color="$color" fontSize={32} letterSpacing={1} marginBottom="$2">Your Profile</H>
-      <B color="$textSecondary" fontSize={15} lineHeight={22} marginBottom="$7">{stravaData?'Pre-filled from Strava. Review and edit.':'Enter your details.'}</B>
-      <FieldLabel text="Name" fromStrava={stravaFilledFields.has('name')} /><Input height={44} backgroundColor={colors.surface} borderColor={colors.border} borderRadius={12} color={colors.textPrimary} fontSize={16} fontFamily="$body" paddingHorizontal={14} placeholder="Your name" placeholderTextColor="$textTertiary" value={name} onChangeText={setName} />
-      <FieldLabel text="Age *" /><Input height={44} backgroundColor={colors.surface} borderColor={colors.border} borderRadius={12} color={colors.textPrimary} fontSize={16} fontFamily="$body" paddingHorizontal={14} placeholder="e.g. 35" placeholderTextColor="$textTertiary" keyboardType="number-pad" value={age} onChangeText={setAge} />
-      <FieldLabel text="Gender" fromStrava={stravaFilledFields.has('gender')} /><SegmentedControl options={GENDERS} selected={gender} onSelect={setGender} />
-      <FieldLabel text="Height (cm)" /><Input height={44} backgroundColor={colors.surface} borderColor={colors.border} borderRadius={12} color={colors.textPrimary} fontSize={16} fontFamily="$body" paddingHorizontal={14} placeholder="e.g. 175" placeholderTextColor="$textTertiary" keyboardType="number-pad" value={heightCm} onChangeText={setHeightCm} />
-      <FieldLabel text="Recent Race Distance" fromStrava={stravaFilledFields.has('raceDistance')} /><SegmentedControl options={RACE_DISTANCES} selected={raceDistance} onSelect={setRaceDistance} />
-      <FieldLabel text="Recent Race Time *" fromStrava={stravaFilledFields.has('raceTime')} />
-      <YStack backgroundColor="$surface" borderRadius="$4" borderWidth={1} borderColor="$border" paddingHorizontal="$4" paddingVertical="$4" height={52} pressStyle={{opacity:0.8}} onPress={()=>openDurationPicker(raceTime,'race')}><B color={raceTime?'$color':'$textTertiary'} fontSize={16}>{raceTime||'Tap to set time'}</B></YStack>
-      <DurationPickerModal visible={showRaceTimePicker} onClose={()=>setShowRaceTimePicker(false)} onConfirm={()=>confirmDurationPicker('race')} title={`${raceDistance} Time`} />
-      {calculatedVDOT!==null&&(<YStack backgroundColor="$surface" borderRadius="$5" padding="$4" alignItems="center" marginTop="$4" borderWidth={1} borderColor="$accent"><H color="$textSecondary" fontSize={14} letterSpacing={1.5}>VDOT</H><M color="$accent" fontSize={48} fontWeight="800">{calculatedVDOT}</M></YStack>)}
-      <FieldLabel text="Weekly Mileage *" fromStrava={stravaFilledFields.has('weeklyMileage')} /><Input height={44} backgroundColor={colors.surface} borderColor={colors.border} borderRadius={12} color={colors.textPrimary} fontSize={16} fontFamily="$body" paddingHorizontal={14} placeholder="e.g. 25" placeholderTextColor="$textTertiary" keyboardType="decimal-pad" value={weeklyMileage} onChangeText={setWeeklyMileage} />
-      <FieldLabel text="Longest Recent Run (mi) *" fromStrava={stravaFilledFields.has('longestRun')} /><Input height={44} backgroundColor={colors.surface} borderColor={colors.border} borderRadius={12} color={colors.textPrimary} fontSize={16} fontFamily="$body" paddingHorizontal={14} placeholder="e.g. 10" placeholderTextColor="$textTertiary" keyboardType="decimal-pad" value={longestRun} onChangeText={setLongestRun} />
-      <FieldLabel text="Experience" fromStrava={stravaFilledFields.has('experienceLevel')} /><SegmentedControl options={EXPERIENCE_LEVELS} selected={experienceLevel} onSelect={setExperienceLevel} />
-      {stravaData&&(<YStack backgroundColor="$surface" borderRadius="$5" padding="$3" marginTop="$5" borderLeftWidth={3} borderLeftColor="$strava"><H color="$strava" fontSize={13} textTransform="uppercase" letterSpacing={1} marginBottom="$1">Strava Import</H><B color="$textSecondary" fontSize={13} lineHeight={19}>{stravaData.totalActivities} runs analyzed</B></YStack>)}
+      <H color={colors.textPrimary} fontSize={28} letterSpacing={1} marginBottom={4}>Your Profile</H>
+      <B color={colors.textSecondary} fontSize={14} lineHeight={20} marginBottom={20}>{stravaData?'Pre-filled from Strava. Review and edit.':'Enter your details to calculate your training zones.'}</B>
+
+      {/* ── ABOUT YOU ── */}
+      <H color={colors.textTertiary} fontSize={11} letterSpacing={1.5} marginBottom={10}>ABOUT YOU</H>
+      <YStack backgroundColor={colors.surface} borderRadius={14} padding={14} gap={10} marginBottom={20}>
+        <YStack>
+          <XStack alignItems="center" gap={6} marginBottom={4}><MaterialCommunityIcons name="account-outline" size={14} color={colors.textTertiary} /><B color={colors.textTertiary} fontSize={12}>{stravaFilledFields.has('name')?'Name · from Strava':'Name'}</B></XStack>
+          <Input height={44} backgroundColor={colors.surfaceHover} borderColor={colors.border} borderRadius={12} color={colors.textPrimary} fontSize={16} fontFamily="$body" paddingHorizontal={14} placeholder="Your name" placeholderTextColor="$textTertiary" value={name} onChangeText={setName} />
+        </YStack>
+        <XStack gap={10}>
+          <YStack flex={1}>
+            <XStack alignItems="center" gap={6} marginBottom={4}><MaterialCommunityIcons name="cake-variant-outline" size={14} color={colors.textTertiary} /><B color={colors.textTertiary} fontSize={12}>Age <B color={colors.orange} fontSize={12}>*</B></B></XStack>
+            <Input height={44} backgroundColor={colors.surfaceHover} borderColor={colors.border} borderRadius={12} color={colors.textPrimary} fontSize={16} fontFamily="$mono" paddingHorizontal={14} placeholder="35" placeholderTextColor="$textTertiary" keyboardType="number-pad" value={age} onChangeText={setAge} />
+          </YStack>
+          <YStack flex={1.5}>
+            <XStack alignItems="center" gap={6} marginBottom={4}><MaterialCommunityIcons name="gender-male-female" size={14} color={colors.textTertiary} /><B color={colors.textTertiary} fontSize={12}>{stravaFilledFields.has('gender')?'Gender · Strava':'Gender'}</B></XStack>
+            <SegmentedControl options={GENDERS} selected={gender} onSelect={setGender} />
+          </YStack>
+        </XStack>
+        <XStack gap={10}>
+          <YStack flex={1}>
+            <XStack alignItems="center" gap={6} marginBottom={4}><MaterialCommunityIcons name="human-male-height-variant" size={14} color={colors.textTertiary} /><B color={colors.textTertiary} fontSize={12}>Height (cm)</B></XStack>
+            <Input height={44} backgroundColor={colors.surfaceHover} borderColor={colors.border} borderRadius={12} color={colors.textPrimary} fontSize={16} fontFamily="$mono" paddingHorizontal={14} placeholder="175" placeholderTextColor="$textTertiary" keyboardType="number-pad" value={heightCm} onChangeText={setHeightCm} />
+          </YStack>
+          <YStack flex={1}>
+            <XStack alignItems="center" gap={6} marginBottom={4}><MaterialCommunityIcons name="scale-bathroom" size={14} color={colors.textTertiary} /><B color={colors.textTertiary} fontSize={12}>Weight (kg)</B></XStack>
+            <Input height={44} backgroundColor={colors.surfaceHover} borderColor={colors.border} borderRadius={12} color={colors.textPrimary} fontSize={16} fontFamily="$mono" paddingHorizontal={14} placeholder="70" placeholderTextColor="$textTertiary" keyboardType="decimal-pad" value={weightKg} onChangeText={setWeightKg} />
+          </YStack>
+        </XStack>
+      </YStack>
+
+      {/* ── YOUR RUNNING ── */}
+      <H color={colors.textTertiary} fontSize={11} letterSpacing={1.5} marginBottom={10}>YOUR RUNNING</H>
+      <YStack backgroundColor={colors.surface} borderRadius={14} padding={14} gap={10} marginBottom={20}>
+        <YStack>
+          <XStack alignItems="center" gap={6} marginBottom={4}><MaterialCommunityIcons name="trophy-outline" size={14} color={colors.textTertiary} /><B color={colors.textTertiary} fontSize={12}>{stravaFilledFields.has('raceDistance')?'Recent Race · Strava':'Recent Race Distance'}</B></XStack>
+          <SegmentedControl options={RACE_DISTANCES} selected={raceDistance} onSelect={setRaceDistance} />
+        </YStack>
+        <YStack>
+          <XStack alignItems="center" gap={6} marginBottom={4}><MaterialCommunityIcons name="timer-outline" size={14} color={colors.textTertiary} /><B color={colors.textTertiary} fontSize={12}>Race Time <B color={colors.orange} fontSize={12}>*</B>{stravaFilledFields.has('raceTime')?' · Strava':''}</B></XStack>
+          <YStack backgroundColor={colors.surfaceHover} borderRadius={12} borderWidth={1} borderColor={colors.border} paddingHorizontal={14} height={44} justifyContent="center" pressStyle={{opacity:0.8}} onPress={()=>openDurationPicker(raceTime,'race')}><B color={raceTime?colors.textPrimary:colors.textTertiary} fontSize={16}>{raceTime||'Tap to set time'}</B></YStack>
+          <DurationPickerModal visible={showRaceTimePicker} onClose={()=>setShowRaceTimePicker(false)} onConfirm={()=>confirmDurationPicker('race')} title={`${raceDistance} Time`} />
+        </YStack>
+        {calculatedVDOT!==null&&(
+          <YStack backgroundColor={colors.cyanGhost} borderRadius={12} padding={12} alignItems="center" borderWidth={1} borderColor={colors.cyanDim}>
+            <H color={colors.textTertiary} fontSize={10} letterSpacing={1.5}>VDOT</H>
+            <GradientText text={String(calculatedVDOT)} style={{fontSize:36,fontWeight:'800'}} />
+          </YStack>
+        )}
+        <XStack gap={10}>
+          <YStack flex={1}>
+            <XStack alignItems="center" gap={6} marginBottom={4}><MaterialCommunityIcons name="road-variant" size={14} color={colors.textTertiary} /><B color={colors.textTertiary} fontSize={12}>Weekly mi <B color={colors.orange} fontSize={12}>*</B>{stravaFilledFields.has('weeklyMileage')?' · Strava':''}</B></XStack>
+            <Input height={44} backgroundColor={colors.surfaceHover} borderColor={colors.border} borderRadius={12} color={colors.textPrimary} fontSize={16} fontFamily="$mono" paddingHorizontal={14} placeholder="25" placeholderTextColor="$textTertiary" keyboardType="decimal-pad" value={weeklyMileage} onChangeText={setWeeklyMileage} />
+          </YStack>
+          <YStack flex={1}>
+            <XStack alignItems="center" gap={6} marginBottom={4}><MaterialCommunityIcons name="run-fast" size={14} color={colors.textTertiary} /><B color={colors.textTertiary} fontSize={12}>Longest run <B color={colors.orange} fontSize={12}>*</B>{stravaFilledFields.has('longestRun')?' · Strava':''}</B></XStack>
+            <Input height={44} backgroundColor={colors.surfaceHover} borderColor={colors.border} borderRadius={12} color={colors.textPrimary} fontSize={16} fontFamily="$mono" paddingHorizontal={14} placeholder="10" placeholderTextColor="$textTertiary" keyboardType="decimal-pad" value={longestRun} onChangeText={setLongestRun} />
+          </YStack>
+        </XStack>
+        <YStack>
+          <XStack alignItems="center" gap={6} marginBottom={4}><MaterialCommunityIcons name="signal-cellular-outline" size={14} color={colors.textTertiary} /><B color={colors.textTertiary} fontSize={12}>{stravaFilledFields.has('experienceLevel')?'Experience · Strava':'Experience'}</B></XStack>
+          <SegmentedControl options={EXPERIENCE_LEVELS} selected={experienceLevel} onSelect={setExperienceLevel} />
+        </YStack>
+      </YStack>
+
+      {stravaData&&(<YStack backgroundColor={colors.surface} borderRadius={12} padding={12} borderLeftWidth={3} borderLeftColor={colors.strava}><XStack alignItems="center" gap={6}><StravaIcon size={14} /><H color={colors.strava} fontSize={11} letterSpacing={1}>STRAVA IMPORT</H></XStack><B color={colors.textSecondary} fontSize={12} marginTop={4}>{stravaData.totalActivities} runs analyzed</B></YStack>)}
       <YStack height={20} />
     </ScrollView>
   );
