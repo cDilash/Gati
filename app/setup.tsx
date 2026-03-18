@@ -14,6 +14,11 @@ import { calculateVDOTFrom5K, calculateVDOTFrom10K, calculateVDOTFromHalf, forma
 import { PlanGenerationLoader } from '../src/components/common/PlanGenerationLoader';
 import type { StravaProfileData } from '../src/strava/profileImport';
 import { colors } from '../src/theme/colors';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { GradientText } from '../src/theme/GradientText';
+import { GradientButton } from '../src/theme/GradientButton';
+import { StravaIcon } from '../src/components/icons/StravaIcon';
+import { Image } from 'react-native';
 
 const H = (props: any) => <Text fontFamily="$heading" {...props} />;
 const B = (props: any) => <Text fontFamily="$body" {...props} />;
@@ -50,26 +55,33 @@ const FieldLabel = ({ text, fromStrava }: { text: string; fromStrava?: boolean }
 );
 
 const SegmentedControl = <T extends string>({ options, selected, onSelect }: { options: readonly T[]; selected: T; onSelect: (v: T) => void }) => (
-  <XStack backgroundColor="$surface" borderRadius="$4" borderWidth={1} borderColor="$border" overflow="hidden">
+  <XStack gap={4}>
     {options.map(opt => (
-      <YStack key={opt} flex={1} paddingVertical="$3" alignItems="center" backgroundColor={selected === opt ? '$accent' : 'transparent'}
+      <YStack key={opt} flex={1} height={44} borderRadius={12} alignItems="center" justifyContent="center"
+        backgroundColor={selected === opt ? colors.cyan : colors.surface}
+        borderWidth={1} borderColor={selected === opt ? colors.cyan : colors.border}
         pressStyle={{ opacity: 0.8 }} onPress={() => onSelect(opt)}>
-        <B color={selected === opt ? 'white' : '$textSecondary'} fontSize={14} fontWeight={selected === opt ? '700' : '500'}>{opt}</B>
+        <B color={selected === opt ? colors.background : colors.textSecondary} fontSize={13} fontWeight={selected === opt ? '700' : '500'}>{opt}</B>
       </YStack>
     ))}
   </XStack>
 );
 
 const ChipSelect = ({ options, selected, onToggle }: { options: readonly string[]; selected: string[]; onToggle: (v: string) => void }) => (
-  <XStack flexWrap="wrap" gap="$2">
-    {options.map(opt => (
-      <YStack key={opt} paddingHorizontal="$3" paddingVertical="$2" borderRadius={20}
-        backgroundColor={selected.includes(opt) ? '$accent' : '$surface'} borderWidth={1}
-        borderColor={selected.includes(opt) ? '$accent' : '$border'}
-        pressStyle={{ opacity: 0.8 }} onPress={() => onToggle(opt)}>
-        <B color={selected.includes(opt) ? 'white' : '$textSecondary'} fontSize={14} fontWeight={selected.includes(opt) ? '600' : '400'}>{opt}</B>
-      </YStack>
-    ))}
+  <XStack flexWrap="wrap" gap={8}>
+    {options.map(opt => {
+      const active = selected.includes(opt);
+      return (
+        <YStack key={opt} paddingHorizontal={14} paddingVertical={8} borderRadius={10}
+          backgroundColor={active ? colors.cyanGhost : colors.surface} borderWidth={1}
+          borderColor={active ? colors.cyanDim : colors.border}
+          pressStyle={{ opacity: 0.7 }} onPress={() => onToggle(opt)}>
+          <B color={active ? colors.cyan : colors.textSecondary} fontSize={13} fontWeight={active ? '600' : '400'}>
+            {active ? `${opt} ✓` : opt}
+          </B>
+        </YStack>
+      );
+    })}
   </XStack>
 );
 
@@ -180,17 +192,22 @@ export default function SetupScreen() {
       </YStack>
     );
     return (
-      <ScrollView flex={1} contentContainerStyle={{paddingHorizontal:24,paddingTop:60,paddingBottom:32}}>
-        <H color="$color" fontSize={36} letterSpacing={1} marginBottom="$2">Marathon Coach</H>
-        <B color="$textSecondary" fontSize={15} lineHeight={22} marginBottom="$7">Sign in to restore your data, or create an account to get started.</B>
+      <ScrollView flex={1} contentContainerStyle={{paddingHorizontal:24,paddingTop:40,paddingBottom:32}}>
+        <YStack alignItems="center" marginBottom={32}>
+          <View width={80} height={80} borderRadius={16} overflow="hidden" marginBottom={12}>
+            <Image source={require('../assets/images/icon.png')} style={{width:80,height:80}} />
+          </View>
+          <GradientText text="GATI" style={{fontSize:32,fontWeight:'800',letterSpacing:3}} />
+          <B color={colors.textSecondary} fontSize={14} marginTop={4}>Your AI Marathon Coach</B>
+        </YStack>
         {!isLoggedIn ? (<>
-          <Input size="$8" backgroundColor="$surface" borderColor="$border" color="$color" fontSize={16} fontFamily="$body" placeholder="Email" placeholderTextColor="$textTertiary" value={authEmail} onChangeText={setAuthEmail} autoCapitalize="none" keyboardType="email-address" />
-          <Input size="$8" backgroundColor="$surface" borderColor="$border" color="$color" fontSize={16} fontFamily="$body" placeholder="Password" placeholderTextColor="$textTertiary" secureTextEntry value={authPassword} onChangeText={setAuthPassword} marginTop="$3" />
-          {authError && <B color="$danger" fontSize={13} marginTop="$2" textAlign="center">{authError}</B>}
-          <YStack backgroundColor="$accent" borderRadius="$5" paddingVertical="$3" alignItems="center" marginTop="$4" opacity={authLoading?0.4:1} pressStyle={{opacity:0.8}} onPress={authLoading?undefined:()=>handleAuth('signin')}><B color="white" fontSize={16} fontWeight="700">{authLoading?'Signing in...':'Sign In & Restore'}</B></YStack>
-          <YStack backgroundColor="$surface" borderRadius="$5" paddingVertical="$3" alignItems="center" marginTop="$3" borderWidth={1} borderColor="$border" opacity={authLoading?0.4:1} pressStyle={{opacity:0.8}} onPress={authLoading?undefined:()=>handleAuth('signup')}><B color="$textSecondary" fontSize={15} fontWeight="600">Create Account</B></YStack>
-        </>) : (<XStack backgroundColor="$surface" borderRadius="$5" padding="$4" borderWidth={1} borderColor="$success" marginTop="$4" alignSelf="center" alignItems="center" gap="$3"><B color="$success" fontSize={20}>✓</B><B color="$success" fontSize={16} fontWeight="600">Signed in</B></XStack>)}
-        <YStack marginTop="$6" padding="$3" alignItems="center" pressStyle={{opacity:0.7}} onPress={()=>setStep(2)}><B color="$textSecondary" fontSize={15} textDecorationLine="underline">Skip — continue without account</B></YStack>
+          <Input height={44} backgroundColor={colors.surface} borderColor={colors.border} borderRadius={12} color={colors.textPrimary} fontSize={16} fontFamily="$body" placeholder="Email" placeholderTextColor="$textTertiary" paddingHorizontal={14} value={authEmail} onChangeText={setAuthEmail} autoCapitalize="none" keyboardType="email-address" />
+          <Input height={44} backgroundColor={colors.surface} borderColor={colors.border} borderRadius={12} color={colors.textPrimary} fontSize={16} fontFamily="$body" placeholder="Password" placeholderTextColor="$textTertiary" paddingHorizontal={14} secureTextEntry value={authPassword} onChangeText={setAuthPassword} marginTop={10} />
+          {authError && <B color={colors.error} fontSize={13} marginTop={8} textAlign="center">{authError}</B>}
+          <YStack marginTop={20}><GradientButton label={authLoading?'Signing in...':'Sign In & Restore'} onPress={()=>{if(!authLoading)handleAuth('signin');}} disabled={authLoading} /></YStack>
+          <YStack borderRadius={12} paddingVertical={12} alignItems="center" marginTop={10} borderWidth={1} borderColor={colors.cyan} opacity={authLoading?0.4:1} pressStyle={{opacity:0.8}} onPress={authLoading?undefined:()=>handleAuth('signup')}><B color={colors.cyan} fontSize={15} fontWeight="600">Create Account</B></YStack>
+        </>) : (<XStack backgroundColor={colors.surface} borderRadius={12} padding={16} borderWidth={1} borderColor={colors.success} marginTop={16} alignSelf="center" alignItems="center" gap={10}><MaterialCommunityIcons name="check-circle" size={20} color={colors.success} /><B color={colors.success} fontSize={16} fontWeight="600">Signed in</B></XStack>)}
+        <YStack marginTop={24} padding={8} alignItems="center" pressStyle={{opacity:0.7}} onPress={()=>setStep(2)}><B color={colors.textTertiary} fontSize={14}>Skip — continue without account</B></YStack>
       </ScrollView>
     );
   };
@@ -203,12 +220,15 @@ export default function SetupScreen() {
       </YStack>
     );
     return (
-      <YStack flex={1} justifyContent="center" alignItems="center" paddingHorizontal="$8">
-        <H color="$color" fontSize={32} letterSpacing={1} marginBottom="$2">Connect Strava</H>
-        <B color="$textSecondary" fontSize={15} textAlign="center" lineHeight={22} marginBottom="$8">We'll import your running history to pre-fill your profile.</B>
-        {stravaConnected ? (<XStack backgroundColor="$surface" borderRadius="$5" padding="$4" borderWidth={1} borderColor="$success" alignItems="center" gap="$3"><B color="$success" fontSize={20}>✓</B><B color="$success" fontSize={16} fontWeight="600">Strava connected</B></XStack>)
-        : (<YStack backgroundColor="$strava" paddingVertical="$4" paddingHorizontal="$10" borderRadius="$5" width="100%" alignItems="center" pressStyle={{opacity:0.8}} onPress={handleConnectStrava}><B color="white" fontSize={18} fontWeight="700">Connect with Strava</B></YStack>)}
-        <YStack marginTop="$6" padding="$3" pressStyle={{opacity:0.7}} onPress={()=>setStep(3)}><B color="$textSecondary" fontSize={15} textDecorationLine="underline">Skip — enter everything manually</B></YStack>
+      <YStack flex={1} justifyContent="center" alignItems="center" paddingHorizontal={32}>
+        <View width={64} height={64} borderRadius={32} backgroundColor={colors.surfaceHover} alignItems="center" justifyContent="center" marginBottom={16}>
+          <StravaIcon size={32} />
+        </View>
+        <H color={colors.textPrimary} fontSize={28} letterSpacing={1} marginBottom={6}>Connect Strava</H>
+        <B color={colors.textSecondary} fontSize={14} textAlign="center" lineHeight={20} marginBottom={32}>We'll import your running history to pre-fill your profile and calculate your fitness level.</B>
+        {stravaConnected ? (<XStack backgroundColor={colors.surface} borderRadius={12} padding={16} borderWidth={1} borderColor={colors.success} alignItems="center" gap={10}><MaterialCommunityIcons name="check-circle" size={20} color={colors.success} /><B color={colors.success} fontSize={16} fontWeight="600">Strava connected</B></XStack>)
+        : (<YStack backgroundColor="#FC5200" paddingVertical={14} borderRadius={12} width="100%" alignItems="center" flexDirection="row" justifyContent="center" gap={8} pressStyle={{opacity:0.8}} onPress={handleConnectStrava}><MaterialCommunityIcons name="run-fast" size={18} color="#FFFFFF" /><B color="white" fontSize={16} fontWeight="700">Connect with Strava</B></YStack>)}
+        <YStack marginTop={24} padding={8} pressStyle={{opacity:0.7}} onPress={()=>setStep(3)}><B color={colors.textTertiary} fontSize={14}>Skip — enter everything manually</B></YStack>
       </YStack>
     );
   };
@@ -217,17 +237,17 @@ export default function SetupScreen() {
     <ScrollView flex={1} contentContainerStyle={{paddingHorizontal:24,paddingTop:8,paddingBottom:32}}>
       <H color="$color" fontSize={32} letterSpacing={1} marginBottom="$2">Your Profile</H>
       <B color="$textSecondary" fontSize={15} lineHeight={22} marginBottom="$7">{stravaData?'Pre-filled from Strava. Review and edit.':'Enter your details.'}</B>
-      <FieldLabel text="Name" fromStrava={stravaFilledFields.has('name')} /><Input size="$8" backgroundColor="$surface" borderColor="$border" color="$color" fontSize={16} fontFamily="$body" placeholder="Your name" placeholderTextColor="$textTertiary" value={name} onChangeText={setName} />
-      <FieldLabel text="Age *" /><Input size="$8" backgroundColor="$surface" borderColor="$border" color="$color" fontSize={16} fontFamily="$body" placeholder="e.g. 35" placeholderTextColor="$textTertiary" keyboardType="number-pad" value={age} onChangeText={setAge} />
+      <FieldLabel text="Name" fromStrava={stravaFilledFields.has('name')} /><Input height={44} backgroundColor={colors.surface} borderColor={colors.border} borderRadius={12} color={colors.textPrimary} fontSize={16} fontFamily="$body" paddingHorizontal={14} placeholder="Your name" placeholderTextColor="$textTertiary" value={name} onChangeText={setName} />
+      <FieldLabel text="Age *" /><Input height={44} backgroundColor={colors.surface} borderColor={colors.border} borderRadius={12} color={colors.textPrimary} fontSize={16} fontFamily="$body" paddingHorizontal={14} placeholder="e.g. 35" placeholderTextColor="$textTertiary" keyboardType="number-pad" value={age} onChangeText={setAge} />
       <FieldLabel text="Gender" fromStrava={stravaFilledFields.has('gender')} /><SegmentedControl options={GENDERS} selected={gender} onSelect={setGender} />
-      <FieldLabel text="Height (cm)" /><Input size="$8" backgroundColor="$surface" borderColor="$border" color="$color" fontSize={16} fontFamily="$body" placeholder="e.g. 175" placeholderTextColor="$textTertiary" keyboardType="number-pad" value={heightCm} onChangeText={setHeightCm} />
+      <FieldLabel text="Height (cm)" /><Input height={44} backgroundColor={colors.surface} borderColor={colors.border} borderRadius={12} color={colors.textPrimary} fontSize={16} fontFamily="$body" paddingHorizontal={14} placeholder="e.g. 175" placeholderTextColor="$textTertiary" keyboardType="number-pad" value={heightCm} onChangeText={setHeightCm} />
       <FieldLabel text="Recent Race Distance" fromStrava={stravaFilledFields.has('raceDistance')} /><SegmentedControl options={RACE_DISTANCES} selected={raceDistance} onSelect={setRaceDistance} />
       <FieldLabel text="Recent Race Time *" fromStrava={stravaFilledFields.has('raceTime')} />
       <YStack backgroundColor="$surface" borderRadius="$4" borderWidth={1} borderColor="$border" paddingHorizontal="$4" paddingVertical="$4" height={52} pressStyle={{opacity:0.8}} onPress={()=>openDurationPicker(raceTime,'race')}><B color={raceTime?'$color':'$textTertiary'} fontSize={16}>{raceTime||'Tap to set time'}</B></YStack>
       <DurationPickerModal visible={showRaceTimePicker} onClose={()=>setShowRaceTimePicker(false)} onConfirm={()=>confirmDurationPicker('race')} title={`${raceDistance} Time`} />
       {calculatedVDOT!==null&&(<YStack backgroundColor="$surface" borderRadius="$5" padding="$4" alignItems="center" marginTop="$4" borderWidth={1} borderColor="$accent"><H color="$textSecondary" fontSize={14} letterSpacing={1.5}>VDOT</H><M color="$accent" fontSize={48} fontWeight="800">{calculatedVDOT}</M></YStack>)}
-      <FieldLabel text="Weekly Mileage *" fromStrava={stravaFilledFields.has('weeklyMileage')} /><Input size="$8" backgroundColor="$surface" borderColor="$border" color="$color" fontSize={16} fontFamily="$body" placeholder="e.g. 25" placeholderTextColor="$textTertiary" keyboardType="decimal-pad" value={weeklyMileage} onChangeText={setWeeklyMileage} />
-      <FieldLabel text="Longest Recent Run (mi) *" fromStrava={stravaFilledFields.has('longestRun')} /><Input size="$8" backgroundColor="$surface" borderColor="$border" color="$color" fontSize={16} fontFamily="$body" placeholder="e.g. 10" placeholderTextColor="$textTertiary" keyboardType="decimal-pad" value={longestRun} onChangeText={setLongestRun} />
+      <FieldLabel text="Weekly Mileage *" fromStrava={stravaFilledFields.has('weeklyMileage')} /><Input height={44} backgroundColor={colors.surface} borderColor={colors.border} borderRadius={12} color={colors.textPrimary} fontSize={16} fontFamily="$body" paddingHorizontal={14} placeholder="e.g. 25" placeholderTextColor="$textTertiary" keyboardType="decimal-pad" value={weeklyMileage} onChangeText={setWeeklyMileage} />
+      <FieldLabel text="Longest Recent Run (mi) *" fromStrava={stravaFilledFields.has('longestRun')} /><Input height={44} backgroundColor={colors.surface} borderColor={colors.border} borderRadius={12} color={colors.textPrimary} fontSize={16} fontFamily="$body" paddingHorizontal={14} placeholder="e.g. 10" placeholderTextColor="$textTertiary" keyboardType="decimal-pad" value={longestRun} onChangeText={setLongestRun} />
       <FieldLabel text="Experience" fromStrava={stravaFilledFields.has('experienceLevel')} /><SegmentedControl options={EXPERIENCE_LEVELS} selected={experienceLevel} onSelect={setExperienceLevel} />
       {stravaData&&(<YStack backgroundColor="$surface" borderRadius="$5" padding="$3" marginTop="$5" borderLeftWidth={3} borderLeftColor="$strava"><H color="$strava" fontSize={13} textTransform="uppercase" letterSpacing={1} marginBottom="$1">Strava Import</H><B color="$textSecondary" fontSize={13} lineHeight={19}>{stravaData.totalActivities} runs analyzed</B></YStack>)}
       <YStack height={20} />
@@ -238,7 +258,7 @@ export default function SetupScreen() {
     <ScrollView flex={1} contentContainerStyle={{paddingHorizontal:24,paddingTop:8,paddingBottom:32}}>
       <H color="$color" fontSize={32} letterSpacing={1} marginBottom="$2">Race Details</H>
       <B color="$textSecondary" fontSize={15} lineHeight={22} marginBottom="$7">Tell us about your target marathon.</B>
-      <FieldLabel text="Race Name (optional)" /><Input size="$8" backgroundColor="$surface" borderColor="$border" color="$color" fontSize={16} fontFamily="$body" placeholder="e.g. Chicago Marathon" placeholderTextColor="$textTertiary" value={raceName} onChangeText={setRaceName} />
+      <FieldLabel text="Race Name (optional)" /><Input height={44} backgroundColor={colors.surface} borderColor={colors.border} borderRadius={12} color={colors.textPrimary} fontSize={16} fontFamily="$body" paddingHorizontal={14} placeholder="e.g. Chicago Marathon" placeholderTextColor="$textTertiary" value={raceName} onChangeText={setRaceName} />
       <FieldLabel text="Race Date *" />
       <YStack backgroundColor="$surface" borderRadius="$4" borderWidth={1} borderColor="$border" paddingHorizontal="$4" paddingVertical="$4" height={52} pressStyle={{opacity:0.8}} onPress={()=>setShowDatePicker(true)}><B color={raceDate?'$color':'$textTertiary'} fontSize={16}>{raceDate||'Tap to select race date'}</B></YStack>
       {showDatePicker&&(<Modal visible transparent animationType="slide"><Pressable style={{flex:1,backgroundColor:'rgba(0,0,0,0.6)',justifyContent:'flex-end'}} onPress={()=>setShowDatePicker(false)}><Pressable style={{backgroundColor:colors.surface,borderTopLeftRadius:20,borderTopRightRadius:20,padding:24,paddingBottom:40}} onPress={e=>e.stopPropagation()}><H color="$color" fontSize={22} textAlign="center" marginBottom="$5" letterSpacing={1}>Race Date</H><DateTimePicker value={raceDate?new Date(raceDate+'T00:00:00'):new Date(Date.now()+120*86400000)} mode="date" display="spinner" minimumDate={new Date()} themeVariant="dark" onChange={(_,d)=>{if(d){setRaceDate(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`);}}} /><YStack backgroundColor="$accent" borderRadius="$5" paddingVertical="$3" alignItems="center" marginTop="$5" pressStyle={{opacity:0.8}} onPress={()=>setShowDatePicker(false)}><B color="white" fontSize={16} fontWeight="700">Done</B></YStack></Pressable></Pressable></Modal>)}
@@ -267,7 +287,7 @@ export default function SetupScreen() {
       <B color="$textSecondary" fontSize={15} lineHeight={22} marginBottom="$7">Everything here is optional — skip ahead if you want.</B>
       <FieldLabel text="Injury History" /><ChipSelect options={INJURIES} selected={injuries} onToggle={toggleInjury} />
       <FieldLabel text="Known Weaknesses" /><ChipSelect options={WEAKNESSES} selected={weaknesses} onToggle={toggleWeakness} />
-      <FieldLabel text="Scheduling Notes" /><Input size="$8" backgroundColor="$surface" borderColor="$border" color="$color" fontSize={16} fontFamily="$body" placeholder="e.g. Travel for work on Wednesdays..." placeholderTextColor="$textTertiary" multiline numberOfLines={3} value={schedulingNotes} onChangeText={setSchedulingNotes} minHeight={80} />
+      <FieldLabel text="Scheduling Notes" /><Input height={44} backgroundColor={colors.surface} borderColor={colors.border} borderRadius={12} color={colors.textPrimary} fontSize={16} fontFamily="$body" paddingHorizontal={14} placeholder="e.g. Travel for work on Wednesdays..." placeholderTextColor="$textTertiary" multiline numberOfLines={3} value={schedulingNotes} onChangeText={setSchedulingNotes} minHeight={80} />
       <YStack height={20} />
     </ScrollView>
   );
@@ -295,9 +315,9 @@ export default function SetupScreen() {
         {planSummary.keyPrinciples.length>0&&<YStack backgroundColor="$surface" borderRadius="$5" padding="$4" marginBottom="$4"><H color="$color" fontSize={16} letterSpacing={1} marginBottom="$2">Key Principles</H>{planSummary.keyPrinciples.map((p,i)=><B key={i} color="$textSecondary" fontSize={14} lineHeight={22} paddingLeft="$1">{'\u2022'} {p}</B>)}</YStack>}
         {planSummary.warnings.length>0&&<YStack backgroundColor="$surface" borderRadius="$5" padding="$4" marginBottom="$4" borderWidth={1} borderColor="$warning"><H color="$warning" fontSize={16} letterSpacing={1} marginBottom="$2">Warnings</H>{planSummary.warnings.map((w,i)=><B key={i} color="$warning" fontSize={14} lineHeight={22}>{'\u26A0'} {w}</B>)}</YStack>}
       </>)}
-      <YStack marginTop="$6" gap="$3">
-        <YStack backgroundColor="$accent" borderRadius="$5" paddingVertical="$4" alignItems="center" pressStyle={{opacity:0.8}} onPress={()=>router.replace('/(tabs)')}><B color="white" fontSize={18} fontWeight="700">Start Training</B></YStack>
-        <YStack backgroundColor="$surface" borderRadius="$5" paddingVertical="$3" alignItems="center" borderWidth={1} borderColor="$border" pressStyle={{opacity:0.8}} onPress={()=>{generatePlanRef.current=false;setPlanSummary(null);setPlanError(null);setStep(7);}}><B color="$textSecondary" fontSize={16} fontWeight="600">Regenerate Plan</B></YStack>
+      <YStack marginTop={24} gap={10}>
+        <GradientButton label="Start Training" onPress={()=>router.replace('/(tabs)')} />
+        <YStack borderRadius={12} paddingVertical={12} alignItems="center" borderWidth={1} borderColor={colors.border} pressStyle={{opacity:0.8}} onPress={()=>{generatePlanRef.current=false;setPlanSummary(null);setPlanError(null);setStep(7);}}><B color={colors.textSecondary} fontSize={15} fontWeight="600">Regenerate Plan</B></YStack>
       </YStack>
       <YStack height={20} />
     </ScrollView>
@@ -310,11 +330,11 @@ export default function SetupScreen() {
     <KeyboardAvoidingView style={{ flex: 1, backgroundColor: colors.background }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       {/* Step indicator */}
       {step >= 1 && step <= 6 && (
-        <XStack justifyContent="center" alignItems="center" paddingTop={60} paddingBottom="$3" gap="$2">
+        <XStack justifyContent="center" alignItems="center" paddingTop={60} paddingBottom={10} gap={6}>
           {Array.from({ length: TOTAL_STEPS }, (_, i) => (
-            <View key={i} width={i+1===step?24:8} height={8} borderRadius="$1"
-              backgroundColor={i+1===step?'$accent':i+1<step?'$accent':'$border'}
-              opacity={i+1<step?0.5:1} />
+            <View key={i} width={i+1===step?24:8} height={8} borderRadius={4}
+              backgroundColor={i+1===step?colors.cyan:i+1<step?colors.cyan:colors.border}
+              opacity={i+1<step?0.4:1} />
           ))}
         </XStack>
       )}
@@ -323,14 +343,14 @@ export default function SetupScreen() {
 
       {/* Nav bar */}
       {showNav && (
-        <XStack justifyContent="space-between" alignItems="center" paddingHorizontal="$6" paddingVertical="$4" paddingBottom={36} borderTopWidth={1} borderTopColor="$border">
-          <YStack paddingVertical="$3" paddingHorizontal="$4" minWidth={80} pressStyle={{opacity:0.7}} onPress={handleBack}>
-            <B color="$textSecondary" fontSize={16} fontWeight="500">Back</B>
+        <XStack justifyContent="space-between" alignItems="center" paddingHorizontal={24} paddingVertical={12} paddingBottom={36}>
+          <YStack paddingVertical={10} paddingHorizontal={16} pressStyle={{opacity:0.7}} onPress={handleBack}>
+            <B color={colors.textSecondary} fontSize={15} fontWeight="500">Back</B>
           </YStack>
-          <YStack backgroundColor="$accent" paddingVertical="$3" paddingHorizontal="$7" borderRadius="$4" minWidth={120} alignItems="center"
-            opacity={canAdvance()?1:0.4} pressStyle={canAdvance()?{opacity:0.8}:undefined}
+          <YStack backgroundColor={canAdvance() ? colors.cyan : colors.surfaceHover} paddingVertical={12} paddingHorizontal={28} borderRadius={12} alignItems="center"
+            pressStyle={canAdvance()?{opacity:0.8}:undefined}
             onPress={canAdvance()?handleNext:undefined}>
-            <B color="white" fontSize={16} fontWeight="700">{step===6?'Generate Plan':'Next'}</B>
+            <B color={canAdvance() ? colors.background : colors.textTertiary} fontSize={15} fontWeight="700">{step===6?'Generate Plan':'Next'}</B>
           </YStack>
         </XStack>
       )}
