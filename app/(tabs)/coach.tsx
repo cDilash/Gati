@@ -37,7 +37,7 @@ function RichText({ text, isUser }: { text: string; isUser: boolean }) {
   const paragraphs = text.split(/\n\n+/);
 
   return (
-    <YStack gap={10}>
+    <YStack gap={12}>
       {paragraphs.map((para, pi) => {
         // Check if paragraph is a bullet list
         const lines = para.split('\n');
