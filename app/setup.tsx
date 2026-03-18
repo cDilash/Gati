@@ -237,6 +237,12 @@ export default function SetupScreen() {
         {stravaConnected ? (<XStack backgroundColor={colors.surface} borderRadius={12} padding={16} borderWidth={1} borderColor={colors.success} alignItems="center" gap={10}><MaterialCommunityIcons name="check-circle" size={20} color={colors.success} /><B color={colors.success} fontSize={16} fontWeight="600">Strava connected</B></XStack>)
         : (<YStack backgroundColor="#FC5200" paddingVertical={14} borderRadius={12} width="100%" alignItems="center" flexDirection="row" justifyContent="center" gap={8} pressStyle={{opacity:0.8}} onPress={handleConnectStrava}><StravaIcon size={18} color="#FFFFFF" /><B color="white" fontSize={16} fontWeight="700">Connect with Strava</B></YStack>)}
         <YStack marginTop={24} padding={8} pressStyle={{opacity:0.7}} onPress={()=>setStep(3)}><B color={colors.textTertiary} fontSize={14}>Skip — enter everything manually</B></YStack>
+        <YStack marginTop={8} padding={8} pressStyle={{opacity:0.7}} onPress={()=>setStep(1)}>
+          <XStack alignItems="center" justifyContent="center" gap={4}>
+            <MaterialCommunityIcons name="chevron-left" size={16} color={colors.textTertiary} />
+            <B color={colors.textTertiary} fontSize={14}>Back to Sign In</B>
+          </XStack>
+        </YStack>
       </YStack>
     );
   };
