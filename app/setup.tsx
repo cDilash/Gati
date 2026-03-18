@@ -296,8 +296,34 @@ export default function SetupScreen() {
           </YStack>
         </XStack>
         <YStack>
-          <XStack alignItems="center" gap={6} marginBottom={4}><MaterialCommunityIcons name="signal-cellular-outline" size={14} color={colors.textTertiary} /><B color={colors.textTertiary} fontSize={12}>{stravaFilledFields.has('experienceLevel')?'Experience · Strava':'Experience'}</B></XStack>
-          <SegmentedControl options={EXPERIENCE_LEVELS} selected={experienceLevel} onSelect={setExperienceLevel} />
+          <XStack alignItems="center" gap={6} marginBottom={8}><MaterialCommunityIcons name="signal-cellular-outline" size={14} color={colors.textTertiary} /><B color={colors.textTertiary} fontSize={12}>{stravaFilledFields.has('experienceLevel')?'Experience · Strava':'Experience'}</B></XStack>
+          <YStack gap={10}>
+            {([
+              { level: 'Beginner' as ExperienceLevel, icon: 'run', desc: 'New to running or run occasionally. Less than 1 year consistent. Under 15 mi/week.' },
+              { level: 'Intermediate' as ExperienceLevel, icon: 'run-fast', desc: 'Run regularly for 1-3 years. 15-30 mi/week. Completed a 10K or half marathon.' },
+              { level: 'Advanced' as ExperienceLevel, icon: 'trophy', desc: 'Run consistently for 3+ years. 30+ mi/week. Completed a marathon. Understands pace zones.' },
+            ]).map(({ level: lvl, icon, desc }) => {
+              const active = experienceLevel === lvl;
+              return (
+                <Pressable key={lvl} onPress={() => setExperienceLevel(lvl)}>
+                  <XStack backgroundColor={active ? colors.cyanGhost : colors.surfaceHover} borderRadius={12} padding={14}
+                    borderWidth={active ? 2 : 1} borderColor={active ? colors.cyan : colors.border} alignItems="flex-start" gap={12}>
+                    <View width={32} height={32} borderRadius={16} backgroundColor={active ? colors.cyan + '22' : colors.surface}
+                      alignItems="center" justifyContent="center" marginTop={2}>
+                      <MaterialCommunityIcons name={icon as any} size={16} color={active ? colors.cyan : colors.textTertiary} />
+                    </View>
+                    <YStack flex={1}>
+                      <XStack alignItems="center" justifyContent="space-between">
+                        <B color={active ? colors.textPrimary : colors.textSecondary} fontSize={15} fontWeight="600">{lvl}</B>
+                        {active && <MaterialCommunityIcons name="check-circle" size={18} color={colors.cyan} />}
+                      </XStack>
+                      <B color={colors.textTertiary} fontSize={12} lineHeight={17} marginTop={3}>{desc}</B>
+                    </YStack>
+                  </XStack>
+                </Pressable>
+              );
+            })}
+          </YStack>
         </YStack>
       </YStack>
 
