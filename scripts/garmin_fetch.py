@@ -13,10 +13,14 @@ Prerequisites:
   2. Set SUPABASE_URL and SUPABASE_SERVICE_KEY env vars (or edit below)
 """
 
+import warnings
+warnings.filterwarnings("ignore", message="Logfire API is unreachable")
+import os
+os.environ["LOGFIRE_SEND_TO_LOGFIRE"] = "false"
+
 import garth
 import json
 import sys
-import os
 from datetime import datetime, timedelta
 
 # ─── Supabase config ─────────────────────────────────────────
