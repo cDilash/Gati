@@ -759,7 +759,7 @@ export function sweepPastWorkouts(): { skipped: number; lateMatched: number } {
     `UPDATE workout SET status = 'completed'
      WHERE status = 'upcoming' AND workout_type = 'rest' AND scheduled_date < ?
      AND plan_id IN (SELECT id FROM training_plan WHERE status = 'active')`,
-    [today]
+    [cutoffDate]
   );
 
   if (skipped > 0 || lateMatched > 0) {
