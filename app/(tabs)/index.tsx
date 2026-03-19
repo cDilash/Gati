@@ -64,6 +64,7 @@ export default function TodayScreen() {
   const proactiveSuggestion = useAppStore(s => s.proactiveSuggestion);
   const todayCrossTraining = useAppStore(s => s.todayCrossTraining);
   const logCrossTraining = useAppStore(s => s.logCrossTraining);
+  const isStravaConnected = useAppStore(s => s.isStravaConnected);
   const deleteCrossTrainingEntry = useAppStore(s => s.deleteCrossTrainingEntry);
   const fetchBriefing = useAppStore(s => s.fetchBriefing);
   const fetchPostRunAnalysis = useAppStore(s => s.fetchPostRunAnalysis);
@@ -145,6 +146,11 @@ export default function TodayScreen() {
   // ─── Cross-training modal ────────────────────────────────
   const [showCTModal, setShowCTModal] = useState(false);
   const [ctNotes, setCTNotes] = useState('');
+
+  // ─── Manual run entry (fallback when no Strava) ─────────
+  const [showManualRun, setShowManualRun] = useState(false);
+  const [manualDist, setManualDist] = useState('');
+  const [manualDur, setManualDur] = useState('');
 
   // ─── Rest day briefing ─────────────────────────────────
   const [restDayBriefing, setRestDayBriefing] = useState<{ whyResting: string; tips: { emoji: string; title: string; detail: string }[] } | null>(null);
@@ -966,8 +972,8 @@ export default function TodayScreen() {
             </YStack>
           )}
 
-          {/* Action Buttons */}
-          {todaysWorkout.status === 'upcoming' && (
+          {/* Action Buttons — only show manual buttons when Strava NOT connected */}
+          {todaysWorkout.status === 'upcoming' && !isStravaConnected && (
             <XStack gap="$3" marginTop="$1">
               <YStack flex={1} backgroundColor="$success" paddingVertical="$3" borderRadius="$5" alignItems="center"
                 pressStyle={{ opacity: 0.8 }} onPress={handleComplete}>
@@ -978,6 +984,20 @@ export default function TodayScreen() {
                 <B color="$textSecondary" fontSize={16} fontWeight="600">Mark Skipped</B>
               </YStack>
             </XStack>
+          )}
+          {/* Strava connected — auto-sync note */}
+          {todaysWorkout.status === 'upcoming' && isStravaConnected && (
+            <YStack marginTop="$2" gap={6}>
+              <XStack alignItems="center" justifyContent="center" gap={6}>
+                <MaterialCommunityIcons name="sync" size={13} color={colors.textTertiary} />
+                <B color="$textTertiary" fontSize={12}>Syncs automatically from Strava</B>
+              </XStack>
+              <B color="$textTertiary" fontSize={11} textAlign="center"
+                pressStyle={{ opacity: 0.7 }}
+                onPress={() => setShowManualRun(true)}>
+                Ran without your watch? Log manually
+              </B>
+            </YStack>
           )}
 
           {/* Status badges */}
@@ -1247,6 +1267,48 @@ export default function TodayScreen() {
                   style={{ flex: 1, color: colors.textPrimary, fontFamily: 'Exo2_400Regular', fontSize: 16 }}
                 />
               </XStack>
+            </YStack>
+          </View>
+        </View>
+      )}
+
+      {/* Manual Run Entry Modal */}
+      {showManualRun && (
+        <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end', zIndex: 100 }}>
+          <Pressable style={{ flex: 1 }} onPress={() => { setShowManualRun(false); setManualDist(''); setManualDur(''); }} />
+          <View style={{ backgroundColor: colors.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, paddingBottom: 40 }}>
+            <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginBottom: 16 }} />
+            <H color={colors.textPrimary} fontSize={18} letterSpacing={1} marginBottom={16}>Log Run Manually</H>
+            <XStack gap={12}>
+              <YStack flex={1}>
+                <B color={colors.textTertiary} fontSize={12} marginBottom={4}>Distance (mi)</B>
+                <TextInput value={manualDist} onChangeText={setManualDist} keyboardType="decimal-pad" placeholder="3.3"
+                  placeholderTextColor={colors.textTertiary}
+                  style={{ height: 44, backgroundColor: colors.surfaceHover, borderRadius: 12, borderWidth: 1, borderColor: colors.border, color: colors.textPrimary, fontFamily: 'JetBrainsMono_600SemiBold', fontSize: 16, paddingHorizontal: 14 }} />
+              </YStack>
+              <YStack flex={1}>
+                <B color={colors.textTertiary} fontSize={12} marginBottom={4}>Duration (min)</B>
+                <TextInput value={manualDur} onChangeText={setManualDur} keyboardType="decimal-pad" placeholder="30"
+                  placeholderTextColor={colors.textTertiary}
+                  style={{ height: 44, backgroundColor: colors.surfaceHover, borderRadius: 12, borderWidth: 1, borderColor: colors.border, color: colors.textPrimary, fontFamily: 'JetBrainsMono_600SemiBold', fontSize: 16, paddingHorizontal: 14 }} />
+              </YStack>
+            </XStack>
+            <B color={colors.textTertiary} fontSize={11} marginTop={8} marginBottom={16}>No HR, splits, or route data. Connect Strava for full tracking.</B>
+            <YStack backgroundColor={manualDist.trim() ? colors.cyan : colors.surfaceHover} borderRadius={12} paddingVertical={12} alignItems="center"
+              pressStyle={manualDist.trim() ? { opacity: 0.8 } : undefined}
+              onPress={manualDist.trim() ? () => {
+                const dist = parseFloat(manualDist);
+                const dur = parseFloat(manualDur) || 0;
+                if (dist > 0 && todaysWorkout) {
+                  try {
+                    const { addManualRun } = useAppStore.getState();
+                    addManualRun(getToday(), dist, dur);
+                    markWorkoutComplete(todaysWorkout.id);
+                  } catch {}
+                }
+                setShowManualRun(false); setManualDist(''); setManualDur('');
+              } : undefined}>
+              <B color={manualDist.trim() ? colors.background : colors.textTertiary} fontSize={15} fontWeight="700">Save Run</B>
             </YStack>
           </View>
         </View>
