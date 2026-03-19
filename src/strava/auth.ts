@@ -10,11 +10,11 @@ const STRAVA_AUTH_URL = 'https://www.strava.com/oauth/authorize';
 const STRAVA_TOKEN_URL = 'https://www.strava.com/oauth/token';
 const STRAVA_DEAUTH_URL = 'https://www.strava.com/oauth/deauthorize';
 
-// ─── SQLite helpers (direct access, same pattern as rateLimiter) ───
+// ─── SQLite helpers ───
 
 function getDb() {
-  const SQLite = require('expo-sqlite');
-  return SQLite.openDatabaseSync('marathon_coach.db');
+  const { getDatabase } = require('../db/database');
+  return getDatabase();
 }
 
 // ─── Token Storage ─────────────────────────────────────────

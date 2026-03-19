@@ -786,8 +786,12 @@ export const useAppStore = create<AppState>((set, get) => ({
       get().syncStravaConnection();
       get().refreshShoes();
 
+      // Log post-sync state for debugging
+      const postSyncWorkout = get().todaysWorkout;
+      console.log(`[Store] Post-sync: todaysWorkout status=${postSyncWorkout?.status ?? 'null'}, id=${postSyncWorkout?.id ?? 'null'}, matched=${result.matched}`);
+
       // Auto-trigger post-run analysis + post-run summary modal
-      if (result.matched > 0) {
+      if (result.matched > 0 || (postSyncWorkout && (postSyncWorkout.status === 'completed' || postSyncWorkout.status === 'partial'))) {
         (async () => {
           try {
             const todayW = get().todaysWorkout;

@@ -249,8 +249,8 @@ export default function ProfileScreen() {
         {/* ─── Running Schedule ──────────────────────────── */}
         <SectionTitle title="Running Schedule" />
         <YStack backgroundColor={colors.surface} borderRadius={14} overflow="hidden">
-          <IconRow icon="road-variant" label="Weekly Mileage" value={isMetric ? `${(userProfile.current_weekly_miles * 1.60934).toFixed(1)} km` : `${userProfile.current_weekly_miles} mi`} source="Strava" updatedAt={(userProfile as any).weekly_mileage_updated_at ?? lastSyncTime} />
-          <IconRow icon="run-fast" label="Longest Recent Run" value={isMetric ? `${(userProfile.longest_recent_run * 1.60934).toFixed(1)} km` : `${userProfile.longest_recent_run} mi`} source="Strava" updatedAt={(userProfile as any).longest_run_updated_at ?? lastSyncTime} />
+          <IconRow icon="road-variant" label="Weekly Mileage" value={isMetric ? `${(userProfile.current_weekly_miles * 1.60934).toFixed(1)} km` : `${userProfile.current_weekly_miles} mi`} source="Strava" updatedAt={(userProfile as any).weekly_mileage_updated_at || lastSyncTime || null} />
+          <IconRow icon="run-fast" label="Longest Recent Run" value={isMetric ? `${(userProfile.longest_recent_run * 1.60934).toFixed(1)} km` : `${userProfile.longest_recent_run} mi`} source="Strava" updatedAt={(userProfile as any).longest_run_updated_at || lastSyncTime || null} />
           <XStack paddingVertical={12} paddingHorizontal={14} borderBottomWidth={0.5} borderBottomColor={colors.border} alignItems="center">
             <View width={28} height={28} borderRadius={14} backgroundColor={colors.cyanGhost} alignItems="center" justifyContent="center" marginRight={12}>
               <MaterialCommunityIcons name="calendar-check" size={14} color={colors.cyan} />

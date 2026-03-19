@@ -1,5 +1,6 @@
 import React, { useEffect, useCallback, useState, useMemo } from 'react';
-import { RefreshControl, TextInput, Pressable } from 'react-native';
+import { RefreshControl, TextInput, Pressable, StyleSheet } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { ScrollView, YStack, XStack, Text, View, Spinner, Button } from 'tamagui';
 import { useRouter } from 'expo-router';
 import { useAppStore } from '../../src/store';
@@ -263,26 +264,141 @@ export default function TodayScreen() {
     try { intervals = JSON.parse(todaysWorkout.intervals_json); } catch {}
   }
 
-  return (
-    <ScrollView
-      flex={1} backgroundColor="$background"
-      contentContainerStyle={{ padding: 16, paddingBottom: 40 }}
-      refreshControl={<RefreshControl refreshing={isSyncing} onRefresh={onRefresh} tintColor={colors.cyan} />}
-    >
-      {/* Sync Indicator */}
-      {isSyncing && (
-        <XStack alignItems="center" justifyContent="center" gap="$2" marginBottom="$2">
-          <Spinner size="small" color="$textTertiary" />
-          <B color="$textTertiary" fontSize={12}>Syncing...</B>
-        </XStack>
-      )}
-      {!isSyncing && showSyncDone && (
-        <XStack alignItems="center" justifyContent="center" gap="$2" marginBottom="$2">
-          <MaterialCommunityIcons name="check-circle-outline" size={14} color={colors.cyan} />
-          <B color="$textTertiary" fontSize={12}>Updated</B>
-        </XStack>
-      )}
+  // ─── Computed values for sticky header ──────────────────
+  const readiness = useMemo(() => {
+    const today = getToday();
+    const pastDueWorkouts = workouts.filter(w =>
+      w.workout_type !== 'rest' && w.scheduled_date <= today &&
+      (w.status === 'completed' || w.status === 'skipped' || w.status === 'partial')
+    );
+    const completedCount = pastDueWorkouts.filter(w => w.status === 'completed' || w.status === 'partial').length;
+    const adherence = pastDueWorkouts.length > 0 ? completedCount / pastDueWorkouts.length : 1;
 
+    let label: string;
+    let color: string;
+    if (currentWeekNumber <= 1 && pastDueWorkouts.length < 3) {
+      label = 'Just getting started'; color = colors.cyan;
+    } else if (adherence >= 1.0 && pastDueWorkouts.length >= 10) {
+      label = 'Crushing it'; color = colors.cyan;
+    } else if (adherence >= 0.8) {
+      label = 'On track'; color = colors.cyan;
+    } else if (adherence >= 0.6) {
+      label = 'Catching up'; color = colors.orange;
+    } else {
+      label = 'You\'re behind'; color = colors.error;
+    }
+    return { label, color, adherence, count: pastDueWorkouts.length };
+  }, [workouts, currentWeekNumber]);
+
+  const streak = useMemo(() => {
+    let count = 0;
+    const sortedWeeks = [...weeks].sort((a, b) => b.week_number - a.week_number);
+    for (const w of sortedWeeks) {
+      if (w.week_number > currentWeekNumber) continue;
+      if (w.week_number === currentWeekNumber) continue;
+      const weekWO = workouts.filter(wo => wo.week_number === w.week_number && wo.workout_type !== 'rest');
+      if (weekWO.length === 0) break;
+      const completed = weekWO.filter(wo => wo.status === 'completed' || wo.status === 'partial').length;
+      if (completed / weekWO.length >= 0.8) { count++; } else { break; }
+    }
+    return count;
+  }, [weeks, workouts, currentWeekNumber]);
+
+  const weekProgress = useMemo(() => {
+    if (!currentWeek) return null;
+    const weekVol = currentWeek.actual_volume;
+    const weekTarget = currentWeek.target_volume;
+    const pct = weekTarget > 0 ? Math.round((weekVol / weekTarget) * 100) : 0;
+    const weekRuns = workouts.filter(w => w.week_number === currentWeek.week_number && w.workout_type !== 'rest');
+    const completedRuns = weekRuns.filter(w => w.status === 'completed' || w.status === 'partial').length;
+    return { weekVol, weekTarget, pct, completedRuns, totalRuns: weekRuns.length };
+  }, [currentWeek, workouts]);
+
+  return (
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
+      {/* ═══ STICKY HEADER ═══ */}
+      <View style={stickyStyles.header}>
+        {/* Race countdown + week/phase */}
+        {daysUntilRace === 0 ? (
+          <XStack alignItems="center" justifyContent="center" paddingVertical={2}>
+            <M color={colors.orange} fontSize={15} fontWeight="800">RACE DAY</M>
+            {userProfile?.race_name && <B color="$textTertiary" fontSize={12}> · {userProfile.race_name}</B>}
+          </XStack>
+        ) : userProfile?.race_name && daysUntilRace > 0 ? (
+          <XStack alignItems="center" justifyContent="space-between">
+            <XStack alignItems="center" gap={6}>
+              <M color={colors.cyan} fontSize={14} fontWeight="800">{daysUntilRace}d</M>
+              <B color="$textTertiary" fontSize={12}>to {userProfile.race_name}</B>
+            </XStack>
+            <B color="$textTertiary" fontSize={12}>W{currentWeekNumber}/{totalWeeks} · {currentPhase}</B>
+          </XStack>
+        ) : (
+          <XStack alignItems="center" justifyContent="space-between">
+            <B color="$textTertiary" fontSize={12}>Week {currentWeekNumber}/{totalWeeks} · {currentPhase}</B>
+          </XStack>
+        )}
+
+        {/* Readiness + streak (inline) */}
+        <XStack alignItems="center" gap={6} marginTop={4}>
+          <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: readiness.color }} />
+          <B color={readiness.color} fontSize={12} fontWeight="600">{readiness.label}</B>
+          {readiness.count >= 3 && (
+            <B color="$textTertiary" fontSize={11}> · {Math.round(readiness.adherence * 100)}%</B>
+          )}
+          {streak >= 2 && (
+            <XStack alignItems="center" gap={3} marginLeft={4}>
+              <MaterialCommunityIcons name="fire" size={12} color={streak >= 8 ? colors.orange : colors.cyan} />
+              <M color={streak >= 8 ? colors.orange : colors.cyan} fontSize={11} fontWeight="700">{streak}w</M>
+            </XStack>
+          )}
+        </XStack>
+
+        {/* Weekly progress bar */}
+        {weekProgress && (
+          <YStack marginTop={6}>
+            <XStack justifyContent="space-between" alignItems="center" marginBottom={3}>
+              <B color="$textTertiary" fontSize={11}>
+                {weekProgress.completedRuns}/{weekProgress.totalRuns} runs · {weekProgress.weekVol.toFixed(1)} of {weekProgress.weekTarget.toFixed(0)} mi
+              </B>
+              <M color={weekProgress.pct >= 80 ? colors.cyan : weekProgress.pct >= 50 ? colors.textSecondary : colors.orange}
+                fontSize={11} fontWeight="700">{weekProgress.pct}%</M>
+            </XStack>
+            <View style={stickyStyles.progressTrack}>
+              <View style={[stickyStyles.progressFill, {
+                width: `${Math.min(weekProgress.pct, 100)}%` as any,
+                backgroundColor: weekProgress.pct >= 80 ? colors.cyan : weekProgress.pct >= 50 ? colors.textSecondary : colors.orange,
+              }]} />
+            </View>
+          </YStack>
+        )}
+
+        {/* Sync indicator in header */}
+        {isSyncing && (
+          <XStack alignItems="center" justifyContent="center" gap={4} marginTop={4}>
+            <Spinner size="small" color="$textTertiary" />
+            <B color="$textTertiary" fontSize={10}>Syncing...</B>
+          </XStack>
+        )}
+        {!isSyncing && showSyncDone && (
+          <XStack alignItems="center" justifyContent="center" gap={4} marginTop={4}>
+            <MaterialCommunityIcons name="check-circle-outline" size={12} color={colors.cyan} />
+            <B color="$textTertiary" fontSize={10}>Updated</B>
+          </XStack>
+        )}
+      </View>
+
+      {/* Shadow edge */}
+      <LinearGradient
+        colors={['rgba(10,10,15,0.4)', 'rgba(10,10,15,0)']}
+        style={stickyStyles.shadow}
+      />
+
+      {/* ═══ SCROLLABLE CONTENT ═══ */}
+      <ScrollView
+        flex={1} backgroundColor="$background"
+        contentContainerStyle={{ padding: 16, paddingBottom: 40 }}
+        refreshControl={<RefreshControl refreshing={isSyncing} onRefresh={onRefresh} tintColor={colors.cyan} />}
+      >
       {/* VDOT Change Notification */}
       {vdotNotification && (
         <YStack backgroundColor="$surface" borderRadius="$6" padding="$4" marginBottom="$4" borderLeftWidth={3}
@@ -380,203 +496,364 @@ export default function TodayScreen() {
         </YStack>
       )}
 
-      {/* Race Countdown + Readiness */}
-      <YStack marginBottom="$4">
-        {/* Race countdown */}
-        {userProfile?.race_name && daysUntilRace > 0 && (
-          <YStack backgroundColor="$surface" borderRadius="$6" padding="$4" marginBottom="$3">
-            <XStack alignItems="center" justifyContent="space-between">
-              <YStack flex={1}>
-                <M color={colors.cyan} fontSize={32} fontWeight="800">{daysUntilRace}</M>
-                <B color="$textSecondary" fontSize={12}>days to {userProfile.race_name}</B>
-              </YStack>
-              <YStack alignItems="flex-end">
-                <H color="$color" fontSize={14} letterSpacing={1} textTransform="uppercase">
-                  Week {currentWeekNumber}/{totalWeeks}
-                </H>
-                <H color={colors.cyan} fontSize={11} letterSpacing={1} textTransform="uppercase" marginTop={2}>
-                  {currentPhase} phase
-                </H>
-              </YStack>
-            </XStack>
-            {/* Readiness indicator */}
-            {(() => {
-              // Only count workouts that were DUE (scheduled before or on today, not future)
-              const today = getToday();
-              const pastDueWorkouts = workouts.filter(w =>
-                w.workout_type !== 'rest' && w.scheduled_date <= today &&
-                (w.status === 'completed' || w.status === 'skipped' || w.status === 'partial')
-              );
-              const completedCount = pastDueWorkouts.filter(w => w.status === 'completed' || w.status === 'partial').length;
-              const adherence = pastDueWorkouts.length > 0 ? completedCount / pastDueWorkouts.length : 1;
+      {/* === THE HERO: Workout card FIRST === */}
+      {/* Today's Workout */}
+      {!isRestDay && todaysWorkout && (
+        <YStack backgroundColor="$surface" borderRadius="$6" padding="$5" marginBottom="$4"
+          borderWidth={1} borderColor={todaysWorkout.status === 'completed' ? colors.cyanDim : todaysWorkout.status === 'skipped' ? colors.orangeDim : todaysWorkout.status === 'partial' ? colors.orangeDim : '$border'}
+          borderLeftWidth={todaysWorkout.status === 'completed' ? 3 : todaysWorkout.status === 'skipped' || todaysWorkout.status === 'partial' ? 3 : 1}
+          borderLeftColor={todaysWorkout.status === 'completed' ? colors.cyan : todaysWorkout.status === 'skipped' ? colors.orange : todaysWorkout.status === 'partial' ? colors.orange : '$border'}>
 
-              let label: string;
-              let readinessColor: string;
-
-              // First week with < 3 past-due workouts: "Just getting started"
-              if (currentWeekNumber <= 1 && pastDueWorkouts.length < 3) {
-                label = 'Just getting started';
-                readinessColor = colors.cyan;
-              } else if (adherence >= 1.0 && pastDueWorkouts.length >= 10) {
-                label = 'Crushing it';
-                readinessColor = colors.cyan;
-              } else if (adherence >= 0.8) {
-                label = 'On track';
-                readinessColor = colors.cyan;
-              } else if (adherence >= 0.6) {
-                label = 'Catching up';
-                readinessColor = colors.orange;
-              } else {
-                label = 'You\'re behind';
-                readinessColor = colors.error;
-              }
-
-              return (
-                <XStack marginTop="$3" paddingTop="$3" borderTopWidth={0.5} borderTopColor="$border" alignItems="center" gap="$2">
-                  <View width={10} height={10} borderRadius={5} backgroundColor={readinessColor} />
-                  <B color={readinessColor} fontSize={13} fontWeight="600">{label}</B>
-                  {pastDueWorkouts.length >= 3 && (
-                    <B color="$textTertiary" fontSize={11}> · {Math.round(adherence * 100)}% adherence</B>
-                  )}
+          {/* ─── COMPLETED LAYOUT ─── */}
+          {todaysWorkout.status === 'completed' && todaysMetric ? (
+            <YStack>
+              {/* Header: title + completed pill */}
+              <XStack alignItems="center" justifyContent="space-between" marginBottom="$3">
+                <YStack flex={1}>
+                  <B color="$textTertiary" fontSize={11} textTransform="uppercase" letterSpacing={0.5} marginBottom={2}>
+                    {formatDateLong(todaysWorkout.scheduled_date)}
+                  </B>
+                  <H color="$color" fontSize={22} letterSpacing={0.8}>{todaysWorkout.title}</H>
+                </YStack>
+                <XStack alignItems="center" gap={4} backgroundColor={colors.success + '22'} paddingHorizontal={10} paddingVertical={4} borderRadius={12}>
+                  <MaterialCommunityIcons name="check-circle" size={14} color={colors.success} />
+                  <B color={colors.success} fontSize={12} fontWeight="700">Completed</B>
                 </XStack>
-              );
-            })()}
-            {/* Streak tracker */}
-            {(() => {
-              // Count consecutive weeks with 80%+ workout completion (most recent first)
-              let streak = 0;
-              const sortedWeeks = [...weeks].sort((a, b) => b.week_number - a.week_number);
-              for (const w of sortedWeeks) {
-                if (w.week_number > currentWeekNumber) continue; // skip future
-                if (w.week_number === currentWeekNumber) continue; // skip current (incomplete)
-                const weekWO = workouts.filter(wo => wo.week_number === w.week_number && wo.workout_type !== 'rest');
-                if (weekWO.length === 0) break;
-                const completed = weekWO.filter(wo => wo.status === 'completed' || wo.status === 'partial').length;
-                if (completed / weekWO.length >= 0.8) {
-                  streak++;
-                } else {
-                  break;
-                }
-              }
-              if (streak < 2) return null;
-              return (
-                <XStack marginTop="$2" alignItems="center" gap="$2">
-                  <MaterialCommunityIcons name="fire" size={14} color={streak >= 8 ? colors.orange : colors.cyan} />
-                  <M color={streak >= 8 ? colors.orange : colors.cyan} fontSize={13} fontWeight="700">{streak}</M>
-                  <B color="$textTertiary" fontSize={11}>week streak of consistent training</B>
-                </XStack>
-              );
-            })()}
-          </YStack>
-        )}
+              </XStack>
 
-        {/* Cumulative Mileage */}
-        {weeks.length >= 3 && (
-          <YStack backgroundColor="$surface" borderRadius="$6" padding="$4">
-            {(() => {
-              const totalPlanned = weeks.reduce((s, w) => s + w.target_volume, 0);
-              const totalActual = weeks.reduce((s, w) => s + w.actual_volume, 0);
-              const pct = totalPlanned > 0 ? Math.round((totalActual / totalPlanned) * 100) : 0;
-
-              // Build cumulative data points
-              const cumPlanned: number[] = [];
-              const cumActual: number[] = [];
-              let runPlanned = 0, runActual = 0;
-              for (const w of weeks) {
-                runPlanned += w.target_volume;
-                runActual += w.actual_volume;
-                cumPlanned.push(runPlanned);
-                cumActual.push(runActual);
-              }
-
-              const maxVal = Math.max(totalPlanned, totalActual, 1);
-              const chartW = 280; // approximate, will flex
-              const chartH = 60;
-              const toX = (i: number) => (i / Math.max(weeks.length - 1, 1)) * chartW;
-              const toY = (v: number) => chartH - (v / maxVal) * chartH;
-
-              // Build SVG path for planned (dashed reference line)
-              let plannedPath = `M 0 ${toY(cumPlanned[0])}`;
-              for (let i = 1; i < cumPlanned.length; i++) {
-                plannedPath += ` L ${toX(i)} ${toY(cumPlanned[i])}`;
-              }
-
-              // Build SVG path for actual (filled area)
-              let actualPath = `M 0 ${toY(cumActual[0])}`;
-              for (let i = 1; i < cumActual.length; i++) {
-                actualPath += ` L ${toX(i)} ${toY(cumActual[i])}`;
-              }
-              const actualFill = `${actualPath} L ${toX(cumActual.length - 1)} ${chartH} L 0 ${chartH} Z`;
-
-              return (
+              {/* HERO: Actual performance stats */}
+              <XStack gap={16} flexWrap="wrap" marginBottom={12}>
                 <YStack>
-                  <XStack justifyContent="space-between" alignItems="baseline" marginBottom="$3">
-                    <YStack>
-                      {totalActual < 1 ? (
-                        <>
-                          <M color="$color" fontSize={18} fontWeight="800">{Math.round(totalPlanned)} mi journey</M>
-                          <B color="$textTertiary" fontSize={11}>to {userProfile?.race_name ?? 'race day'}</B>
-                        </>
-                      ) : (
-                        <>
-                          <M color="$color" fontSize={20} fontWeight="800">{Math.round(totalActual)} mi</M>
-                          <B color="$textTertiary" fontSize={11}>of {Math.round(totalPlanned)} mi planned</B>
-                        </>
-                      )}
-                    </YStack>
-                    {totalActual >= 1 && <M color={pct >= 90 ? colors.cyan : pct >= 70 ? '$color' : colors.orange} fontSize={14} fontWeight="700">{pct}%</M>}
+                  <XStack alignItems="center" gap={4}>
+                    <MaterialCommunityIcons name="map-marker-distance" size={14} color={colors.cyan} />
+                    <M color="$color" fontSize={20} fontWeight="800">{todaysMetric.distance_miles.toFixed(1)} mi</M>
                   </XStack>
-                  <View style={{ height: chartH }}>
-                    {(() => {
-                      try {
-                        const Svg = require('react-native-svg').default;
-                        const { Path: SvgPath, Defs, LinearGradient: SvgGrad, Stop } = require('react-native-svg');
-                        return (
-                          <Svg width="100%" height={chartH} viewBox={`0 0 ${chartW} ${chartH}`}>
-                            <Defs>
-                              <SvgGrad id="cumFill" x1="0" y1="0" x2="0" y2="1">
-                                <Stop offset="0" stopColor={colors.cyan} stopOpacity="0.3" />
-                                <Stop offset="1" stopColor={colors.cyan} stopOpacity="0.05" />
-                              </SvgGrad>
-                            </Defs>
-                            <SvgPath d={actualFill} fill="url(#cumFill)" />
-                            <SvgPath d={actualPath} fill="none" stroke={colors.cyan} strokeWidth={2} />
-                            <SvgPath d={plannedPath} fill="none" stroke={colors.textTertiary} strokeWidth={1} strokeDasharray="4,4" />
-                          </Svg>
-                        );
-                      } catch { return null; }
-                    })()}
+                  <B color="$textTertiary" fontSize={10} marginLeft={18}>Distance</B>
+                </YStack>
+                {todaysMetric.avg_pace_sec_per_mile ? (
+                  <YStack>
+                    <XStack alignItems="center" gap={4}>
+                      <MaterialCommunityIcons name="speedometer" size={14} color={colors.cyan} />
+                      <M color="$color" fontSize={20} fontWeight="800">{formatPace(todaysMetric.avg_pace_sec_per_mile)}</M>
+                    </XStack>
+                    <B color="$textTertiary" fontSize={10} marginLeft={18}>Avg Pace</B>
+                  </YStack>
+                ) : null}
+                {todaysMetric.duration_minutes ? (
+                  <YStack>
+                    <XStack alignItems="center" gap={4}>
+                      <MaterialCommunityIcons name="timer-outline" size={14} color={colors.cyan} />
+                      <M color="$color" fontSize={20} fontWeight="800">{Math.floor(todaysMetric.duration_minutes)}:{String(Math.round((todaysMetric.duration_minutes % 1) * 60)).padStart(2, '0')}</M>
+                    </XStack>
+                    <B color="$textTertiary" fontSize={10} marginLeft={18}>Duration</B>
+                  </YStack>
+                ) : null}
+                {todaysMetric.avg_hr ? (
+                  <YStack>
+                    <XStack alignItems="center" gap={4}>
+                      <MaterialCommunityIcons name="heart-pulse" size={14} color={colors.orange} />
+                      <M color={colors.orange} fontSize={20} fontWeight="800">{Math.round(todaysMetric.avg_hr)}</M>
+                    </XStack>
+                    <B color="$textTertiary" fontSize={10} marginLeft={18}>Avg HR</B>
+                  </YStack>
+                ) : null}
+              </XStack>
+
+              {/* Execution quality badge */}
+              {(todaysWorkout as any).execution_quality && (todaysWorkout as any).execution_quality !== 'on_target' && (
+                <XStack marginBottom={8}>
+                  <B color={colors.orange} fontSize={10} fontWeight="700" backgroundColor={colors.orange + '22'} paddingHorizontal={6} paddingVertical={2} borderRadius={4}>
+                    {(todaysWorkout as any).execution_quality === 'missed_pace' ? 'Pace ↓ — slower than target zone' : (todaysWorkout as any).execution_quality === 'exceeded_pace' ? 'Pace ↑ — faster than easy zone' : 'Modified workout'}
+                  </B>
+                </XStack>
+              )}
+
+              {/* VS PLANNED: compact reference */}
+              {todaysWorkout.target_distance_miles != null && (
+                <YStack paddingTop={10} borderTopWidth={0.5} borderTopColor="$border">
+                  <XStack alignItems="center" gap={8} flexWrap="wrap">
+                    <B color="$textTertiary" fontSize={11}>Planned:</B>
+                    <M color="$textTertiary" fontSize={12} fontWeight="600">{todaysWorkout.target_distance_miles.toFixed(1)} mi</M>
+                    {todaysWorkout.target_pace_zone && paceZones && (
+                      <M color="$textTertiary" fontSize={12}>
+                        @ {todaysWorkout.target_pace_zone} ({formatPace(paceZones[todaysWorkout.target_pace_zone as keyof typeof paceZones]?.min ?? 0)}-{formatPace(paceZones[todaysWorkout.target_pace_zone as keyof typeof paceZones]?.max ?? 0)})
+                      </M>
+                    )}
+                    {Math.abs(todaysMetric.distance_miles - todaysWorkout.target_distance_miles) <= 0.3 ? (
+                      <B color={colors.cyan} fontSize={10} fontWeight="700">on target</B>
+                    ) : (
+                      <B color={colors.orange} fontSize={10} fontWeight="700">
+                        {todaysMetric.distance_miles > todaysWorkout.target_distance_miles ? '+' : ''}{((todaysMetric.distance_miles / todaysWorkout.target_distance_miles - 1) * 100).toFixed(0)}%
+                      </B>
+                    )}
+                  </XStack>
+                </YStack>
+              )}
+            </YStack>
+          ) : todaysWorkout.status === 'completed' ? (
+            /* Completed but no metric (manual complete) */
+            <YStack>
+              <XStack alignItems="center" justifyContent="space-between">
+                <H color="$color" fontSize={22} letterSpacing={0.8}>{todaysWorkout.title}</H>
+                <XStack alignItems="center" gap={4} backgroundColor={colors.success + '22'} paddingHorizontal={10} paddingVertical={4} borderRadius={12}>
+                  <MaterialCommunityIcons name="check-circle" size={14} color={colors.success} />
+                  <B color={colors.success} fontSize={12} fontWeight="700">Completed</B>
+                </XStack>
+              </XStack>
+            </YStack>
+          ) : (
+            /* ─── UPCOMING / MODIFIED LAYOUT (pre-run) ─── */
+            <YStack>
+              <B color="$textTertiary" fontSize={12} fontWeight="600" textTransform="uppercase" letterSpacing={0.5} marginBottom="$1">
+                {formatDateLong(todaysWorkout.scheduled_date)}
+              </B>
+              <H color="$color" fontSize={26} letterSpacing={0.8} marginBottom="$3">{todaysWorkout.title}</H>
+
+              {/* Meta row */}
+              <XStack alignItems="center" marginBottom="$3" gap="$3">
+                <XStack alignItems="center" backgroundColor="$surfaceLight" paddingHorizontal="$3" paddingVertical="$1" borderRadius="$2">
+                  <MaterialCommunityIcons name={getWorkoutIcon(todaysWorkout.workout_type) as any} size={14} color={colors.cyan} style={{ marginRight: 4 }} />
+                  <H color="$accent" fontSize={12} letterSpacing={1}>
+                    {WORKOUT_TYPE_LABELS[todaysWorkout.workout_type] ?? todaysWorkout.workout_type}
+                  </H>
+                </XStack>
+                {todaysWorkout.target_distance_miles != null && (
+                  <XStack alignItems="center" gap="$1">
+                    <MaterialCommunityIcons name="map-marker-distance" size={16} color={colors.textPrimary} />
+                    <M color="$color" fontSize={20} fontWeight="700">{todaysWorkout.target_distance_miles.toFixed(1)} mi</M>
+                  </XStack>
+                )}
+              </XStack>
+
+              {/* Description */}
+              {todaysWorkout.description ? (
+                <B color="$textSecondary" fontSize={14} lineHeight={21} marginBottom="$3">{todaysWorkout.description}</B>
+              ) : null}
+
+              {/* Pace Zone */}
+              {todaysWorkout.target_pace_zone && paceZones && (
+                <XStack justifyContent="space-between" alignItems="center" backgroundColor="$surfaceLight" borderRadius="$4" padding="$3" marginBottom="$3">
+                  <B color="$textSecondary" fontSize={13} fontWeight="600">Target Zone: {todaysWorkout.target_pace_zone}</B>
+                  <M color="$accent" fontSize={16} fontWeight="700">
+                    {formatPace(paceZones[todaysWorkout.target_pace_zone as keyof typeof paceZones]?.min ?? 0)}
+                    {' - '}
+                    {formatPace(paceZones[todaysWorkout.target_pace_zone as keyof typeof paceZones]?.max ?? 0)}
+                    {' /mi'}
+                  </M>
+                </XStack>
+              )}
+
+              {/* Intervals */}
+              {intervals && intervals.length > 0 && (
+                <YStack marginBottom="$3" paddingTop="$3" borderTopWidth={1} borderTopColor="$border">
+                  <H color="$textTertiary" fontSize={13} textTransform="uppercase" letterSpacing={1.5} marginBottom="$3">
+                    Workout Structure
+                  </H>
+                  {intervals.map((step, idx) => (
+                    <XStack key={idx} alignItems="flex-start" marginBottom="$2">
+                      <View
+                        width={10} height={10} borderRadius={5} marginTop={4} marginRight="$3"
+                        backgroundColor={step.type === 'work' ? '$accent' : step.type === 'recovery' ? '$success' : '$textTertiary'}
+                      />
+                      <YStack flex={1}>
+                        <B color="$color" fontSize={14} fontWeight="500">{step.description}</B>
+                        <M color="$textTertiary" fontSize={12} marginTop={2}>
+                          {step.distance_miles.toFixed(2)} mi @ {step.pace_zone} zone
+                          {paceZones && paceZones[step.pace_zone as keyof typeof paceZones]
+                            ? ` (${formatPace(paceZones[step.pace_zone as keyof typeof paceZones].min)}-${formatPace(paceZones[step.pace_zone as keyof typeof paceZones].max)}/mi)`
+                            : ''}
+                        </M>
+                      </YStack>
+                    </XStack>
+                  ))}
+                </YStack>
+              )}
+
+              {/* Modification */}
+              {todaysWorkout.status === 'modified' && todaysWorkout.modification_reason && (
+                <YStack backgroundColor="$surfaceLight" borderRadius="$3" padding="$3" marginBottom="$3" borderLeftWidth={2} borderLeftColor="$warning">
+                  <B color="$warning" fontSize={13} fontStyle="italic">Modified: {todaysWorkout.modification_reason}</B>
+                </YStack>
+              )}
+
+              {/* Action Buttons — only show manual buttons when Strava NOT connected */}
+              {todaysWorkout.status === 'upcoming' && !isStravaConnected && (
+                <XStack gap="$3" marginTop="$1">
+                  <YStack flex={1} backgroundColor="$success" paddingVertical="$3" borderRadius="$5" alignItems="center"
+                    pressStyle={{ opacity: 0.8 }} onPress={handleComplete}>
+                    <B color="white" fontSize={16} fontWeight="700">Mark Complete</B>
+                  </YStack>
+                  <YStack flex={1} backgroundColor="$surfaceLight" paddingVertical="$3" borderRadius="$5" alignItems="center"
+                    pressStyle={{ opacity: 0.8 }} onPress={handleSkip}>
+                    <B color="$textSecondary" fontSize={16} fontWeight="600">Mark Skipped</B>
+                  </YStack>
+                </XStack>
+              )}
+              {/* Strava connected — auto-sync note */}
+              {todaysWorkout.status === 'upcoming' && isStravaConnected && (
+                <YStack marginTop="$2" gap={10}>
+                  <XStack alignItems="center" justifyContent="center" gap={6}>
+                    <MaterialCommunityIcons name="sync" size={14} color={colors.cyan} />
+                    <B color="$textTertiary" fontSize={12}>Syncs automatically from Strava</B>
+                  </XStack>
+                  <XStack alignSelf="center"
+                    borderWidth={1} borderColor={colors.border} borderRadius={20}
+                    paddingHorizontal={14} paddingVertical={6} gap={6} alignItems="center"
+                    pressStyle={{ opacity: 0.7, borderColor: colors.textTertiary }}
+                    onPress={() => setShowManualRun(true)}>
+                    <MaterialCommunityIcons name="pencil-plus-outline" size={16} color={colors.textSecondary} />
+                    <B color="$textSecondary" fontSize={13} fontWeight="600">Log Run Manually</B>
+                  </XStack>
+                </YStack>
+              )}
+            </YStack>
+          )}
+
+          {/* PARTIAL status */}
+          {todaysWorkout.status === 'partial' && (
+            <YStack marginTop="$1">
+              <XStack alignItems="center" gap="$2" marginBottom="$2">
+                <MaterialCommunityIcons name="circle-half-full" size={16} color={colors.orange} />
+                <H color={colors.orange} fontSize={12} letterSpacing={1} textTransform="uppercase">Partial Completion</H>
+              </XStack>
+              {todaysMetric && todaysWorkout.target_distance_miles && (
+                <YStack marginBottom="$2">
+                  <XStack justifyContent="space-between" marginBottom={4}>
+                    <M color="$color" fontSize={14} fontWeight="700">
+                      {todaysMetric.distance_miles.toFixed(1)} of {todaysWorkout.target_distance_miles.toFixed(1)} mi
+                    </M>
+                    <M color={colors.orange} fontSize={14} fontWeight="700">
+                      {Math.round((todaysMetric.distance_miles / todaysWorkout.target_distance_miles) * 100)}%
+                    </M>
+                  </XStack>
+                  <View backgroundColor="$border" borderRadius={2} height={4}>
+                    <View backgroundColor={colors.orange} borderRadius={2} height={4}
+                      width={`${Math.min(Math.round((todaysMetric.distance_miles / todaysWorkout.target_distance_miles) * 100), 100)}%` as any} />
                   </View>
-                  <XStack justifyContent="space-between" marginTop={4}>
-                    <B color="$textTertiary" fontSize={10}>Week 1</B>
-                    <B color="$textTertiary" fontSize={10}>Week {weeks.length}</B>
+                </YStack>
+              )}
+              <YStack backgroundColor={colors.surfaceHover} borderRadius={12} padding="$3">
+                <XStack alignItems="flex-start" gap="$2">
+                  <MaterialCommunityIcons name="robot-outline" size={16} color={colors.cyan} style={{ marginTop: 2 }} />
+                  <B color="$textSecondary" fontSize={13} lineHeight={19} flex={1}>
+                    {todaysMetric
+                      ? `You still covered ${todaysMetric.distance_miles.toFixed(1)} miles — that's solid work. Falling short on a ${todaysWorkout.workout_type === 'long_run' || todaysWorkout.workout_type === 'long' ? 'long run often comes down to fueling or pacing' : 'hard effort happens — listen to your body'}.`
+                      : 'Partial completion is still progress. Listen to your body and focus on recovery.'}
+                  </B>
+                </XStack>
+              </YStack>
+            </YStack>
+          )}
+          {todaysWorkout.status === 'skipped' && (() => {
+            // Skip coaching card
+            const weekW = workouts.filter((w: any) => w.week_number === todaysWorkout.week_number);
+            const weekVolActual = currentWeek?.actual_volume ?? 0;
+            const weekVolTarget = currentWeek?.target_volume ?? 0;
+            const workoutsLeft = weekW.filter((w: any) => w.status === 'upcoming' && w.workout_type !== 'rest').length;
+            const skipsThisWeek = weekW.filter((w: any) => w.status === 'skipped').length;
+            const volPct = weekVolTarget > 0 ? Math.round((weekVolActual / weekVolTarget) * 100) : 0;
+            const tomorrowW = (() => {
+              const today = getToday();
+              const tmrw = new Date(today + 'T00:00:00');
+              tmrw.setDate(tmrw.getDate() + 1);
+              const s = `${tmrw.getFullYear()}-${String(tmrw.getMonth() + 1).padStart(2, '0')}-${String(tmrw.getDate()).padStart(2, '0')}`;
+              return workouts.find((w: any) => w.scheduled_date === s);
+            })();
+
+            return (
+              <YStack marginTop="$3">
+                {/* Skip header */}
+                <XStack alignItems="center" gap="$2" marginBottom="$3">
+                  <MaterialCommunityIcons name="close-circle" size={16} color={colors.orange} />
+                  <H color={colors.orange} fontSize={12} letterSpacing={1} textTransform="uppercase">Workout Skipped</H>
+                </XStack>
+                <B color="$textTertiary" fontSize={13} textDecorationLine="line-through" marginBottom="$3">
+                  {todaysWorkout.title} · {todaysWorkout.target_distance_miles?.toFixed(1) ?? '?'} mi
+                </B>
+
+                {/* Coach encouragement */}
+                <YStack backgroundColor={colors.surfaceHover} borderRadius={12} padding="$3" marginBottom="$3">
+                  <XStack alignItems="flex-start" gap="$2">
+                    <MaterialCommunityIcons name="robot-outline" size={16} color={colors.cyan} style={{ marginTop: 2 }} />
+                    <B color="$textSecondary" fontSize={13} lineHeight={19} flex={1}>
+                      {skipsThisWeek >= 2
+                        ? `You've skipped ${skipsThisWeek} workouts this week. Consider talking to your coach about adjusting the plan.`
+                        : 'One missed day won\'t derail your training. Consistency over perfection — focus on tomorrow.'}
+                    </B>
                   </XStack>
-                  {totalActual < 1 && (
-                    <B color="$textTertiary" fontSize={11} textAlign="center" marginTop={6}>Your progress will show here as you complete runs</B>
+                </YStack>
+
+                {/* Volume progress */}
+                <YStack marginBottom="$3">
+                  <XStack justifyContent="space-between" marginBottom={4}>
+                    <B color="$textTertiary" fontSize={11}>This week's volume</B>
+                    <M color="$textSecondary" fontSize={11} fontWeight="600">
+                      {weekVolActual.toFixed(1)} of {weekVolTarget.toFixed(1)} mi ({volPct}%)
+                    </M>
+                  </XStack>
+                  <View backgroundColor="$border" borderRadius={2} height={4}>
+                    <View backgroundColor={volPct >= 80 ? colors.cyan : volPct >= 50 ? colors.orange : colors.textTertiary}
+                      borderRadius={2} height={4} width={`${Math.min(volPct, 100)}%` as any} />
+                  </View>
+                  {workoutsLeft > 0 && (
+                    <B color="$textTertiary" fontSize={11} marginTop={4}>{workoutsLeft} workout{workoutsLeft > 1 ? 's' : ''} left this week</B>
                   )}
                 </YStack>
-              );
-            })()}
-          </YStack>
-        )}
 
-        {/* Fallback header when no race name */}
-        {(!userProfile?.race_name || daysUntilRace <= 0) && (
-          <YStack marginBottom="$2">
-            <H color="$color" fontSize={24} letterSpacing={1} textTransform="uppercase">
-              Week {currentWeekNumber} of {totalWeeks} — {currentPhase.charAt(0).toUpperCase() + currentPhase.slice(1)} Phase
-            </H>
-            {daysUntilRace === 0 && <M color={colors.orange} fontSize={18} fontWeight="800" marginTop="$1">Race Day!</M>}
-            {daysUntilRace < 0 && <B color="$textSecondary" fontSize={14} marginTop="$1">Post-race</B>}
-          </YStack>
-        )}
-      </YStack>
-
-      {/* Recovery Badge */}
-      {recoveryStatus && recoveryStatus.level !== 'unknown' && recoveryStatus.signalCount >= 2 && (
-        <RecoveryBadge recovery={recoveryStatus} />
+                {/* Tomorrow preview */}
+                {tomorrowW && tomorrowW.workout_type !== 'rest' && (
+                  <YStack paddingTop="$3" borderTopWidth={0.5} borderTopColor="$border">
+                    <H color="$textTertiary" fontSize={11} textTransform="uppercase" letterSpacing={1.5} marginBottom="$1">Tomorrow</H>
+                    <B color="$color" fontSize={14} fontWeight="600">{tomorrowW.title}</B>
+                    <M color="$textSecondary" fontSize={12} marginTop={2}>
+                      {WORKOUT_TYPE_LABELS[tomorrowW.workout_type] ?? tomorrowW.workout_type}
+                      {tomorrowW.target_distance_miles ? ` · ${tomorrowW.target_distance_miles.toFixed(1)} mi` : ''}
+                    </M>
+                  </YStack>
+                )}
+              </YStack>
+            );
+          })()}
+        </YStack>
       )}
 
+      {/* === SUPPORTING CONTEXT === */}
+      {/* Recovery + Briefing (compact combo) */}
+      {!isRestDay && todaysWorkout?.status !== 'completed' && todaysWorkout?.status !== 'partial' && todaysWorkout?.status !== 'skipped' && (recoveryStatus?.level !== 'unknown' || preWorkoutBriefing) && (
+        <YStack backgroundColor="$surface" borderRadius={12} padding={12} marginBottom={10} borderLeftWidth={3} borderLeftColor={colors.cyan}>
+          {/* Recovery score inline + briefing — only before the run */}
+          {recoveryStatus && recoveryStatus.level !== 'unknown' && recoveryStatus.signalCount >= 2 && (
+            <XStack alignItems="center" gap={8} marginBottom={preWorkoutBriefing ? 8 : 0}
+              pressStyle={{ opacity: 0.8 }} onPress={() => router.push('/(tabs)/zones')}>
+              <View width={32} height={32} borderRadius={16}
+                backgroundColor={recoveryStatus.score >= 80 ? colors.cyanGhost : recoveryStatus.score >= 60 ? colors.orangeGhost : colors.orangeGhost}
+                alignItems="center" justifyContent="center">
+                <M color={recoveryStatus.score >= 80 ? colors.cyan : colors.orange} fontSize={14} fontWeight="800">{recoveryStatus.score}</M>
+              </View>
+              <B color={recoveryStatus.score >= 80 ? colors.cyan : colors.orange} fontSize={13} fontWeight="600">
+                {recoveryStatus.level.charAt(0).toUpperCase() + recoveryStatus.level.slice(1)}
+              </B>
+              <B color="$textTertiary" fontSize={11}>· {recoveryStatus.signalCount} signals</B>
+            </XStack>
+          )}
+          {preWorkoutBriefing && (
+            <B color="$textSecondary" fontSize={13} lineHeight={19}>{preWorkoutBriefing}</B>
+          )}
+        </YStack>
+      )}
+
+      {/* Post-Run Analysis */}
+      {postRunAnalysis && todaysWorkout?.status === 'completed' && (
+        <YStack backgroundColor="$surface" borderRadius="$6" padding="$4" marginBottom="$4" borderLeftWidth={3} borderLeftColor="$success">
+          <XStack alignItems="center" marginBottom="$3">
+            <View width={8} height={8} borderRadius={4} backgroundColor="$success" marginRight="$2" />
+            <H color="$success" fontSize={14} textTransform="uppercase" letterSpacing={1.5}>Post-Run Analysis</H>
+          </XStack>
+          <B color="$textSecondary" fontSize={14} lineHeight={21}>{postRunAnalysis}</B>
+        </YStack>
+      )}
+
+      {/* === TAPER / RACE WEEK (when applicable) === */}
       {/* Taper Experience (last 21 days before race) */}
       {daysUntilRace <= 21 && daysUntilRace >= 0 && currentPhase === 'taper' && (
         <YStack backgroundColor="$surface" borderRadius="$6" padding="$4" marginBottom="$4" borderLeftWidth={3}
@@ -707,17 +984,35 @@ export default function TodayScreen() {
         </YStack>
       )}
 
-      {/* Briefing */}
-      {!isRestDay && preWorkoutBriefing && (
-        <YStack backgroundColor="$surface" borderRadius="$6" padding="$4" marginBottom="$4" borderLeftWidth={3} borderLeftColor="$accent">
-          <XStack alignItems="center" marginBottom="$3">
-            <View width={8} height={8} borderRadius={4} backgroundColor="$accent" marginRight="$2" />
-            <H color="$accent" fontSize={14} textTransform="uppercase" letterSpacing={1.5}>Coach Briefing</H>
+      {/* === SECONDARY ACTIONS === */}
+      {/* Cross-Training — on run days: small outlined pill button */}
+      {!isRaceWeek && !isRestDay && (
+        todayCrossTraining ? (
+          <XStack alignItems="center" justifyContent="center" marginBottom="$4" gap="$2">
+            <MaterialCommunityIcons name="check-circle" size={14}
+              color={todayCrossTraining.impact === 'high' ? colors.orange : todayCrossTraining.impact === 'positive' ? colors.cyan : colors.textSecondary} />
+            <B fontSize={12} fontWeight="600"
+              color={todayCrossTraining.impact === 'high' ? colors.orange : todayCrossTraining.impact === 'positive' ? colors.cyan : colors.textSecondary}>
+              {CROSS_TRAINING_LABELS[todayCrossTraining.type]} logged
+            </B>
+            <B color="$textTertiary" fontSize={11} marginLeft="$1"
+              onPress={() => deleteCrossTrainingEntry(todayCrossTraining.id)}>
+              ✕
+            </B>
           </XStack>
-          <B color="$textSecondary" fontSize={14} lineHeight={21}>{preWorkoutBriefing}</B>
-        </YStack>
+        ) : (
+          <XStack alignSelf="center" marginBottom="$4"
+            borderWidth={1} borderColor="$border" borderRadius={20}
+            paddingHorizontal="$4" paddingVertical="$2" gap="$2" alignItems="center"
+            pressStyle={{ opacity: 0.7, borderColor: colors.textTertiary }}
+            onPress={() => setShowCTModal(true)}>
+            <MaterialCommunityIcons name="dumbbell" size={14} color={colors.textTertiary} />
+            <B color="$textTertiary" fontSize={12} fontWeight="600">Log Cross-Training</B>
+          </XStack>
+        )
       )}
 
+      {/* === REST DAY (replaces workout card on rest days) === */}
       {/* Rest Day — personalized coaching card */}
       {isRestDay && (
         <YStack backgroundColor="$surface" borderRadius="$6" padding="$5" marginBottom="$4">
@@ -894,308 +1189,7 @@ export default function TodayScreen() {
         </YStack>
       )}
 
-      {/* Today's Workout */}
-      {!isRestDay && todaysWorkout && (
-        <YStack backgroundColor="$surface" borderRadius="$6" padding="$5" marginBottom="$4"
-          borderWidth={1} borderColor={todaysWorkout.status === 'skipped' ? colors.orangeDim : todaysWorkout.status === 'partial' ? colors.orangeDim : '$border'}
-          borderLeftWidth={todaysWorkout.status === 'skipped' || todaysWorkout.status === 'partial' ? 3 : 1}
-          borderLeftColor={todaysWorkout.status === 'skipped' ? colors.orange : todaysWorkout.status === 'partial' ? colors.orange : '$border'}>
-          <B color="$textTertiary" fontSize={12} fontWeight="600" textTransform="uppercase" letterSpacing={0.5} marginBottom="$1">
-            {formatDateLong(todaysWorkout.scheduled_date)}
-          </B>
-          <H color="$color" fontSize={26} letterSpacing={0.8} marginBottom="$3">{todaysWorkout.title}</H>
-
-          {/* Meta row */}
-          <XStack alignItems="center" marginBottom="$3" gap="$3">
-            <XStack alignItems="center" backgroundColor="$surfaceLight" paddingHorizontal="$3" paddingVertical="$1" borderRadius="$2">
-              <MaterialCommunityIcons name={getWorkoutIcon(todaysWorkout.workout_type) as any} size={14} color={colors.cyan} style={{ marginRight: 4 }} />
-              <H color="$accent" fontSize={12} letterSpacing={1}>
-                {WORKOUT_TYPE_LABELS[todaysWorkout.workout_type] ?? todaysWorkout.workout_type}
-              </H>
-            </XStack>
-            {todaysWorkout.target_distance_miles != null && (
-              <XStack alignItems="center" gap="$1">
-                <MaterialCommunityIcons name="map-marker-distance" size={16} color={colors.textPrimary} />
-                <M color="$color" fontSize={20} fontWeight="700">{todaysWorkout.target_distance_miles.toFixed(1)} mi</M>
-              </XStack>
-            )}
-          </XStack>
-
-          {/* Description */}
-          {todaysWorkout.description ? (
-            <B color="$textSecondary" fontSize={14} lineHeight={21} marginBottom="$3">{todaysWorkout.description}</B>
-          ) : null}
-
-          {/* Pace Zone */}
-          {todaysWorkout.target_pace_zone && paceZones && (
-            <XStack justifyContent="space-between" alignItems="center" backgroundColor="$surfaceLight" borderRadius="$4" padding="$3" marginBottom="$3">
-              <B color="$textSecondary" fontSize={13} fontWeight="600">Target Zone: {todaysWorkout.target_pace_zone}</B>
-              <M color="$accent" fontSize={16} fontWeight="700">
-                {formatPace(paceZones[todaysWorkout.target_pace_zone as keyof typeof paceZones]?.min ?? 0)}
-                {' - '}
-                {formatPace(paceZones[todaysWorkout.target_pace_zone as keyof typeof paceZones]?.max ?? 0)}
-                {' /mi'}
-              </M>
-            </XStack>
-          )}
-
-          {/* Intervals */}
-          {intervals && intervals.length > 0 && (
-            <YStack marginBottom="$3" paddingTop="$3" borderTopWidth={1} borderTopColor="$border">
-              <H color="$textTertiary" fontSize={13} textTransform="uppercase" letterSpacing={1.5} marginBottom="$3">
-                Workout Structure
-              </H>
-              {intervals.map((step, idx) => (
-                <XStack key={idx} alignItems="flex-start" marginBottom="$2">
-                  <View
-                    width={10} height={10} borderRadius={5} marginTop={4} marginRight="$3"
-                    backgroundColor={step.type === 'work' ? '$accent' : step.type === 'recovery' ? '$success' : '$textTertiary'}
-                  />
-                  <YStack flex={1}>
-                    <B color="$color" fontSize={14} fontWeight="500">{step.description}</B>
-                    <M color="$textTertiary" fontSize={12} marginTop={2}>
-                      {step.distance_miles.toFixed(2)} mi @ {step.pace_zone} zone
-                      {paceZones && paceZones[step.pace_zone as keyof typeof paceZones]
-                        ? ` (${formatPace(paceZones[step.pace_zone as keyof typeof paceZones].min)}-${formatPace(paceZones[step.pace_zone as keyof typeof paceZones].max)}/mi)`
-                        : ''}
-                    </M>
-                  </YStack>
-                </XStack>
-              ))}
-            </YStack>
-          )}
-
-          {/* Modification */}
-          {todaysWorkout.status === 'modified' && todaysWorkout.modification_reason && (
-            <YStack backgroundColor="$surfaceLight" borderRadius="$3" padding="$3" marginBottom="$3" borderLeftWidth={2} borderLeftColor="$warning">
-              <B color="$warning" fontSize={13} fontStyle="italic">Modified: {todaysWorkout.modification_reason}</B>
-            </YStack>
-          )}
-
-          {/* Action Buttons — only show manual buttons when Strava NOT connected */}
-          {todaysWorkout.status === 'upcoming' && !isStravaConnected && (
-            <XStack gap="$3" marginTop="$1">
-              <YStack flex={1} backgroundColor="$success" paddingVertical="$3" borderRadius="$5" alignItems="center"
-                pressStyle={{ opacity: 0.8 }} onPress={handleComplete}>
-                <B color="white" fontSize={16} fontWeight="700">Mark Complete</B>
-              </YStack>
-              <YStack flex={1} backgroundColor="$surfaceLight" paddingVertical="$3" borderRadius="$5" alignItems="center"
-                pressStyle={{ opacity: 0.8 }} onPress={handleSkip}>
-                <B color="$textSecondary" fontSize={16} fontWeight="600">Mark Skipped</B>
-              </YStack>
-            </XStack>
-          )}
-          {/* Strava connected — auto-sync note */}
-          {todaysWorkout.status === 'upcoming' && isStravaConnected && (
-            <YStack marginTop="$2" gap={6}>
-              <XStack alignItems="center" justifyContent="center" gap={6}>
-                <MaterialCommunityIcons name="sync" size={13} color={colors.textTertiary} />
-                <B color="$textTertiary" fontSize={12}>Syncs automatically from Strava</B>
-              </XStack>
-              <B color="$textTertiary" fontSize={11} textAlign="center"
-                pressStyle={{ opacity: 0.7 }}
-                onPress={() => setShowManualRun(true)}>
-                Ran without your watch? Log manually
-              </B>
-            </YStack>
-          )}
-
-          {/* Status badges */}
-          {todaysWorkout.status === 'completed' && (
-            <YStack backgroundColor="$successMuted" paddingVertical="$3" borderRadius="$4" alignItems="center" marginTop="$1">
-              <XStack alignItems="center" gap="$2">
-                <MaterialCommunityIcons name="check-circle" size={16} color={colors.success} />
-                <B color="$color" fontSize={14} fontWeight="600">Completed</B>
-              </XStack>
-            </YStack>
-          )}
-          {todaysWorkout.status === 'partial' && (
-            <YStack marginTop="$1">
-              <XStack alignItems="center" gap="$2" marginBottom="$2">
-                <MaterialCommunityIcons name="circle-half-full" size={16} color={colors.orange} />
-                <H color={colors.orange} fontSize={12} letterSpacing={1} textTransform="uppercase">Partial Completion</H>
-              </XStack>
-              {todaysMetric && todaysWorkout.target_distance_miles && (
-                <YStack marginBottom="$2">
-                  <XStack justifyContent="space-between" marginBottom={4}>
-                    <M color="$color" fontSize={14} fontWeight="700">
-                      {todaysMetric.distance_miles.toFixed(1)} of {todaysWorkout.target_distance_miles.toFixed(1)} mi
-                    </M>
-                    <M color={colors.orange} fontSize={14} fontWeight="700">
-                      {Math.round((todaysMetric.distance_miles / todaysWorkout.target_distance_miles) * 100)}%
-                    </M>
-                  </XStack>
-                  <View backgroundColor="$border" borderRadius={2} height={4}>
-                    <View backgroundColor={colors.orange} borderRadius={2} height={4}
-                      width={`${Math.min(Math.round((todaysMetric.distance_miles / todaysWorkout.target_distance_miles) * 100), 100)}%` as any} />
-                  </View>
-                </YStack>
-              )}
-              <YStack backgroundColor={colors.surfaceHover} borderRadius={12} padding="$3">
-                <XStack alignItems="flex-start" gap="$2">
-                  <MaterialCommunityIcons name="robot-outline" size={16} color={colors.cyan} style={{ marginTop: 2 }} />
-                  <B color="$textSecondary" fontSize={13} lineHeight={19} flex={1}>
-                    {todaysMetric
-                      ? `You still covered ${todaysMetric.distance_miles.toFixed(1)} miles — that's solid work. Falling short on a ${todaysWorkout.workout_type === 'long_run' || todaysWorkout.workout_type === 'long' ? 'long run often comes down to fueling or pacing' : 'hard effort happens — listen to your body'}.`
-                      : 'Partial completion is still progress. Listen to your body and focus on recovery.'}
-                  </B>
-                </XStack>
-              </YStack>
-            </YStack>
-          )}
-
-          {/* Actual run data from Strava */}
-          {todaysWorkout.status === 'completed' && todaysMetric && (
-            <YStack marginTop="$3" paddingTop="$3" borderTopWidth={1} borderTopColor="$border">
-              <H color={colors.cyan} fontSize={11} textTransform="uppercase" letterSpacing={1.5} marginBottom="$2">Actual Performance</H>
-              <XStack gap="$4" flexWrap="wrap">
-                <YStack>
-                  <M color="$color" fontSize={18} fontWeight="800">{todaysMetric.distance_miles.toFixed(1)} mi</M>
-                  <B color="$textTertiary" fontSize={10}>Distance</B>
-                </YStack>
-                {todaysMetric.avg_pace_sec_per_mile && (
-                  <YStack>
-                    <M color="$color" fontSize={18} fontWeight="800">{formatPace(todaysMetric.avg_pace_sec_per_mile)}</M>
-                    <B color="$textTertiary" fontSize={10}>Avg Pace</B>
-                  </YStack>
-                )}
-                {todaysMetric.duration_minutes && (
-                  <YStack>
-                    <M color="$color" fontSize={18} fontWeight="800">{Math.floor(todaysMetric.duration_minutes)}:{String(Math.round((todaysMetric.duration_minutes % 1) * 60)).padStart(2, '0')}</M>
-                    <B color="$textTertiary" fontSize={10}>Duration</B>
-                  </YStack>
-                )}
-                {todaysMetric.avg_hr && (
-                  <YStack>
-                    <M color={colors.orange} fontSize={18} fontWeight="800">{Math.round(todaysMetric.avg_hr)}</M>
-                    <B color="$textTertiary" fontSize={10}>Avg HR</B>
-                  </YStack>
-                )}
-              </XStack>
-              {todaysWorkout.target_distance_miles && Math.abs(todaysMetric.distance_miles - todaysWorkout.target_distance_miles) > 0.2 && (
-                <B color="$textTertiary" fontSize={11} marginTop="$2">
-                  Target was {todaysWorkout.target_distance_miles.toFixed(1)} mi — ran {Math.round((todaysMetric.distance_miles / todaysWorkout.target_distance_miles) * 100)}% of target
-                </B>
-              )}
-              {(todaysWorkout as any).execution_quality && (todaysWorkout as any).execution_quality !== 'on_target' && (
-                <XStack marginTop="$2">
-                  <B color={colors.orange} fontSize={10} fontWeight="700" backgroundColor={colors.orange + '22'} paddingHorizontal={6} paddingVertical={2} borderRadius={4}>
-                    {(todaysWorkout as any).execution_quality === 'missed_pace' ? 'Pace ↓ — slower than target zone' : (todaysWorkout as any).execution_quality === 'exceeded_pace' ? 'Pace ↑ — faster than easy zone' : 'Modified workout'}
-                  </B>
-                </XStack>
-              )}
-            </YStack>
-          )}
-          {todaysWorkout.status === 'skipped' && (() => {
-            // Skip coaching card
-            const weekW = workouts.filter((w: any) => w.week_number === todaysWorkout.week_number);
-            const weekVolActual = currentWeek?.actual_volume ?? 0;
-            const weekVolTarget = currentWeek?.target_volume ?? 0;
-            const workoutsLeft = weekW.filter((w: any) => w.status === 'upcoming' && w.workout_type !== 'rest').length;
-            const skipsThisWeek = weekW.filter((w: any) => w.status === 'skipped').length;
-            const volPct = weekVolTarget > 0 ? Math.round((weekVolActual / weekVolTarget) * 100) : 0;
-            const tomorrowW = (() => {
-              const today = getToday();
-              const tmrw = new Date(today + 'T00:00:00');
-              tmrw.setDate(tmrw.getDate() + 1);
-              const s = `${tmrw.getFullYear()}-${String(tmrw.getMonth() + 1).padStart(2, '0')}-${String(tmrw.getDate()).padStart(2, '0')}`;
-              return workouts.find((w: any) => w.scheduled_date === s);
-            })();
-
-            return (
-              <YStack marginTop="$3">
-                {/* Skip header */}
-                <XStack alignItems="center" gap="$2" marginBottom="$3">
-                  <MaterialCommunityIcons name="close-circle" size={16} color={colors.orange} />
-                  <H color={colors.orange} fontSize={12} letterSpacing={1} textTransform="uppercase">Workout Skipped</H>
-                </XStack>
-                <B color="$textTertiary" fontSize={13} textDecorationLine="line-through" marginBottom="$3">
-                  {todaysWorkout.title} · {todaysWorkout.target_distance_miles?.toFixed(1) ?? '?'} mi
-                </B>
-
-                {/* Coach encouragement */}
-                <YStack backgroundColor={colors.surfaceHover} borderRadius={12} padding="$3" marginBottom="$3">
-                  <XStack alignItems="flex-start" gap="$2">
-                    <MaterialCommunityIcons name="robot-outline" size={16} color={colors.cyan} style={{ marginTop: 2 }} />
-                    <B color="$textSecondary" fontSize={13} lineHeight={19} flex={1}>
-                      {skipsThisWeek >= 2
-                        ? `You've skipped ${skipsThisWeek} workouts this week. Consider talking to your coach about adjusting the plan.`
-                        : 'One missed day won\'t derail your training. Consistency over perfection — focus on tomorrow.'}
-                    </B>
-                  </XStack>
-                </YStack>
-
-                {/* Volume progress */}
-                <YStack marginBottom="$3">
-                  <XStack justifyContent="space-between" marginBottom={4}>
-                    <B color="$textTertiary" fontSize={11}>This week's volume</B>
-                    <M color="$textSecondary" fontSize={11} fontWeight="600">
-                      {weekVolActual.toFixed(1)} of {weekVolTarget.toFixed(1)} mi ({volPct}%)
-                    </M>
-                  </XStack>
-                  <View backgroundColor="$border" borderRadius={2} height={4}>
-                    <View backgroundColor={volPct >= 80 ? colors.cyan : volPct >= 50 ? colors.orange : colors.textTertiary}
-                      borderRadius={2} height={4} width={`${Math.min(volPct, 100)}%` as any} />
-                  </View>
-                  {workoutsLeft > 0 && (
-                    <B color="$textTertiary" fontSize={11} marginTop={4}>{workoutsLeft} workout{workoutsLeft > 1 ? 's' : ''} left this week</B>
-                  )}
-                </YStack>
-
-                {/* Tomorrow preview */}
-                {tomorrowW && tomorrowW.workout_type !== 'rest' && (
-                  <YStack paddingTop="$3" borderTopWidth={0.5} borderTopColor="$border">
-                    <H color="$textTertiary" fontSize={11} textTransform="uppercase" letterSpacing={1.5} marginBottom="$1">Tomorrow</H>
-                    <B color="$color" fontSize={14} fontWeight="600">{tomorrowW.title}</B>
-                    <M color="$textSecondary" fontSize={12} marginTop={2}>
-                      {WORKOUT_TYPE_LABELS[tomorrowW.workout_type] ?? tomorrowW.workout_type}
-                      {tomorrowW.target_distance_miles ? ` · ${tomorrowW.target_distance_miles.toFixed(1)} mi` : ''}
-                    </M>
-                  </YStack>
-                )}
-              </YStack>
-            );
-          })()}
-        </YStack>
-      )}
-
-      {/* Post-Run Analysis */}
-      {postRunAnalysis && todaysWorkout?.status === 'completed' && (
-        <YStack backgroundColor="$surface" borderRadius="$6" padding="$4" marginBottom="$4" borderLeftWidth={3} borderLeftColor="$success">
-          <XStack alignItems="center" marginBottom="$3">
-            <View width={8} height={8} borderRadius={4} backgroundColor="$success" marginRight="$2" />
-            <H color="$success" fontSize={14} textTransform="uppercase" letterSpacing={1.5}>Post-Run Analysis</H>
-          </XStack>
-          <B color="$textSecondary" fontSize={14} lineHeight={21}>{postRunAnalysis}</B>
-        </YStack>
-      )}
-      {/* Cross-Training — on run days: small outlined pill button */}
-      {!isRaceWeek && !isRestDay && (
-        todayCrossTraining ? (
-          <XStack alignItems="center" justifyContent="center" marginBottom="$4" gap="$2">
-            <MaterialCommunityIcons name="check-circle" size={14}
-              color={todayCrossTraining.impact === 'high' ? colors.orange : todayCrossTraining.impact === 'positive' ? colors.cyan : colors.textSecondary} />
-            <B fontSize={12} fontWeight="600"
-              color={todayCrossTraining.impact === 'high' ? colors.orange : todayCrossTraining.impact === 'positive' ? colors.cyan : colors.textSecondary}>
-              {CROSS_TRAINING_LABELS[todayCrossTraining.type]} logged
-            </B>
-            <B color="$textTertiary" fontSize={11} marginLeft="$1"
-              onPress={() => deleteCrossTrainingEntry(todayCrossTraining.id)}>
-              ✕
-            </B>
-          </XStack>
-        ) : (
-          <XStack alignSelf="center" marginBottom="$4"
-            borderWidth={1} borderColor="$border" borderRadius={20}
-            paddingHorizontal="$4" paddingVertical="$2" gap="$2" alignItems="center"
-            pressStyle={{ opacity: 0.7, borderColor: colors.textTertiary }}
-            onPress={() => setShowCTModal(true)}>
-            <MaterialCommunityIcons name="dumbbell" size={14} color={colors.textTertiary} />
-            <B color="$textTertiary" fontSize={12} fontWeight="600">Log Cross-Training</B>
-          </XStack>
-        )
-      )}
-
+      {/* === MODALS === */}
       {/* Cross-Training Modal — 2-column impact-colored grid */}
       {showCTModal && (
         <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end', zIndex: 100 }}>
@@ -1323,5 +1317,30 @@ export default function TodayScreen() {
         onSkip={() => setShowWeightCheckin(false)}
       />
     </ScrollView>
+    </View>
   );
 }
+
+const stickyStyles = StyleSheet.create({
+  header: {
+    paddingHorizontal: 16,
+    paddingTop: 4,
+    paddingBottom: 10,
+    backgroundColor: colors.background,
+    zIndex: 10,
+  },
+  shadow: {
+    height: 6,
+    zIndex: 9,
+  },
+  progressTrack: {
+    height: 3,
+    borderRadius: 1.5,
+    backgroundColor: colors.surfaceHover,
+    overflow: 'hidden' as const,
+  },
+  progressFill: {
+    height: 3,
+    borderRadius: 1.5,
+  },
+});

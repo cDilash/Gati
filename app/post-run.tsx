@@ -197,14 +197,19 @@ export default function PostRunModal() {
         <YStack backgroundColor={colors.surface} borderRadius={14} marginHorizontal={16} padding={16} marginBottom={12}>
           <H color={colors.textSecondary} fontSize={12} letterSpacing={1.5} marginBottom={12}>SPLITS</H>
           {splits.map((split: any, i: number) => {
-            const splitPace = split.average_speed > 0 ? formatPace(1609.34 / split.average_speed) : split.moving_time && split.distance ? formatPace((split.moving_time / split.distance) * 1609.34) : '--';
-            const splitDist = split.distance ? (split.distance / 1609.34).toFixed(1) : '--';
+            // Handle both camelCase (from our mapper) and snake_case (raw Strava)
+            const avgSpeed = split.averageSpeed ?? split.average_speed ?? 0;
+            const movTime = split.movingTime ?? split.moving_time ?? 0;
+            const dist = split.distance ?? 0;
+            const avgHr = split.averageHeartrate ?? split.average_heartrate ?? null;
+            const splitPace = avgSpeed > 0 ? formatPace(1609.344 / avgSpeed) : movTime && dist ? formatPace((movTime / dist) * 1609.344) : '--';
+            const splitDist = dist ? (dist / 1609.344).toFixed(1) : '--';
             return (
               <XStack key={i} paddingVertical={8} borderBottomWidth={i < splits.length - 1 ? 0.5 : 0} borderBottomColor={colors.border} alignItems="center">
                 <M color={colors.textTertiary} fontSize={12} width={50}>{Number(splitDist) >= 0.9 ? `Mile ${i + 1}` : `${splitDist} mi`}</M>
                 <M color={colors.textPrimary} fontSize={14} fontWeight="700" flex={1} textAlign="center">{splitPace}</M>
-                {split.average_heartrate ? (
-                  <M color={colors.orange} fontSize={12} width={60} textAlign="right">{Math.round(split.average_heartrate)} bpm</M>
+                {avgHr ? (
+                  <M color={colors.orange} fontSize={12} width={60} textAlign="right">{Math.round(avgHr)} bpm</M>
                 ) : <View width={60} />}
               </XStack>
             );
@@ -216,14 +221,15 @@ export default function PostRunModal() {
       {metric.best_efforts_json && (() => {
         try {
           const efforts = JSON.parse(metric.best_efforts_json);
-          const prs = efforts.filter((e: any) => e.pr_rank === 1);
+          const prs = efforts.filter((e: any) => (e.prRank ?? e.pr_rank) === 1);
           if (prs.length === 0) return null;
           return (
             <YStack backgroundColor={colors.surface} borderRadius={14} marginHorizontal={16} padding={16} marginBottom={12}>
               <H color={colors.cyan} fontSize={12} letterSpacing={1.5} marginBottom={12}>NEW PERSONAL RECORDS</H>
               {prs.map((pr: any, i: number) => {
-                const mins = Math.floor(pr.elapsed_time / 60);
-                const secs = pr.elapsed_time % 60;
+                const elapsed = pr.elapsedTime ?? pr.elapsed_time ?? 0;
+                const mins = Math.floor(elapsed / 60);
+                const secs = elapsed % 60;
                 return (
                   <XStack key={i} alignItems="center" paddingVertical={6} gap={8}>
                     <MaterialCommunityIcons name="trophy" size={16} color={colors.cyan} />

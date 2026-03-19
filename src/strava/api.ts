@@ -54,11 +54,14 @@ async function stravaFetch<T>(
   }
 
   if (!response.ok) {
-    console.log(`[Strava] API error: ${response.status} on ${endpoint}`);
+    const errBody = await response.text().catch(() => '');
+    console.log(`[Strava Sync] API error: ${response.status} on ${endpoint} — ${errBody.slice(0, 200)}`);
     return null;
   }
 
-  return response.json();
+  const json = await response.json();
+  console.log(`[Strava Sync] API ${endpoint}: ${response.status} OK, ${Array.isArray(json) ? json.length + ' items' : 'object'}`);
+  return json;
 }
 
 // ─── Response Mappers ──────────────────────────────────────
@@ -72,7 +75,7 @@ function mapActivity(raw: any): StravaActivity {
     id: raw.id,
     name: raw.name,
     type: raw.type,
-    startDate: raw.start_date,
+    startDate: raw.start_date_local ?? raw.start_date,
     distance: raw.distance,
     movingTime: raw.moving_time,
     elapsedTime: raw.elapsed_time,

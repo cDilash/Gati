@@ -8,6 +8,7 @@ export function formatRelativeTime(isoOrDate: string | null | undefined): string
 
   try {
     const d = new Date(isoOrDate.includes('T') ? isoOrDate : isoOrDate + 'T12:00:00');
+    if (isNaN(d.getTime())) return 'not yet synced';
     const now = new Date();
     const diffMs = now.getTime() - d.getTime();
     const diffMin = Math.floor(diffMs / 60000);

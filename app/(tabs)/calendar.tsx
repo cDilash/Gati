@@ -1,15 +1,16 @@
 /**
  * Plan Screen — training journey view with phase grouping, volume arc, and rich week cards.
+ * Supports two view modes: List (default) and Calendar (7-day grid).
  */
 
 import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
-import { RefreshControl, Pressable, FlatList, LayoutChangeEvent } from 'react-native';
+import { RefreshControl, Pressable, FlatList, LayoutChangeEvent, Dimensions, ScrollView as RNScrollView, Alert, ActionSheetIOS, Platform, PanResponder, Animated } from 'react-native';
 import { YStack, XStack, Text, View, Spinner } from 'tamagui';
 import Svg, { Rect as SvgRect, Defs, LinearGradient, Stop } from 'react-native-svg';
 import { useRouter } from 'expo-router';
 import { useAppStore } from '../../src/store';
 import { WORKOUT_TYPE_LABELS } from '../../src/utils/constants';
-import { formatDate, isToday } from '../../src/utils/dateUtils';
+import { formatDate, isToday, getToday, addDays } from '../../src/utils/dateUtils';
 import { Workout, CrossTraining, CROSS_TRAINING_LABELS, PerformanceMetric, TrainingWeek, Phase } from '../../src/types';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { getWorkoutIcon } from '../../src/utils/workoutIcons';
@@ -20,6 +21,19 @@ import { GradientBorder } from '../../src/theme/GradientBorder';
 const H = (props: any) => <Text fontFamily="$heading" {...props} />;
 const B = (props: any) => <Text fontFamily="$body" {...props} />;
 const M_ = (props: any) => <Text fontFamily="$mono" {...props} />;
+
+const SCREEN_W = Dimensions.get('window').width;
+const DAY_LABELS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
+const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** Get the Monday of the week containing the given date string */
+function getMonday(dateStr: string): string {
+  const d = new Date(dateStr + 'T12:00:00');
+  const day = d.getDay();
+  const diff = day === 0 ? -6 : 1 - day; // Monday = 1
+  d.setDate(d.getDate() + diff);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
 
 // ─── Status icon helper ─────────────────────────────────────
 
@@ -53,11 +67,78 @@ export default function CalendarScreen() {
   const daysUntilRace = useAppStore(s => s.daysUntilRace);
   const weeklyDigest = useAppStore(s => s.weeklyDigest);
   const refreshState = useAppStore(s => s.refreshState);
+  const syncAll = useAppStore(s => s.syncAll);
+  const isSyncing = useAppStore(s => s.isSyncing);
 
   const [expandedWeeks, setExpandedWeeks] = useState<Set<number>>(() => new Set(currentWeekNumber > 0 ? [currentWeekNumber] : []));
   const [digestDismissed, setDigestDismissed] = useState(false);
   const [arcWidth, setArcWidth] = useState(0);
   const flatListRef = useRef<FlatList>(null);
+
+  // View mode: 'list' or 'calendar'
+  const [viewMode, setViewMode] = useState<'list' | 'calendar'>(() => {
+    try { const { getSetting } = require('../../src/db/database'); return (getSetting('plan_view_mode') as 'list' | 'calendar') ?? 'list'; } catch { return 'list'; }
+  });
+  const switchViewMode = useCallback((mode: 'list' | 'calendar') => {
+    setViewMode(mode);
+    try { const { setSetting } = require('../../src/db/database'); setSetting('plan_view_mode', mode); } catch {}
+  }, []);
+
+  // Calendar week navigation
+  const [calendarMonday, setCalendarMonday] = useState<string>(() => getMonday(getToday()));
+  const [addMenuDate, setAddMenuDate] = useState<string | null>(null);
+
+  // Show action sheet when addMenuDate is set
+  useEffect(() => {
+    if (!addMenuDate) return;
+    const dateLabel = new Date(addMenuDate + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    const ctTypes = ['Leg Day', 'Upper Body', 'Full Body', 'Cycling', 'Swimming', 'Yoga/Mobility'];
+    const ctKeys = ['leg_day', 'upper_body', 'full_body', 'cycling', 'swimming', 'yoga_mobility'];
+    const targetDate = addMenuDate;
+
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        { title: `Add activity · ${dateLabel}`, options: [...ctTypes, 'Cancel'], cancelButtonIndex: ctTypes.length },
+        (idx) => {
+          if (idx < ctTypes.length) {
+            try {
+              const { getDatabase } = require('../../src/db/database');
+              const Crypto = require('expo-crypto');
+              const db = getDatabase();
+              const impact = idx === 0 ? 'high' : idx === 5 ? 'positive' : 'moderate';
+              db.runSync(
+                'INSERT INTO cross_training (id, date, type, impact, notes) VALUES (?, ?, ?, ?, ?)',
+                Crypto.randomUUID(), targetDate, ctKeys[idx], impact, null
+              );
+              refreshState();
+            } catch {}
+          }
+          setAddMenuDate(null);
+        }
+      );
+    } else {
+      Alert.alert(`Add activity · ${dateLabel}`, 'Choose cross-training type',
+        [...ctTypes.map((label, idx) => ({
+          text: label,
+          onPress: () => {
+            try {
+              const { getDatabase } = require('../../src/db/database');
+              const Crypto = require('expo-crypto');
+              const db = getDatabase();
+              const impact = idx === 0 ? 'high' : idx === 5 ? 'positive' : 'moderate';
+              db.runSync(
+                'INSERT INTO cross_training (id, date, type, impact, notes) VALUES (?, ?, ?, ?, ?)',
+                Crypto.randomUUID(), targetDate, ctKeys[idx], impact, null
+              );
+              refreshState();
+            } catch {}
+            setAddMenuDate(null);
+          },
+        })),
+        { text: 'Cancel', style: 'cancel', onPress: () => setAddMenuDate(null) },
+      ]);
+    }
+  }, [addMenuDate]);
 
   const workoutsByWeek = useMemo(() => {
     const map = new Map<number, Workout[]>();
@@ -148,6 +229,425 @@ export default function CalendarScreen() {
   const progressPct = weeks.length > 0 ? Math.round((currentWeekNumber / weeks.length) * 100) : 0;
   const maxVolume = Math.max(...weeks.map(w => Math.max(w.target_volume, w.actual_volume)), 1);
 
+  // ─── Calendar: compute week data ────────────────────────
+  const calendarDays = useMemo(() => {
+    return Array.from({ length: 7 }, (_, i) => addDays(calendarMonday, i));
+  }, [calendarMonday]);
+
+  const calendarWeek = useMemo(() => {
+    // Find the training week that contains these dates
+    for (const w of weeks) {
+      const weekWorkouts = workoutsByWeek.get(w.week_number) ?? [];
+      if (weekWorkouts.some(wo => calendarDays.includes(wo.scheduled_date))) return w;
+    }
+    return null;
+  }, [calendarDays, weeks, workoutsByWeek]);
+
+  // Plan date range for boundary checks
+  const planDateRange = useMemo(() => {
+    if (workouts.length === 0) return null;
+    const dates = workouts.map(w => w.scheduled_date).sort();
+    return { start: dates[0], end: dates[dates.length - 1] };
+  }, [workouts]);
+
+  // Is this a race day date?
+  const raceDateStr = userProfile?.race_date ?? null;
+
+  const calendarWeekLabel = useMemo(() => {
+    const mon = new Date(calendarMonday + 'T12:00:00');
+    const sun = new Date(calendarDays[6] + 'T12:00:00');
+    const monStr = `${MONTHS_SHORT[mon.getMonth()]} ${mon.getDate()}`;
+    const sunStr = mon.getMonth() === sun.getMonth()
+      ? `${sun.getDate()}`
+      : `${MONTHS_SHORT[sun.getMonth()]} ${sun.getDate()}`;
+    return `${monStr} – ${sunStr}`;
+  }, [calendarMonday, calendarDays]);
+
+  // Swipe animation
+  const slideAnim = useRef(new Animated.Value(0)).current;
+
+  const navigateWeek = useCallback((dir: -1 | 1) => {
+    // Slide out in the swipe direction, then snap in from opposite side
+    Animated.timing(slideAnim, { toValue: -dir * SCREEN_W * 0.3, duration: 120, useNativeDriver: true }).start(() => {
+      setCalendarMonday(prev => addDays(prev, dir * 7));
+      slideAnim.setValue(dir * SCREEN_W * 0.3);
+      Animated.spring(slideAnim, { toValue: 0, tension: 80, friction: 12, useNativeDriver: true }).start();
+    });
+  }, []);
+
+  const goToCurrentWeek = useCallback(() => {
+    setCalendarMonday(getMonday(getToday()));
+    slideAnim.setValue(0);
+  }, []);
+
+  // Swipe gesture for week navigation
+  const swipeRef = useRef({ startX: 0 });
+  const panResponder = useRef(PanResponder.create({
+    onMoveShouldSetPanResponder: (_, gs) => Math.abs(gs.dx) > 20 && Math.abs(gs.dy) < 40,
+    onPanResponderRelease: (_, gs) => {
+      if (gs.dx > 50) navigateWeek(-1);      // swipe right = prev week
+      else if (gs.dx < -50) navigateWeek(1);  // swipe left = next week
+    },
+  })).current;
+
+  // ─── View Mode Toggle ──────────────────────────────────
+  const ViewToggle = (
+    <XStack alignItems="center" justifyContent="center" marginBottom={12}>
+      <XStack backgroundColor={colors.surface} borderRadius={12} padding={3} borderWidth={0.5} borderColor={colors.border}>
+        {(['list', 'calendar'] as const).map(mode => {
+          const active = viewMode === mode;
+          return (
+            <Pressable key={mode} onPress={() => switchViewMode(mode)}
+              style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}>
+              <XStack alignItems="center" gap={5}
+                backgroundColor={active ? colors.surfaceHover : 'transparent'}
+                paddingHorizontal={16} paddingVertical={7} borderRadius={9}>
+                <MaterialCommunityIcons
+                  name={mode === 'list' ? 'format-list-bulleted' : 'calendar-month-outline'}
+                  size={14} color={active ? colors.cyan : colors.textTertiary} />
+                <B color={active ? colors.textPrimary : colors.textTertiary}
+                  fontSize={12} fontWeight={active ? '700' : '400'}>
+                  {mode === 'list' ? 'List' : 'Calendar'}
+                </B>
+              </XStack>
+            </Pressable>
+          );
+        })}
+      </XStack>
+    </XStack>
+  );
+
+  // ─── Calendar View ──────────────────────────────────────
+  if (viewMode === 'calendar') {
+    const todayStr = getToday();
+    const colW = (SCREEN_W - 32 - 12) / 7; // 16px padding each side, 12px total gaps
+
+    return (
+      <View style={{ flex: 1, backgroundColor: colors.background }}>
+        <RNScrollView contentContainerStyle={{ padding: 16, paddingBottom: 60 }}
+          refreshControl={<RefreshControl refreshing={isSyncing} onRefresh={syncAll} tintColor={colors.cyan} />}>
+
+          {/* View toggle */}
+          {ViewToggle}
+
+          {/* Week navigator */}
+          <XStack alignItems="center" justifyContent="space-between" marginBottom={8}>
+            <Pressable onPress={() => navigateWeek(-1)} hitSlop={12}
+              style={({ pressed }) => ({ opacity: pressed ? 0.5 : 1, transform: [{ scale: pressed ? 0.9 : 1 }] })}>
+              <View width={34} height={34} borderRadius={17} backgroundColor={colors.surface}
+                borderWidth={0.5} borderColor={colors.border} alignItems="center" justifyContent="center">
+                <MaterialCommunityIcons name="chevron-left" size={20} color={colors.textSecondary} />
+              </View>
+            </Pressable>
+
+            <Pressable onPress={goToCurrentWeek}
+              style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}>
+              <YStack alignItems="center">
+                <XStack alignItems="center" gap={6}>
+                  <H color={colors.textPrimary} fontSize={15} letterSpacing={1.2}>{calendarWeekLabel}</H>
+                  {calendarWeek && (
+                    <View paddingHorizontal={7} paddingVertical={2} borderRadius={4}
+                      backgroundColor={((phaseColors as any)[calendarWeek.phase] ?? colors.textTertiary) + '22'}>
+                      <H fontSize={9} letterSpacing={1.2} color={(phaseColors as any)[calendarWeek.phase] ?? colors.textTertiary}>
+                        {calendarWeek.phase.toUpperCase()}
+                      </H>
+                    </View>
+                  )}
+                </XStack>
+                {calendarWeek ? (
+                  <XStack alignItems="center" gap={4} marginTop={2}>
+                    <B color={colors.textTertiary} fontSize={11}>
+                      Week {calendarWeek.week_number} of {weeks.length}
+                    </B>
+                    {calendarWeek.is_cutback && (
+                      <B color={colors.textTertiary} fontSize={9}>· CUTBACK</B>
+                    )}
+                  </XStack>
+                ) : (
+                  <B color={colors.textTertiary} fontSize={11} marginTop={2}>Outside plan range</B>
+                )}
+              </YStack>
+            </Pressable>
+
+            <Pressable onPress={() => navigateWeek(1)} hitSlop={12}
+              style={({ pressed }) => ({ opacity: pressed ? 0.5 : 1, transform: [{ scale: pressed ? 0.9 : 1 }] })}>
+              <View width={34} height={34} borderRadius={17} backgroundColor={colors.surface}
+                borderWidth={0.5} borderColor={colors.border} alignItems="center" justifyContent="center">
+                <MaterialCommunityIcons name="chevron-right" size={20} color={colors.textSecondary} />
+              </View>
+            </Pressable>
+          </XStack>
+
+          {/* "Today" jump button — only when not on current week */}
+          {calendarMonday !== getMonday(getToday()) && (
+            <XStack justifyContent="center" marginBottom={8}>
+              <Pressable onPress={goToCurrentWeek}
+                style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1, transform: [{ scale: pressed ? 0.95 : 1 }] })}>
+                <XStack alignItems="center" gap={5} backgroundColor={colors.cyanGhost}
+                  borderWidth={1} borderColor={colors.cyan} borderRadius={16}
+                  paddingHorizontal={16} height={32}>
+                  <MaterialCommunityIcons name="calendar-today" size={14} color={colors.cyan} />
+                  <B color={colors.cyan} fontSize={13} fontWeight="600">Today</B>
+                </XStack>
+              </Pressable>
+            </XStack>
+          )}
+
+          {/* Phase color band */}
+          {calendarWeek && (
+            <View height={2} borderRadius={1} marginBottom={10} overflow="hidden">
+              <View height={2} borderRadius={1} width="100%"
+                backgroundColor={(phaseColors as any)[calendarWeek.phase] ?? colors.textTertiary} opacity={0.4} />
+            </View>
+          )}
+
+          {/* Week summary bar */}
+          {calendarWeek && (() => {
+            const weekWO = workouts.filter(w => calendarDays.includes(w.scheduled_date) && w.workout_type !== 'rest');
+            const completedRuns = weekWO.filter(w => w.status === 'completed' || w.status === 'partial').length;
+            const totalMi = weekWO.reduce((sum, w) => {
+              const metric = (w.status === 'completed' || w.status === 'partial') ? metricsByWorkout.get(w.id) : null;
+              return sum + (metric ? metric.distance_miles : (w.target_distance_miles ?? 0));
+            }, 0);
+            return (
+              <XStack alignItems="center" justifyContent="center" gap={8} marginBottom={10}>
+                <M_ color={colors.textSecondary} fontSize={11} fontWeight="700">{totalMi.toFixed(1)} mi</M_>
+                <B color={colors.textTertiary} fontSize={10}>·</B>
+                <B color={colors.textTertiary} fontSize={10}>{completedRuns}/{weekWO.length} runs</B>
+                {calendarWeek.target_volume > 0 && (
+                  <>
+                    <B color={colors.textTertiary} fontSize={10}>·</B>
+                    <M_ color={calendarWeek.actual_volume >= calendarWeek.target_volume * 0.8 ? colors.cyan : colors.textTertiary}
+                      fontSize={10} fontWeight="600">
+                      {Math.round((calendarWeek.actual_volume / calendarWeek.target_volume) * 100)}%
+                    </M_>
+                  </>
+                )}
+              </XStack>
+            );
+          })()}
+
+          {/* Swipeable calendar grid */}
+          <Animated.View {...panResponder.panHandlers} style={{ transform: [{ translateX: slideAnim }] }}>
+
+          {/* Day headers + date numbers + activity dots */}
+          <XStack justifyContent="space-between" marginBottom={4}>
+            {calendarDays.map((dateStr, i) => {
+              const d = new Date(dateStr + 'T12:00:00');
+              const dayNum = d.getDate();
+              const isTodayCol = dateStr === todayStr;
+
+              // Activity dots for this day
+              const isRaceDayDot = dateStr === raceDateStr;
+              const dayWO = workouts.filter(w => w.scheduled_date === dateStr && w.workout_type !== 'rest');
+              const dayCT = crossTrainingByDate.get(dateStr);
+              const dots: { color: string }[] = [];
+              if (isRaceDayDot) {
+                dots.push({ color: colors.cyan }); // race day = single cyan dot
+              } else {
+                for (const w of dayWO) {
+                  if (w.status === 'completed') dots.push({ color: colors.success });
+                  else if (w.status === 'skipped') dots.push({ color: colors.error });
+                  else if (w.status === 'partial') dots.push({ color: colors.orange });
+                  else {
+                    const isQuality = ['threshold', 'tempo', 'interval', 'intervals', 'marathon_pace'].includes(w.workout_type);
+                    const isLong = w.workout_type === 'long_run' || w.workout_type === 'long';
+                    dots.push({ color: isQuality ? colors.orange : isLong ? colors.orange : colors.cyan });
+                  }
+                }
+              }
+              if (dayCT) dots.push({ color: '#9B59B6' }); // purple for cross-training
+
+              return (
+                <YStack key={dateStr} width={colW} alignItems="center" gap={2}>
+                  <H color={isTodayCol ? colors.cyan : colors.textTertiary} fontSize={10} letterSpacing={1}>
+                    {DAY_LABELS[i]}
+                  </H>
+                  <View width={26} height={26} borderRadius={13} alignItems="center" justifyContent="center"
+                    backgroundColor={isTodayCol ? colors.cyan : 'transparent'}>
+                    <M_ color={isTodayCol ? colors.background : colors.textSecondary} fontSize={13} fontWeight={isTodayCol ? '800' : '500'}>
+                      {dayNum}
+                    </M_>
+                  </View>
+                  {/* Activity dots */}
+                  <XStack gap={2} height={8} alignItems="center" justifyContent="center">
+                    {dots.map((dot, di) => (
+                      <View key={di} width={5} height={5} borderRadius={2.5} backgroundColor={dot.color} />
+                    ))}
+                  </XStack>
+                </YStack>
+              );
+            })}
+          </XStack>
+
+          {/* Outside plan range message */}
+          {!calendarWeek && planDateRange && (
+            <YStack alignItems="center" paddingVertical={24} opacity={0.5}>
+              <MaterialCommunityIcons name="calendar-remove-outline" size={24} color={colors.textTertiary} />
+              <B color={colors.textTertiary} fontSize={12} marginTop={6}>
+                {calendarDays[0] < planDateRange.start ? 'Before plan start' : 'After plan end'}
+              </B>
+            </YStack>
+          )}
+
+          {/* Workout columns */}
+          <XStack justifyContent="space-between" marginTop={8}>
+            {calendarDays.map((dateStr) => {
+              const isTodayCol = dateStr === todayStr;
+              const isRaceDay = dateStr === raceDateStr;
+              const dayWorkouts = workouts.filter(w => w.scheduled_date === dateStr);
+              const runWorkouts = dayWorkouts.filter(w => w.workout_type !== 'rest');
+              const isRest = dayWorkouts.length > 0 && runWorkouts.length === 0;
+              const dayCT = crossTrainingByDate.get(dateStr);
+
+              return (
+                <YStack key={dateStr} width={colW} alignItems="center"
+                  backgroundColor={isTodayCol ? colors.cyanGhost : 'transparent'}
+                  borderRadius={8} paddingVertical={6} minHeight={90}>
+
+                  {/* Race day special block */}
+                  {isRaceDay && (
+                    <YStack width={colW - 4} borderRadius={10} padding={6} alignItems="center"
+                      borderWidth={1.5} borderColor={colors.cyan}
+                      backgroundColor={colors.cyanGhost} marginBottom={4}>
+                      <MaterialCommunityIcons name="trophy" size={16} color={colors.cyan} />
+                      <H color={colors.cyan} fontSize={8} letterSpacing={1} marginTop={2}>RACE</H>
+                      <H color={colors.cyan} fontSize={7} letterSpacing={0.5}>DAY</H>
+                    </YStack>
+                  )}
+
+                  {/* Run workout blocks */}
+                  {!isRaceDay && runWorkouts.map(w => {
+                    const metric = (w.status === 'completed' || w.status === 'partial') ? metricsByWorkout.get(w.id) : null;
+                    const isCompleted = w.status === 'completed';
+                    const isSkipped = w.status === 'skipped';
+                    const isPartial = w.status === 'partial';
+                    const typeColor = isCompleted ? colors.success
+                      : isSkipped ? colors.error
+                      : isPartial ? colors.orange
+                      : workoutNameColor(w.workout_type);
+
+                    // Short workout type label
+                    const shortType = w.workout_type === 'long_run' || w.workout_type === 'long' ? 'Long'
+                      : w.workout_type === 'easy' ? 'Easy'
+                      : w.workout_type === 'recovery' ? 'Rec'
+                      : w.workout_type === 'threshold' || w.workout_type === 'tempo' ? 'Tempo'
+                      : w.workout_type === 'interval' || w.workout_type === 'intervals' ? 'Ints'
+                      : w.workout_type === 'marathon_pace' ? 'MP'
+                      : w.workout_type.slice(0, 4);
+
+                    return (
+                      <Pressable key={w.id} onPress={() => router.push(`/workout/${w.id}`)}
+                        style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1, transform: [{ scale: pressed ? 0.95 : 1 }] })}>
+                        <YStack width={colW - 6}
+                          backgroundColor={isSkipped ? 'transparent' : isCompleted ? colors.surface : colors.surface}
+                          borderRadius={8} borderLeftWidth={3} borderLeftColor={typeColor}
+                          borderWidth={isSkipped ? 0.5 : (isTodayCol && !isCompleted && !isSkipped) ? 1 : 0}
+                          borderColor={isSkipped ? colors.border : (isTodayCol && !isCompleted) ? colors.cyanDim : colors.border}
+                          padding={5} marginBottom={3} opacity={isSkipped ? 0.45 : 1}>
+
+                          {/* Status icon overlay for completed/skipped */}
+                          {(isCompleted || isSkipped) && (
+                            <View style={{ position: 'absolute', top: 3, right: 3, zIndex: 1 }}>
+                              <MaterialCommunityIcons
+                                name={isCompleted ? 'check-circle' : 'close-circle'}
+                                size={10}
+                                color={isCompleted ? colors.success : colors.error} />
+                            </View>
+                          )}
+
+                          {/* Workout name */}
+                          <B color={isSkipped ? colors.textTertiary : colors.textSecondary} fontSize={8}
+                            numberOfLines={1} textDecorationLine={isSkipped ? 'line-through' : 'none'}>
+                            {shortType}
+                          </B>
+
+                          {/* Distance: actual if completed, target if planned */}
+                          {isCompleted && metric ? (
+                            <YStack>
+                              <M_ color={colors.textPrimary} fontSize={11} fontWeight="800">
+                                {metric.distance_miles.toFixed(1)}
+                              </M_>
+                              {metric.avg_pace_sec_per_mile ? (
+                                <M_ color={colors.textTertiary} fontSize={8}>
+                                  {formatPace(metric.avg_pace_sec_per_mile)}
+                                </M_>
+                              ) : null}
+                            </YStack>
+                          ) : isPartial && metric ? (
+                            <YStack>
+                              <M_ color={colors.orange} fontSize={11} fontWeight="800">
+                                {metric.distance_miles.toFixed(1)}
+                              </M_>
+                              <M_ color={colors.textTertiary} fontSize={7}>
+                                of {w.target_distance_miles?.toFixed(1)}
+                              </M_>
+                            </YStack>
+                          ) : (
+                            <M_ color={isSkipped ? colors.textTertiary : colors.textPrimary} fontSize={11} fontWeight="700"
+                              textDecorationLine={isSkipped ? 'line-through' : 'none'}>
+                              {w.target_distance_miles != null ? w.target_distance_miles.toFixed(1) : '–'}
+                            </M_>
+                          )}
+                        </YStack>
+                      </Pressable>
+                    );
+                  })}
+
+                  {/* Cross-training block */}
+                  {dayCT && (
+                    <YStack width={colW - 6} borderRadius={6} padding={3} marginBottom={2}
+                      borderWidth={0.5} borderColor={dayCT.impact === 'high' ? colors.orangeDim : dayCT.impact === 'positive' ? colors.cyanDim : colors.border}
+                      borderStyle="dashed">
+                      <XStack alignItems="center" gap={2}>
+                        <MaterialCommunityIcons name="dumbbell" size={8}
+                          color={dayCT.impact === 'high' ? colors.orange : dayCT.impact === 'positive' ? colors.cyan : colors.textTertiary} />
+                        <B color={colors.textTertiary} fontSize={7} numberOfLines={1}>
+                          {CROSS_TRAINING_LABELS[dayCT.type]?.split(' ')[0] ?? 'XT'}
+                        </B>
+                      </XStack>
+                    </YStack>
+                  )}
+
+                  {/* Rest day */}
+                  {!isRaceDay && isRest && !dayCT && (
+                    <YStack alignItems="center" justifyContent="center" flex={1} marginTop={4}>
+                      <MaterialCommunityIcons name="battery-heart-outline" size={12} color={colors.textTertiary} style={{ opacity: 0.4 }} />
+                    </YStack>
+                  )}
+
+                  {/* Empty day (no plan data) */}
+                  {!isRaceDay && dayWorkouts.length === 0 && !dayCT && (
+                    <View height={40} />
+                  )}
+
+                  {/* "+ Add" button — past/today only, when no upcoming run or after completion */}
+                  {dateStr <= todayStr && !dayCT && (
+                    runWorkouts.length === 0 || runWorkouts.every(w => w.status === 'completed' || w.status === 'skipped' || w.status === 'partial')
+                  ) && (
+                    <Pressable onPress={() => setAddMenuDate(dateStr)}
+                      style={({ pressed }) => ({ opacity: pressed ? 0.5 : 0.4, marginTop: 2 })}>
+                      <View width={22} height={22} borderRadius={11} borderWidth={1} borderColor={colors.border}
+                        alignItems="center" justifyContent="center">
+                        <MaterialCommunityIcons name="plus" size={12} color={colors.textTertiary} />
+                      </View>
+                    </Pressable>
+                  )}
+                </YStack>
+              );
+            })}
+          </XStack>
+
+          </Animated.View>
+
+          {/* Add menu is handled via useEffect below */}
+
+        </RNScrollView>
+      </View>
+    );
+  }
+
+  // ─── List View (existing, unchanged) ────────────────────
   return (
     <FlatList
       ref={flatListRef}
@@ -155,12 +655,14 @@ export default function CalendarScreen() {
       keyExtractor={(item, i) => `${item.type}-${i}`}
       style={{ flex: 1, backgroundColor: colors.background }}
       contentContainerStyle={{ padding: 16, paddingBottom: 60 }}
-      refreshControl={<RefreshControl refreshing={false} onRefresh={refreshState} tintColor={colors.cyan} />}
+      refreshControl={<RefreshControl refreshing={isSyncing} onRefresh={syncAll} tintColor={colors.cyan} />}
       onScrollToIndexFailed={() => {}}
       renderItem={({ item }) => {
         // ─── Header ─────────────────────────────────
         if (item.type === 'header') {
           return (
+            <YStack>
+            {ViewToggle}
             <YStack backgroundColor={colors.surface} borderRadius={14} padding={16} marginBottom={12}>
               {userProfile?.race_name && (
                 <H color={colors.textPrimary} fontSize={20} letterSpacing={1} marginBottom={2}>{userProfile.race_name}</H>
@@ -183,6 +685,7 @@ export default function CalendarScreen() {
                 <View height={6} borderRadius={3} backgroundColor={colors.cyan} width={`${progressPct}%` as any} />
               </View>
               <M_ color={colors.textTertiary} fontSize={11} fontWeight="600" marginTop={4} textAlign="right">{progressPct}%</M_>
+            </YStack>
             </YStack>
           );
         }

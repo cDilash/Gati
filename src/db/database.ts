@@ -137,6 +137,7 @@ export function initializeDatabase(): void {
     { table: 'strava_activity_detail', column: 'weather_wind_mph', type: 'REAL' },
     { table: 'strava_activity_detail', column: 'weather_condition', type: 'TEXT' },
     { table: 'strava_activity_detail', column: 'weather_fetched', type: 'INTEGER DEFAULT 0' },
+    { table: 'strava_activity_detail', column: 'geocoded', type: 'INTEGER DEFAULT 0' },
   ];
   for (const { table, column, type } of newColumns) {
     try { database.execSync(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`); } catch {}

@@ -33,15 +33,26 @@ function getDb() {
 function getLastSyncTimestamp(): number | null {
   try {
     const db = getDb();
-    console.log('[Sync] getLastSyncTimestamp - db instance:', !!db);
     const row = db.getFirstSync(
       'SELECT last_sync_at FROM strava_tokens WHERE id = 1'
     ) as { last_sync_at: string | null } | null;
-    console.log('[Sync] last_sync_at:', row?.last_sync_at);
-    if (!row?.last_sync_at) return null;
-    return Math.floor(new Date(row.last_sync_at).getTime() / 1000);
+    if (!row?.last_sync_at) {
+      console.log('[Strava Sync] last_sync_at: NULL (will fetch all)');
+      return null;
+    }
+    // SQLite datetime('now') returns UTC without timezone suffix.
+    // Append 'Z' so JS Date parses it as UTC, not local time.
+    let raw = row.last_sync_at;
+    if (!raw.includes('Z') && !raw.includes('+') && !raw.includes('T')) {
+      raw = raw.replace(' ', 'T') + 'Z';
+    } else if (!raw.includes('Z') && !raw.includes('+')) {
+      raw = raw + 'Z';
+    }
+    const ts = Math.floor(new Date(raw).getTime() / 1000);
+    console.log(`[Strava Sync] last_sync_at raw="${row.last_sync_at}" → parsed="${new Date(ts * 1000).toISOString()}" → unix=${ts}`);
+    return ts;
   } catch (e) {
-    console.warn('[Sync] getLastSyncTimestamp failed:', e);
+    console.warn('[Strava Sync] getLastSyncTimestamp failed:', e);
     return null;
   }
 }
@@ -49,11 +60,15 @@ function getLastSyncTimestamp(): number | null {
 function updateLastSyncTimestamp(): void {
   try {
     const db = getDb();
+    // Store as ISO string with Z suffix so it's unambiguously UTC
+    const nowUtc = new Date().toISOString();
     db.runSync(
-      "UPDATE strava_tokens SET last_sync_at = datetime('now') WHERE id = 1"
+      'UPDATE strava_tokens SET last_sync_at = ? WHERE id = 1',
+      nowUtc,
     );
-  } catch {
-    // Non-critical
+    console.log(`[Strava Sync] Updated last_sync_at = ${nowUtc}`);
+  } catch (e) {
+    console.warn('[Strava Sync] updateLastSyncTimestamp failed:', e);
   }
 }
 
@@ -203,7 +218,7 @@ function markWorkoutCompleted(workoutId: string, stravaActivityId: number): void
   try {
     const db = getDb();
     db.runSync(
-      "UPDATE workout SET status = 'completed', strava_activity_id = ? WHERE id = ? AND status = 'upcoming'",
+      "UPDATE workout SET status = 'completed', strava_activity_id = ? WHERE id = ? AND status IN ('upcoming', 'modified')",
       stravaActivityId,
       workoutId,
     );
@@ -305,11 +320,16 @@ function matchToScheduledWorkout(
   scheduledWorkouts: Workout[],
 ): string | null {
   // Find workouts on the same date that aren't rest days and aren't already completed
-  const sameDayWorkouts = scheduledWorkouts.filter(
-    w => w.scheduled_date === activityDate &&
-         w.workout_type !== 'rest' &&
-         w.status === 'upcoming'
+  const sameDayAll = scheduledWorkouts.filter(w => w.scheduled_date === activityDate);
+  const sameDayWorkouts = sameDayAll.filter(
+    w => w.workout_type !== 'rest' && (w.status === 'upcoming' || w.status === 'modified')
   );
+
+  console.log(`[Strava Sync]   Match: date=${activityDate}, ${sameDayAll.length} workouts on this date, ${sameDayWorkouts.length} eligible (upcoming, non-rest)`);
+  if (sameDayAll.length > 0 && sameDayWorkouts.length === 0) {
+    const blocked = sameDayAll.filter(w => w.workout_type !== 'rest');
+    blocked.forEach(w => console.log(`[Strava Sync]     Workout ${w.id} status=${w.status} type=${w.workout_type} — not eligible`));
+  }
 
   if (sameDayWorkouts.length === 0) return null;
   if (sameDayWorkouts.length === 1) return sameDayWorkouts[0].id;
@@ -337,17 +357,27 @@ export async function syncStravaActivities(options?: {
 }): Promise<SyncResult> {
   const result: SyncResult = { newActivities: 0, matched: 0, unmatched: 0 };
 
-  console.log('[Sync] Starting syncStravaActivities...');
+  console.log('[Strava Sync] ════════════════════════════════════');
+  console.log('[Strava Sync] Starting sync...');
   const lastSync = options?.afterTimestamp ?? getLastSyncTimestamp();
-  console.log('[Sync] Last sync timestamp:', lastSync);
+  if (lastSync) {
+    console.log(`[Strava Sync] Fetching activities after: ${new Date(lastSync * 1000).toISOString()} (unix=${lastSync})`);
+  } else {
+    console.log('[Strava Sync] No last sync timestamp — fetching ALL recent activities');
+  }
 
-  // Fetch recent running activities
-  console.log(`[Sync] Fetching activities after timestamp: ${lastSync ? new Date(lastSync * 1000).toISOString() : 'none (full fetch)'}`);
   const activities = await getRecentActivities(lastSync ?? undefined, options?.perPage);
-  console.log(`[Sync] API returned ${activities.length} running activities`);
+  console.log(`[Strava Sync] API returned ${activities.length} running activities`);
+  if (activities.length > 0) {
+    activities.forEach((a, i) => {
+      console.log(`[Strava Sync]   ${i + 1}. id=${a.id} "${a.name}" ${a.startDate.split('T')[0]} ${(a.distance / 1609.344).toFixed(1)}mi`);
+    });
+  }
   if (activities.length === 0) {
+    console.log('[Strava Sync] No new activities from Strava API');
     updateLastSyncTimestamp();
     rematchOrphanedMetrics();
+    console.log('[Strava Sync] ════════════════════════════════════');
     return result;
   }
 
@@ -357,13 +387,15 @@ export async function syncStravaActivities(options?: {
   const maxDate = dates.reduce((a, b) => (a > b ? a : b));
   const scheduledWorkouts = getScheduledWorkoutsInRange(minDate, maxDate);
 
+  let duplicates = 0;
   for (const activity of activities) {
     // Skip if already imported (dedup by strava_activity_id)
     if (stravaActivityAlreadyImported(activity.id)) {
-      console.log(`[Sync] Activity ${activity.id} "${activity.name}" — DUPLICATE, skipping`);
+      duplicates++;
+      console.log(`[Strava Sync] Activity ${activity.id} "${activity.name}" — already imported, skipping`);
       continue;
     }
-    console.log(`[Sync] Activity ${activity.id} "${activity.name}" ${activity.startDate.split('T')[0]} — NEW, importing`);
+    console.log(`[Strava Sync] Activity ${activity.id} "${activity.name}" ${activity.startDate.split('T')[0]} — NEW, importing...`);
 
     // Fetch detailed data + streams
     const detail = await getActivityDetail(activity.id);
@@ -396,6 +428,7 @@ export async function syncStravaActivities(options?: {
 
     saveMetric(metric);
     saveStravaDetail(metric.id, detail, streams);
+    console.log(`[Strava Sync]   Saved metric + detail for activity ${activity.id}`);
 
     // Auto-mark matched workout with quality assessment
     if (matchedWorkoutId) {
@@ -404,8 +437,10 @@ export async function syncStravaActivities(options?: {
         "UPDATE workout SET status = ?, strava_activity_id = ?, execution_quality = ? WHERE id = ?",
         [workoutStatus, detail.id, executionQuality, matchedWorkoutId]
       );
+      console.log(`[Strava Sync]   Matched to workout ${matchedWorkoutId} → status=${workoutStatus}, quality=${executionQuality}`);
       result.matched++;
     } else {
+      console.log(`[Strava Sync]   No matching workout found for ${activityDate}`);
       result.unmatched++;
     }
 
@@ -415,7 +450,10 @@ export async function syncStravaActivities(options?: {
   updateLastSyncTimestamp();
   rematchOrphanedMetrics();
   await backfillPolylines();
+  await reverseGeocodeLocations();
 
+  console.log(`[Strava Sync] Complete: ${result.newActivities} new, ${result.matched} matched, ${result.unmatched} unmatched, ${duplicates} duplicates`);
+  console.log('[Strava Sync] ════════════════════════════════════');
   return result;
 }
 
@@ -425,31 +463,78 @@ function rematchOrphanedMetrics(): void {
   try {
     const db = getDb();
 
-    // Find unmatched metrics from the last 8 weeks
+    // Step 1: Fix UTC date mismatches on orphaned metrics.
+    // Old code stored UTC date (start_date) instead of local date (start_date_local).
+    // E.g., a 7 PM PDT run on March 18 was stored as date="2026-03-19" (UTC).
+    // Fix: use utc_offset from strava_activity_detail to derive the correct local date.
+    const utcOrphans = db.getAllSync<{ pm_id: string; strava_id: number; pm_date: string; utc_offset: number | null }>(
+      `SELECT pm.id as pm_id, pm.strava_activity_id as strava_id, pm.date as pm_date, sad.utc_offset
+       FROM performance_metric pm
+       JOIN strava_activity_detail sad ON sad.strava_activity_id = pm.strava_activity_id
+       WHERE pm.workout_id IS NULL AND pm.date >= date('now', '-56 days')
+       AND sad.utc_offset IS NOT NULL`
+    );
+
+    for (const o of utcOrphans) {
+      // Derive local date from UTC date + offset
+      const utcDate = new Date(o.pm_date + 'T12:00:00Z');
+      const localDate = new Date(utcDate.getTime() + (o.utc_offset! * 1000));
+      const localDateStr = localDate.toISOString().split('T')[0];
+      if (localDateStr !== o.pm_date) {
+        console.log(`[Strava Sync] Fixing UTC date: metric ${o.pm_id} date ${o.pm_date} → ${localDateStr} (offset=${o.utc_offset})`);
+        db.runSync('UPDATE performance_metric SET date = ? WHERE id = ?', localDateStr, o.pm_id);
+      }
+    }
+
+    // Step 2: Find unmatched metrics from the last 8 weeks
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - 56);
-    const orphans = db.getAllSync<{ id: string; date: string; distance_miles: number }>(
-      `SELECT id, date, distance_miles FROM performance_metric
+    const orphans = db.getAllSync<{ id: string; date: string; distance_miles: number; strava_activity_id: number | null }>(
+      `SELECT id, date, distance_miles, strava_activity_id FROM performance_metric
        WHERE workout_id IS NULL AND date >= ?
        ORDER BY date DESC`,
       cutoff.toISOString().split('T')[0],
     );
 
     if (orphans.length === 0) return;
+    console.log(`[Strava Sync] Rematch: ${orphans.length} orphaned metrics to check`);
 
+    // Expand date range by 1 day on each side to catch UTC edge cases
     const dates = orphans.map(o => o.date);
     const minDate = dates.reduce((a, b) => (a < b ? a : b));
     const maxDate = dates.reduce((a, b) => (a > b ? a : b));
-    const scheduledWorkouts = getScheduledWorkoutsInRange(minDate, maxDate);
+    const minExpanded = new Date(minDate + 'T00:00:00');
+    minExpanded.setDate(minExpanded.getDate() - 1);
+    const maxExpanded = new Date(maxDate + 'T00:00:00');
+    maxExpanded.setDate(maxExpanded.getDate() + 1);
+    const scheduledWorkouts = getScheduledWorkoutsInRange(
+      minExpanded.toISOString().split('T')[0],
+      maxExpanded.toISOString().split('T')[0],
+    );
 
     let matched = 0;
     for (const orphan of orphans) {
-      const workoutId = matchToScheduledWorkout(
+      // Try exact date first
+      let workoutId = matchToScheduledWorkout(
         orphan.date, orphan.distance_miles, scheduledWorkouts,
       );
+
+      // If no match, try adjacent dates (UTC offset edge case)
+      if (!workoutId) {
+        const prevDay = new Date(orphan.date + 'T00:00:00');
+        prevDay.setDate(prevDay.getDate() - 1);
+        const prevStr = prevDay.toISOString().split('T')[0];
+        workoutId = matchToScheduledWorkout(prevStr, orphan.distance_miles, scheduledWorkouts);
+        if (workoutId) {
+          // Fix the metric date to match the workout
+          console.log(`[Strava Sync]   Matched on prev day: metric date ${orphan.date} → workout date ${prevStr}`);
+          db.runSync('UPDATE performance_metric SET date = ? WHERE id = ?', prevStr, orphan.id);
+        }
+      }
+
       if (!workoutId) continue;
 
-      // Check this workout isn't already matched
+      // Check this workout isn't already matched to another metric
       const existing = db.getFirstSync<{ id: string }>(
         'SELECT id FROM performance_metric WHERE workout_id = ?',
         workoutId,
@@ -458,19 +543,20 @@ function rematchOrphanedMetrics(): void {
 
       db.runSync('UPDATE performance_metric SET workout_id = ? WHERE id = ?', workoutId, orphan.id);
 
-      // Also mark the workout completed if it's still upcoming
+      // Mark the workout completed
       db.runSync(
-        "UPDATE workout SET status = 'completed' WHERE id = ? AND status = 'upcoming'",
+        "UPDATE workout SET status = 'completed' WHERE id = ? AND status IN ('upcoming', 'modified')",
         workoutId,
       );
       matched++;
+      console.log(`[Strava Sync]   Rematch: metric ${orphan.id} → workout ${workoutId}`);
     }
 
     if (matched > 0) {
-      console.log(`[Rematch] Linked ${matched} orphaned metrics to plan workouts`);
+      console.log(`[Strava Sync] Rematch complete: linked ${matched} orphaned metrics`);
     }
   } catch (e) {
-    console.warn('[Rematch] Failed:', e);
+    console.warn('[Strava Sync] Rematch failed:', e);
   }
 }
 
@@ -504,5 +590,75 @@ async function backfillPolylines(): Promise<void> {
     }
   } catch (e) {
     console.warn('[Backfill] Failed:', e);
+  }
+}
+
+// ─── Reverse Geocode Locations ──────────────────────────
+
+/**
+ * Strava's API often returns the nearest major metro as location_city
+ * (e.g., "San Francisco" for a run in Emeryville). Use expo-location
+ * reverse geocoding with start_lat/start_lng for accurate city names.
+ * Only processes activities that have coordinates but haven't been geocoded yet.
+ */
+async function reverseGeocodeLocations(): Promise<void> {
+  try {
+    const Location = require('expo-location');
+    const db = getDb();
+
+    // Find activities with coordinates that might have inaccurate city names
+    // Process up to 5 at a time to avoid rate limits
+    const rows = db.getAllSync<{
+      id: string; start_lat: number; start_lng: number;
+      location_city: string | null; geocoded: number | null;
+    }>(
+      `SELECT id, start_lat, start_lng, location_city, geocoded
+       FROM strava_activity_detail
+       WHERE start_lat IS NOT NULL AND start_lng IS NOT NULL
+       AND (geocoded IS NULL OR geocoded = 0)
+       ORDER BY rowid DESC LIMIT 5`
+    );
+
+    if (rows.length === 0) return;
+
+    let updated = 0;
+    for (const row of rows) {
+      try {
+        const results = await Location.reverseGeocodeAsync({
+          latitude: row.start_lat,
+          longitude: row.start_lng,
+        });
+
+        if (results && results.length > 0) {
+          const geo = results[0];
+          const city = geo.city || geo.subregion || row.location_city;
+          const state = geo.region || null;
+          const country = geo.country || null;
+
+          db.runSync(
+            `UPDATE strava_activity_detail
+             SET location_city = ?, location_state = ?, location_country = ?, geocoded = 1
+             WHERE id = ?`,
+            city, state, country, row.id,
+          );
+
+          if (city !== row.location_city) {
+            console.log(`[Strava Sync] Geocoded: ${row.location_city} → ${city}, ${state}`);
+          }
+          updated++;
+        } else {
+          // Mark as geocoded even if no result, to avoid retrying
+          db.runSync('UPDATE strava_activity_detail SET geocoded = 1 WHERE id = ?', row.id);
+        }
+      } catch {
+        // Individual geocode failure — skip, will retry next sync
+      }
+    }
+
+    if (updated > 0) {
+      console.log(`[Strava Sync] Reverse geocoded ${updated} activity locations`);
+    }
+  } catch {
+    // expo-location not available or permission denied — skip silently
   }
 }
