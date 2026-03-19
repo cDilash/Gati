@@ -715,11 +715,15 @@ export function deleteCrossTraining(id: string): void {
 
 export function sweepPastWorkouts(): { skipped: number; lateMatched: number } {
   const database = getDatabase();
-  const today = getToday();
   let skipped = 0;
   let lateMatched = 0;
 
-  // Find all past workouts still marked 'upcoming'
+  // 12-hour buffer: only sweep workouts from at least 12 hours ago
+  // This gives Strava time to process late-night runs
+  const cutoff = new Date(Date.now() - 12 * 60 * 60 * 1000);
+  const cutoffDate = `${cutoff.getFullYear()}-${String(cutoff.getMonth() + 1).padStart(2, '0')}-${String(cutoff.getDate()).padStart(2, '0')}`;
+
+  // Find all past workouts still marked 'upcoming' (at least 12 hours old)
   const pastUpcoming = database.getAllSync<any>(
     `SELECT w.id, w.scheduled_date, w.workout_type
      FROM workout w
@@ -728,7 +732,7 @@ export function sweepPastWorkouts(): { skipped: number; lateMatched: number } {
      AND w.status = 'upcoming'
      AND w.scheduled_date < ?
      AND w.workout_type != 'rest'`,
-    [today]
+    [cutoffDate]
   );
 
   for (const workout of pastUpcoming) {

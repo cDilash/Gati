@@ -1013,17 +1013,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (state.isSyncing) return; // prevent double-sync
     set({ isSyncing: true });
 
-    // Step 1: Sweep past workouts (always, before anything else)
-    if (state.activePlan) {
-      try {
-        const { sweepPastWorkouts } = require('./db/database');
-        sweepPastWorkouts();
-      } catch {}
-    }
-
     const results: { strava: string | null; health: string | null } = { strava: null, health: null };
 
-    // Step 2: Parallel syncs
+    // Step 1: Parallel syncs (Strava MUST run BEFORE sweep so new activities are matched first)
     const stravaPromise = state.isStravaConnected
       ? (async () => {
           try {
@@ -1053,6 +1045,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     const garminPromise = (async () => { try { await state.syncGarminHealth(); } catch {} })();
 
     await Promise.allSettled([stravaPromise, healthPromise, reviewPromise, garminPromise]);
+
+    // Step 2: Sweep past workouts AFTER Strava sync (so new activities are matched first)
+    if (state.activePlan) {
+      try {
+        const { sweepPastWorkouts } = require('./db/database');
+        sweepPastWorkouts();
+      } catch {}
+    }
 
     // Step 3: Recalculate volumes after all syncs complete
     if (state.activePlan) {
