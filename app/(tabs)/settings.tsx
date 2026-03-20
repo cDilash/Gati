@@ -57,6 +57,20 @@ function StatusDot({ on }: { on: boolean }) {
   );
 }
 
+function LastBackupRow({ formatLastSync }: { formatLastSync: (iso: string | null) => string }) {
+  const lastBackup = useAppStore(s => s.lastBackupTime);
+  return (
+    <SettingsRow icon="clock-outline" iconColor={colors.cyan} label="Last Backup"
+      subtitle={lastBackup > 0 ? formatLastSync(new Date(lastBackup).toISOString()) : 'Never backed up'}
+      rightElement={lastBackup > 0 ? (
+        <XStack alignItems="center" gap={4}>
+          <View width={6} height={6} borderRadius={3} backgroundColor={Date.now() - lastBackup < 86400000 ? colors.success : colors.orange} />
+          <B color={colors.textTertiary} fontSize={10}>{Date.now() - lastBackup < 86400000 ? 'Fresh' : 'Stale'}</B>
+        </XStack>
+      ) : undefined} />
+  );
+}
+
 function SmallButton({ label, onPress, color }: { label: string; onPress: () => void; color?: string }) {
   return (
     <Pressable onPress={onPress} style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}>
@@ -141,6 +155,9 @@ export default function SettingsScreen() {
       if (!(await isLoggedIn())) { Alert.alert('Login Required', 'Sign in from your Profile first.'); setIsBackingUp(false); return; }
       const { uploadBackup } = require('../../src/backup/backup');
       await uploadBackup();
+      const now = Date.now();
+      useAppStore.setState({ lastBackupTime: now, backupDirty: false });
+      try { const { setSetting } = require('../../src/db/database'); setSetting('last_backup_time', String(now)); } catch {}
       Alert.alert('Backup Complete', 'Data backed up to cloud.');
     } catch (e: any) { Alert.alert('Failed', e.message ?? 'Error.'); }
     finally { setIsBackingUp(false); }
@@ -280,15 +297,35 @@ export default function SettingsScreen() {
         </>
       )}
 
+      {/* ─── Garmin Connect ──────────────────────────────── */}
+      {(() => {
+        const garmin = useAppStore.getState().garminHealth;
+        if (!garmin) return null;
+        const ageHrs = Math.round((Date.now() - new Date(garmin.fetchedAt).getTime()) / 3600000);
+        const isStale = ageHrs > 24;
+        return (
+          <>
+            <SectionHeader title="Garmin Connect" />
+            <YStack backgroundColor={colors.surface} borderRadius={14} overflow="hidden">
+              <SettingsRow icon="watch" iconColor={colors.cyan} label="Garmin Epix Pro"
+                rightElement={
+                  <XStack alignItems="center" gap={4}>
+                    <View width={6} height={6} borderRadius={3} backgroundColor={isStale ? colors.orange : colors.success} />
+                    <B color={colors.textTertiary} fontSize={11}>{isStale ? 'Stale' : 'Connected'}</B>
+                  </XStack>
+                } />
+              <SettingsRow icon="sync" iconColor={colors.textSecondary}
+                label={`Last data: ${garmin.date}`}
+                subtitle={`${ageHrs}h ago · Auto-syncs every 6h from Mac`} />
+            </YStack>
+          </>
+        );
+      })()}
+
       {/* ─── Cloud Backup ────────────────────────────────── */}
       <SectionHeader title="Cloud Backup" />
       <YStack backgroundColor={colors.surface} borderRadius={14} overflow="hidden">
-        {(() => {
-          const lastBackup = useAppStore.getState().lastBackupTime;
-          return lastBackup > 0 ? (
-            <SettingsRow icon="clock-outline" iconColor={colors.cyan} label="Last Backup" subtitle={formatLastSync(new Date(lastBackup).toISOString())} />
-          ) : null;
-        })()}
+        <LastBackupRow formatLastSync={formatLastSync} />
         <SettingsRow icon="cloud-check-outline" iconColor={colors.cyan} label="Backup to Cloud"
           subtitle="Save all data to Supabase" onPress={handleBackup} loading={isBackingUp} />
         <SettingsRow icon="cloud-download-outline" iconColor={colors.orange} label="Restore from Cloud"

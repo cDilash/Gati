@@ -374,7 +374,7 @@ export default function ActivitiesScreen() {
           </XStack>
 
           {/* Row 2: Stat pills */}
-          <XStack gap={10} flexWrap="wrap" marginBottom={2}>
+          <XStack gap={16} flexWrap="wrap" marginBottom={2}>
             <XStack alignItems="center" gap={3}>
               <MaterialCommunityIcons name="map-marker-distance" size={13} color={colors.cyan} />
               <M color="$color" fontSize={13} fontWeight="700">{m.distance_miles.toFixed(1)}</M>
@@ -389,13 +389,13 @@ export default function ActivitiesScreen() {
             {m.avg_hr ? (
               <XStack alignItems="center" gap={3}>
                 <MaterialCommunityIcons name="heart-pulse" size={13} color={colors.orange} />
-                <M color={colors.orange} fontSize={12} fontWeight="600">{m.avg_hr}</M>
+                <M color={colors.orange} fontSize={12} fontWeight="600">{Math.round(m.avg_hr)}</M>
               </XStack>
             ) : null}
             {elev && elev > 50 ? (
               <XStack alignItems="center" gap={3}>
-                <MaterialCommunityIcons name="trending-up" size={13} color={colors.textSecondary} />
-                <M color="$textSecondary" fontSize={12}>+{Math.round(elev)}'</M>
+                <MaterialCommunityIcons name="elevation-rise" size={13} color={colors.textSecondary} />
+                <M color="$textSecondary" fontSize={12}>{Math.round(elev)} ft</M>
               </XStack>
             ) : null}
           </XStack>

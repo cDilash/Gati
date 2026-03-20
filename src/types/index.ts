@@ -438,12 +438,13 @@ export interface HealthSnapshot {
 }
 
 export interface RecoverySignal {
-  type: 'resting_hr' | 'hrv' | 'sleep' | 'respiratory_rate';
+  type: 'resting_hr' | 'hrv' | 'sleep' | 'respiratory_rate' | 'body_battery' | 'garmin_hrv';
   value: number | null;
   baseline: number | null;
   status: 'good' | 'fair' | 'poor';
   score: number;
   detail: string;
+  source?: 'healthkit' | 'garmin';
 }
 
 export interface RecoveryStatus {
@@ -577,10 +578,22 @@ export interface GarminHealthData {
   hrvStatus: string | null;          // BALANCED, UNBALANCED, LOW, POOR
   vo2max: number | null;             // ml/kg/min
   bodyBatteryMorning: number | null; // 0-100
+  bodyBatteryHigh: number | null;
+  bodyBatteryLow: number | null;
+  bodyBatteryCharged: number | null;
+  bodyBatteryDrained: number | null;
   stressAvg: number | null;          // 1-100
+  stressHigh: number | null;
   respiratoryRate: number | null;    // breaths/min
   spo2Avg: number | null;            // %
   trainingReadiness: number | null;  // 0-100
+  trainingStatus: string | null;     // Productive, Maintaining, etc.
+  trainingLoad7day: number | null;
+  acwr: number | null;
+  acwrStatus: string | null;         // LOW, OPTIMAL, HIGH
+  sleepScore: number | null;         // 0-100
+  intensityMinutesVigorous: number | null;
+  intensityMinutesModerate: number | null;
   restingHr: number | null;          // bpm
   fetchedAt: string;
 }

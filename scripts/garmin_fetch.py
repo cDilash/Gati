@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
 """
 Garmin Connect → Supabase sync script.
-Fetches HRV, VO2max, Body Battery, stress, respiratory rate, SpO2 from Garmin Connect.
+Fetches HRV, VO2max, Body Battery, stress, respiratory rate, SpO2,
+training status, training readiness, sleep score from Garmin Connect.
 Writes to Supabase garmin_health table.
 
 Usage:
   python scripts/garmin_fetch.py              # fetch today + yesterday
   python scripts/garmin_fetch.py --backfill 14  # fetch last 14 days
+  python scripts/garmin_fetch.py --debug       # print raw JSON for today
 
 Prerequisites:
-  1. Run garmin_auth.py first (saves tokens to ~/.garth)
-  2. Set SUPABASE_URL and SUPABASE_SERVICE_KEY env vars (or edit below)
+  1. Run garmin_auth_v2.py first (saves tokens to ~/.garth)
+  2. Set SUPABASE_URL and SUPABASE_SERVICE_KEY env vars (or edit .env)
 """
 
 import warnings
@@ -24,12 +26,10 @@ import sys
 from datetime import datetime, timedelta
 
 # ─── Supabase config ─────────────────────────────────────────
-# Use service role key for server-side inserts (bypasses RLS)
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://dweimilkuzasrxscjgag.supabase.co")
 SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_KEY", "")
 
 if not SUPABASE_KEY:
-    # Try loading from .env file
     env_path = os.path.join(os.path.dirname(__file__), '..', '.env')
     if os.path.exists(env_path):
         with open(env_path) as f:
@@ -37,51 +37,112 @@ if not SUPABASE_KEY:
                 if line.startswith("SUPABASE_SERVICE_KEY="):
                     SUPABASE_KEY = line.split("=", 1)[1].strip()
 
-# ─── Garmin API endpoints ─────────────────────────────────────
+# ─── Garmin display name (needed for some endpoints) ─────────
+_display_name = None
+
+def get_display_name() -> str:
+    global _display_name
+    if _display_name:
+        return _display_name
+    try:
+        profile = garth.connectapi("/userprofile-service/socialProfile")
+        _display_name = profile.get("displayName", "")
+    except:
+        _display_name = ""
+    return _display_name
+
+# ─── Garmin API endpoints ────────────────────────────────────
 
 def fetch_hrv(date_str: str) -> dict:
-    """Fetch HRV summary for a date."""
+    """HRV summary — overnight average, weekly average, baseline."""
     try:
-        data = garth.connectapi(f"/hrv-service/hrv/{date_str}")
-        return data or {}
+        return garth.connectapi(f"/hrv-service/hrv/{date_str}") or {}
     except Exception as e:
-        print(f"  HRV fetch failed: {e}")
+        print(f"  ✗ HRV: {e}")
         return {}
 
 def fetch_daily_summary(date_str: str) -> dict:
-    """Fetch daily summary (steps, stress, resting HR, respiratory rate, SpO2)."""
+    """Daily summary — resting HR, stress, intensity minutes, floors, steps, SpO2."""
     try:
-        data = garth.connectapi(f"/usersummary-service/usersummary/daily/{date_str}")
-        return data or {}
+        dn = get_display_name()
+        return garth.connectapi(
+            f"/usersummary-service/usersummary/daily/{dn}",
+            params={"calendarDate": date_str}
+        ) or {}
     except Exception as e:
-        print(f"  Daily summary fetch failed: {e}")
+        print(f"  ✗ Daily summary: {e}")
         return {}
 
-def fetch_body_battery(date_str: str) -> dict:
-    """Fetch Body Battery data."""
+def fetch_body_battery(date_str: str) -> list:
+    """Body Battery — charged, drained, hourly values."""
     try:
-        data = garth.connectapi(f"/wellness-service/wellness/bodyBattery/day/{date_str}")
-        return data or {}
+        data = garth.connectapi(
+            "/wellness-service/wellness/bodyBattery/reports/daily",
+            params={"startDate": date_str, "endDate": date_str}
+        )
+        return data if isinstance(data, list) else []
     except Exception as e:
-        print(f"  Body Battery fetch failed: {e}")
-        return {}
+        print(f"  ✗ Body battery: {e}")
+        return []
 
 def fetch_training_readiness(date_str: str) -> dict:
-    """Fetch training readiness score."""
+    """Training readiness — overall score + component factors."""
     try:
-        data = garth.connectapi(f"/metrics-service/metrics/trainingreadiness/{date_str}")
-        return data or {}
+        return garth.connectapi(f"/metrics-service/metrics/trainingreadiness/{date_str}") or {}
     except Exception as e:
-        print(f"  Training readiness fetch failed: {e}")
+        print(f"  ✗ Training readiness: {e}")
+        return {}
+
+def fetch_training_status(date_str: str) -> dict:
+    """Training status — load, ACWR, status feedback, VO2max."""
+    try:
+        return garth.connectapi(f"/metrics-service/metrics/trainingstatus/aggregated/{date_str}") or {}
+    except Exception as e:
+        print(f"  ✗ Training status: {e}")
         return {}
 
 def fetch_sleep_data(date_str: str) -> dict:
-    """Fetch sleep data including respiratory rate and SpO2."""
+    """Sleep data — duration, stages, sleep score, respiratory rate."""
     try:
-        data = garth.connectapi(f"/wellness-service/wellness/dailySleepData/{date_str}")
-        return data or {}
+        dn = get_display_name()
+        return garth.connectapi(
+            f"/wellness-service/wellness/dailySleepData/{dn}",
+            params={"date": date_str, "nonSleepBufferMinutes": "60"}
+        ) or {}
     except Exception as e:
-        print(f"  Sleep data fetch failed: {e}")
+        print(f"  ✗ Sleep: {e}")
+        return {}
+
+def fetch_stress(date_str: str) -> dict:
+    """Daily stress detail."""
+    try:
+        return garth.connectapi(f"/wellness-service/wellness/dailyStress/{date_str}") or {}
+    except Exception as e:
+        print(f"  ✗ Stress: {e}")
+        return {}
+
+def fetch_respiration(date_str: str) -> dict:
+    """Daily respiration."""
+    try:
+        return garth.connectapi(f"/wellness-service/wellness/daily/respiration/{date_str}") or {}
+    except Exception as e:
+        print(f"  ✗ Respiration: {e}")
+        return {}
+
+def fetch_spo2(date_str: str) -> dict:
+    """Daily SpO2."""
+    try:
+        return garth.connectapi(f"/wellness-service/wellness/daily/spo2/{date_str}") or {}
+    except Exception as e:
+        print(f"  ✗ SpO2: {e}")
+        return {}
+
+def fetch_vo2max(date_str: str) -> dict:
+    """VO2max / MaxMet."""
+    try:
+        return garth.connectapi(f"/metrics-service/metrics/maxmet/latest/{date_str}") or {}
+    except Exception as e:
+        print(f"  ✗ VO2max: {e}")
         return {}
 
 # ─── Parse responses ──────────────────────────────────────────
@@ -94,77 +155,156 @@ def parse_garmin_data(date_str: str) -> dict:
     daily = fetch_daily_summary(date_str)
     bb = fetch_body_battery(date_str)
     readiness = fetch_training_readiness(date_str)
+    training = fetch_training_status(date_str)
     sleep = fetch_sleep_data(date_str)
+    stress = fetch_stress(date_str)
+    resp = fetch_respiration(date_str)
+    spo2 = fetch_spo2(date_str)
+    vo2 = fetch_vo2max(date_str)
 
-    # Parse HRV
+    # ─── Parse HRV ───
     hrv_summary = hrv.get("hrvSummary", {}) if isinstance(hrv, dict) else {}
     hrv_last_night = hrv_summary.get("lastNightAvg")
     hrv_weekly = hrv_summary.get("weeklyAvg")
-    hrv_baseline_low = hrv_summary.get("baselineBalancedLow") or hrv_summary.get("baselineLowUpper")
-    hrv_baseline_high = hrv_summary.get("baselineBalancedHigh") or hrv_summary.get("baselineHighUpper")
+    baseline = hrv_summary.get("baseline", {}) if isinstance(hrv_summary.get("baseline"), dict) else {}
+    hrv_baseline_low = baseline.get("balancedLow") or baseline.get("lowUpper")
+    hrv_baseline_high = baseline.get("balancedUpper")
     hrv_status = hrv_summary.get("status")
 
-    # Parse daily summary
+    # ─── Parse daily summary ───
     resting_hr = daily.get("restingHeartRate") if isinstance(daily, dict) else None
     stress_avg = daily.get("averageStressLevel") if isinstance(daily, dict) else None
-    resp_rate = daily.get("averageSpo2") if isinstance(daily, dict) else None  # will override from sleep
+    stress_high = daily.get("maxStressLevel") if isinstance(daily, dict) else None
+    vigorous_min = daily.get("vigorousIntensityMinutes") if isinstance(daily, dict) else None
+    moderate_min = daily.get("moderateIntensityMinutes") if isinstance(daily, dict) else None
+    floors_climbed = daily.get("floorsAscended") if isinstance(daily, dict) else None
+    if isinstance(floors_climbed, float):
+        floors_climbed = round(floors_climbed)
 
-    # Parse Body Battery — find morning value (highest value early in day)
+    # ─── Parse Body Battery ───
     bb_morning = None
+    bb_high = None
+    bb_low = None
+    bb_charged = None
+    bb_drained = None
     if isinstance(bb, list) and len(bb) > 0:
-        # Body Battery returns array of timestamped values
-        morning_values = [v.get("charged", v.get("value", 0)) for v in bb[:6] if isinstance(v, dict)]
-        if morning_values:
-            bb_morning = max(morning_values)
-    elif isinstance(bb, dict):
-        bb_morning = bb.get("charged") or bb.get("bodyBatteryValuesArray", [{}])[0].get("charged") if bb.get("bodyBatteryValuesArray") else None
+        entry = bb[0]
+        bb_charged = entry.get("charged")
+        bb_drained = entry.get("drained")
+        vals_arr = entry.get("bodyBatteryValuesArray", [])
+        if vals_arr:
+            # Array of [timestamp_ms, value] pairs
+            values = [v[1] for v in vals_arr if isinstance(v, list) and len(v) >= 2]
+            if values:
+                bb_high = max(values)
+                bb_low = min(values)
+                bb_morning = values[-1] if len(values) <= 3 else max(values[:4])  # highest morning value
 
-    # Parse training readiness
+    # ─── Parse training readiness ───
     tr_score = None
+    tr_sleep_score = None
+    tr_recovery_time = None
+    tr_hrv_status = None
+    tr_acwr = None
     if isinstance(readiness, dict):
         tr_score = readiness.get("score") or readiness.get("overallScore")
-    elif isinstance(readiness, list) and len(readiness) > 0:
-        tr_score = readiness[0].get("score") or readiness[0].get("overallScore")
+        for comp in readiness.get("components", []):
+            key = comp.get("componentType", "")
+            if key == "SLEEP":
+                tr_sleep_score = comp.get("score")
+            elif key == "RECOVERY_TIME":
+                tr_recovery_time = comp.get("score")
+            elif key == "HRV_STATUS":
+                tr_hrv_status = comp.get("score")
+            elif key == "ACWR":
+                tr_acwr = comp.get("score")
 
-    # Parse sleep for respiratory rate and SpO2
-    respiratory_rate = None
-    spo2_avg = None
-    if isinstance(sleep, dict):
-        respiratory_rate = sleep.get("averageRespirationValue") or sleep.get("lowestRespirationValue")
-        spo2_avg = sleep.get("averageSpO2Value") or sleep.get("averageOxygenSaturation")
+    # ─── Parse training status ───
+    training_status_text = None
+    training_load_7day = None
+    training_load_category = None
+    acwr_value = None
+    acwr_status = None
+    ts_data = training.get("mostRecentTrainingStatus", {}).get("latestTrainingStatusData", {})
+    for device_id, data in ts_data.items():
+        status_code = data.get("trainingStatus")
+        status_map = {0: "No Status", 1: "Detraining", 2: "Recovery", 3: "Unproductive", 4: "Maintaining", 5: "Productive", 6: "Peaking", 7: "Overreaching"}
+        training_status_text = status_map.get(status_code, f"Unknown ({status_code})")
+        acwr_dto = data.get("acuteTrainingLoadDTO", {})
+        training_load_7day = acwr_dto.get("dailyTrainingLoadAcute")
+        acwr_value = acwr_dto.get("dailyAcuteChronicWorkloadRatio")
+        acwr_status = acwr_dto.get("acwrStatus")
+        break  # Use primary device
 
-    # VO2max — from fitness stats
-    vo2max = None
-    try:
-        fitness = garth.connectapi("/fitness-service/fitnessStats")
-        if isinstance(fitness, dict):
-            vo2max = fitness.get("vo2MaxValue") or fitness.get("vo2Max")
-        elif isinstance(fitness, list) and len(fitness) > 0:
-            vo2max = fitness[0].get("vo2MaxValue") or fitness[0].get("vo2Max")
-    except:
-        pass
+    # ─── Parse VO2max ───
+    vo2max_running = None
+    generic = vo2.get("generic", {}) if isinstance(vo2, dict) else {}
+    vo2max_running = generic.get("vo2MaxPreciseValue") or generic.get("vo2MaxValue")
 
+    # ─── Parse sleep ───
+    sleep_dto = sleep.get("dailySleepDTO", {}) if isinstance(sleep, dict) else {}
+    respiratory_rate = sleep_dto.get("averageRespirationValue")
+    spo2_avg = sleep_dto.get("averageSpO2Value")
+    sleep_score = None
+    sleep_scores = sleep_dto.get("sleepScores", {})
+    if isinstance(sleep_scores, dict):
+        overall = sleep_scores.get("overall", {})
+        sleep_score = overall.get("value") if isinstance(overall, dict) else None
+
+    # ─── Parse SpO2 (from dedicated endpoint if sleep didn't have it) ───
+    if not spo2_avg and isinstance(spo2, dict):
+        spo2_avg = spo2.get("averageSPO2") or spo2.get("averageSpO2")
+
+    # ─── Parse respiration (fallback) ───
+    if not respiratory_rate and isinstance(resp, dict):
+        respiratory_rate = resp.get("avgSleepRespiration") or resp.get("avgWakingRespiration")
+
+    # ─── Build row ───
     row = {
         "date": date_str,
+        # HRV
         "hrv_last_night_avg": hrv_last_night,
         "hrv_weekly_avg": hrv_weekly,
         "hrv_baseline_low": hrv_baseline_low,
         "hrv_baseline_high": hrv_baseline_high,
         "hrv_status": hrv_status,
-        "vo2max": vo2max,
+        # VO2max
+        "vo2max": vo2max_running,
+        # Body Battery
         "body_battery_morning": bb_morning,
+        "body_battery_high": bb_high,
+        "body_battery_low": bb_low,
+        "body_battery_charged": bb_charged,
+        "body_battery_drained": bb_drained,
+        # Stress
         "stress_avg": stress_avg,
+        "stress_high": stress_high,
+        # Vitals
         "respiratory_rate": respiratory_rate,
         "spo2_avg": spo2_avg,
-        "training_readiness": tr_score,
         "resting_hr": resting_hr,
-        "fetched_at": datetime.utcnow().isoformat() + "Z",
+        # Training
+        "training_readiness": tr_score,
+        "training_status": training_status_text,
+        "training_load_7day": training_load_7day,
+        "acwr": acwr_value,
+        "acwr_status": acwr_status,
+        # Sleep
+        "sleep_score": sleep_score,
+        # Intensity
+        "intensity_minutes_vigorous": vigorous_min,
+        "intensity_minutes_moderate": moderate_min,
+        "floors_climbed": floors_climbed,
+        # Meta
+        "fetched_at": datetime.now(tz=__import__('datetime').timezone.utc).isoformat(),
     }
 
     # Print what we got
     vals = {k: v for k, v in row.items() if v is not None and k not in ("date", "fetched_at")}
     if vals:
-        print(f"  ✓ Got: {', '.join(f'{k}={v}' for k, v in vals.items())}")
+        print(f"  ✓ Got {len(vals)} fields:")
+        for k, v in vals.items():
+            print(f"    {k}: {v}")
     else:
         print(f"  ⚠ No data returned for {date_str}")
 
@@ -185,8 +325,10 @@ def upsert_to_supabase(rows: list[dict], user_id: str):
 
     for row in rows:
         row["user_id"] = user_id
+        # Remove None values to avoid overwriting existing data with null
+        clean_row = {k: v for k, v in row.items() if v is not None}
         try:
-            sb.table("garmin_health").upsert(row, on_conflict="user_id,date").execute()
+            sb.table("garmin_health").upsert(clean_row, on_conflict="user_id,date").execute()
         except Exception as e:
             print(f"  ✗ Supabase upsert failed for {row['date']}: {e}")
 
@@ -195,23 +337,22 @@ def upsert_to_supabase(rows: list[dict], user_id: str):
 # ─── Main ─────────────────────────────────────────────────────
 
 def main():
-    # Resume saved tokens
     try:
         garth.resume("~/.garth")
         print("✓ Garmin tokens loaded")
     except Exception as e:
         print(f"✗ Could not load Garmin tokens: {e}")
-        print("  Run: python scripts/garmin_auth.py")
+        print("  Run: python scripts/garmin_auth_v2.py")
         sys.exit(1)
 
     # Determine date range
-    days_back = 2  # default: today + yesterday
+    days_back = 2
     if "--backfill" in sys.argv:
         idx = sys.argv.index("--backfill")
         if idx + 1 < len(sys.argv):
             days_back = int(sys.argv[idx + 1])
 
-    # Get user_id from Supabase (needed for RLS)
+    # Get user_id from .env
     user_id = os.environ.get("SUPABASE_USER_ID", "")
     if not user_id:
         env_path = os.path.join(os.path.dirname(__file__), '..', '.env')
@@ -222,16 +363,15 @@ def main():
                         user_id = line.split("=", 1)[1].strip()
 
     if not user_id:
-        print("⚠ SUPABASE_USER_ID not set in .env — will print data only")
+        print("⚠ SUPABASE_USER_ID not set — will print data only")
 
-    # Fetch data for each day
+    # Fetch
     rows = []
     today = datetime.now()
     for i in range(days_back):
         d = today - timedelta(days=i)
         date_str = d.strftime("%Y-%m-%d")
         row = parse_garmin_data(date_str)
-        # Only include if we got at least one non-null value
         has_data = any(v is not None for k, v in row.items() if k not in ("date", "fetched_at"))
         if has_data:
             rows.append(row)
@@ -239,22 +379,109 @@ def main():
     if rows and user_id:
         upsert_to_supabase(rows, user_id)
     elif rows:
-        print("\nData fetched but not uploaded (no SUPABASE_USER_ID):")
+        print("\nData fetched (not uploaded — no SUPABASE_USER_ID):")
         for row in rows:
             vals = {k: v for k, v in row.items() if v is not None and k not in ("date", "fetched_at")}
-            print(f"  {row['date']}: {vals}")
+            print(f"  {row['date']}: {len(vals)} fields")
     else:
         print("\nNo data to sync.")
 
-    # Print raw JSON for debugging (first day only)
+    # ─── Per-Activity Data (Training Effect, Stamina, Load, Temp, GAP) ───
+    print("\n── Fetching per-activity data...")
+    try:
+        activities = garth.connectapi("/activitylist-service/activities/search/activities", params={
+            "start": "0", "limit": str(min(days_back * 2, 20)),
+        })
+        running_activities = [a for a in (activities or []) if a.get("activityType", {}).get("typeKey") == "running"]
+        print(f"  Found {len(running_activities)} running activities")
+
+        activity_rows = []
+        for act in running_activities:
+            act_id = act.get("activityId")
+            if not act_id:
+                continue
+            try:
+                detail = garth.connectapi(f"/activity-service/activity/{act_id}")
+                if not detail:
+                    continue
+                summary = detail.get("summaryDTO", {})
+                if not summary:
+                    continue
+
+                # Extract date from local start time
+                start_local = summary.get("startTimeLocal", "")
+                act_date = start_local.split("T")[0] if "T" in start_local else ""
+
+                # Match to Strava by date (approximate — same day)
+                strava_id = None  # Could cross-reference later
+
+                aero_te = summary.get("trainingEffect")
+                aero_msg = summary.get("aerobicTrainingEffectMessage")
+                anaero_te = summary.get("anaerobicTrainingEffect", 0)
+                anaero_msg = summary.get("anaerobicTrainingEffectMessage")
+                stamina_start = summary.get("beginPotentialStamina")
+                stamina_end = summary.get("endPotentialStamina") or summary.get("minAvailableStamina")
+                act_load = summary.get("activityTrainingLoad")
+                temp_avg = summary.get("averageTemperature")
+                gap_speed = summary.get("avgGradeAdjustedSpeed")
+
+                row = {
+                    "activity_date": act_date,
+                    "garmin_activity_id": str(act_id),
+                    "strava_activity_id": strava_id,
+                    "aerobic_training_effect": round(aero_te, 1) if aero_te else None,
+                    "aerobic_te_message": aero_msg,
+                    "anaerobic_training_effect": round(anaero_te, 1) if anaero_te else None,
+                    "stamina_start": int(stamina_start) if stamina_start else None,
+                    "stamina_end": int(stamina_end) if stamina_end else None,
+                    "activity_training_load": round(act_load, 1) if act_load else None,
+                    "temperature_avg_c": round(temp_avg, 1) if temp_avg else None,
+                    "grade_adjusted_speed": round(gap_speed, 4) if gap_speed else None,
+                    "fetched_at": datetime.now(tz=__import__('datetime').timezone.utc).isoformat(),
+                }
+
+                vals = {k: v for k, v in row.items() if v is not None and k not in ("activity_date", "garmin_activity_id", "fetched_at")}
+                if vals:
+                    activity_rows.append(row)
+                    # Format GAP as pace for display
+                    gap_pace = ""
+                    if gap_speed and gap_speed > 0:
+                        gap_secs = 1609.344 / gap_speed
+                        gap_pace = f" · GAP {int(gap_secs // 60)}:{int(gap_secs % 60):02d}/mi"
+                    stamina_str = f" · Stamina {row['stamina_start']}→{row['stamina_end']}%" if row['stamina_start'] else ""
+                    print(f"  ✓ {act_date}: TE {row['aerobic_training_effect']} ({aero_msg or '?'}), Load {row['activity_training_load']}{stamina_str}{gap_pace}")
+
+            except Exception as e:
+                print(f"  ✗ Activity {act_id}: {str(e)[:80]}")
+
+        # Upsert to Supabase
+        if activity_rows and user_id and SUPABASE_KEY:
+            from supabase import create_client
+            sb = create_client(SUPABASE_URL, SUPABASE_KEY)
+            for row in activity_rows:
+                row["user_id"] = user_id
+                clean = {k: v for k, v in row.items() if v is not None}
+                try:
+                    sb.table("garmin_activity_data").upsert(clean, on_conflict="user_id,garmin_activity_id").execute()
+                except Exception as e:
+                    print(f"  ✗ Supabase activity upsert failed: {str(e)[:80]}")
+            print(f"  ✓ Upserted {len(activity_rows)} activity rows to Supabase")
+        elif activity_rows:
+            print(f"  {len(activity_rows)} activities fetched (not uploaded)")
+
+    except Exception as e:
+        print(f"  ✗ Activity fetch failed: {str(e)[:100]}")
+
+    # Debug mode: print raw JSON
     if "--debug" in sys.argv and days_back > 0:
         date_str = today.strftime("%Y-%m-%d")
         print(f"\n─── RAW JSON for {date_str} ───")
         print("HRV:", json.dumps(fetch_hrv(date_str), indent=2, default=str))
-        print("Daily:", json.dumps(fetch_daily_summary(date_str), indent=2, default=str))
-        print("Body Battery:", json.dumps(fetch_body_battery(date_str), indent=2, default=str))
-        print("Training Readiness:", json.dumps(fetch_training_readiness(date_str), indent=2, default=str))
-        print("Sleep:", json.dumps(fetch_sleep_data(date_str), indent=2, default=str))
+        print("Daily:", json.dumps(fetch_daily_summary(date_str), indent=2, default=str)[:500])
+        print("Body Battery:", json.dumps(fetch_body_battery(date_str), indent=2, default=str)[:500])
+        print("Training Readiness:", json.dumps(fetch_training_readiness(date_str), indent=2, default=str)[:500])
+        print("Training Status:", json.dumps(fetch_training_status(date_str), indent=2, default=str)[:500])
+        print("Sleep:", json.dumps(fetch_sleep_data(date_str), indent=2, default=str)[:500])
 
 if __name__ == "__main__":
     main()

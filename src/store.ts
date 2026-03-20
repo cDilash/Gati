@@ -319,7 +319,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           cachedRecoveryStatus = calculateRecoveryScore(cachedHealthSnapshot, {
             restHr: profile?.rest_hr ?? null,
             maxHr: profile?.max_hr ?? null,
-          });
+          }, get().garminHealth);
         }
       } catch {}
 
@@ -348,6 +348,12 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       // Calculate training load (fire-and-forget)
       try { get().calculateTrainingLoad(); } catch {}
+
+      // Restore persisted backup time
+      try {
+        const savedBackupTime = getSetting('last_backup_time');
+        if (savedBackupTime) set({ lastBackupTime: parseInt(savedBackupTime, 10) || 0 });
+      } catch {}
 
       // Restore persisted suggestions
       try {
@@ -443,7 +449,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       isRaceWeek: daysUntilRace <= 7 && daysUntilRace >= 0,
     });
     // Auto-backup (fire-and-forget)
-    (async () => { try { const { autoBackup } = require('./backup/backup'); await autoBackup(); set({ lastBackupTime: Date.now(), backupDirty: false }); } catch {} })();
+    (async () => { try { const { autoBackup } = require('./backup/backup'); await autoBackup(); { const _t = Date.now(); set({ lastBackupTime: _t, backupDirty: false }); try { setSetting('last_backup_time', String(_t)); } catch {} } } catch {} })();
   },
 
   // ─── Plan ───────────────────────────────────────────────
@@ -452,7 +458,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const result = savePlan(plan, vdot, startDate);
     get().refreshState();
     // Auto-backup after plan generation (fire-and-forget)
-    (async () => { try { const { autoBackup } = require('./backup/backup'); await autoBackup(); set({ lastBackupTime: Date.now(), backupDirty: false }); } catch {} })();
+    (async () => { try { const { autoBackup } = require('./backup/backup'); await autoBackup(); { const _t = Date.now(); set({ lastBackupTime: _t, backupDirty: false }); try { setSetting('last_backup_time', String(_t)); } catch {} } } catch {} })();
     return result;
   },
 
@@ -532,10 +538,11 @@ export const useAppStore = create<AppState>((set, get) => ({
         : [];
       const recentMetrics = getRecentMetrics(7);
 
-      const systemPrompt = buildCoachSystemPrompt(
+      const systemPrompt = await buildCoachSystemPrompt(
         userProfile, paceZones, currentWeek, weekWorkouts,
         todaysWorkout, recentMetrics, weeks, workouts, shoes,
         daysUntilRace, isRaceWeek, recoveryStatus, get().healthSnapshot,
+        get().garminHealth,
       );
 
       const response = await aiSendCoachMessage(message, systemPrompt, coachMessages);
@@ -697,7 +704,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ coachMessages: getCoachMessages() });
 
       // Auto-backup after plan adaptation
-      (async () => { try { const { autoBackup } = require('./backup/backup'); await autoBackup(); set({ lastBackupTime: Date.now(), backupDirty: false }); } catch {} })();
+      (async () => { try { const { autoBackup } = require('./backup/backup'); await autoBackup(); { const _t = Date.now(); set({ lastBackupTime: _t, backupDirty: false }); try { setSetting('last_backup_time', String(_t)); } catch {} } } catch {} })();
 
       return { success: true, summary: result.changesSummary };
     } catch (error: any) {
@@ -734,7 +741,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       setSetting(lastReviewedKey, String(currentWeekNumber));
 
       // Auto-backup at end of week (natural checkpoint)
-      (async () => { try { const { autoBackup } = require('./backup/backup'); await autoBackup(); set({ lastBackupTime: Date.now(), backupDirty: false }); } catch {} })();
+      (async () => { try { const { autoBackup } = require('./backup/backup'); await autoBackup(); { const _t = Date.now(); set({ lastBackupTime: _t, backupDirty: false }); try { setSetting('last_backup_time', String(_t)); } catch {} } } catch {} })();
 
       // If adaptation needed, auto-trigger
       if (review.adaptationNeeded && review.adaptationReason) {
@@ -776,7 +783,7 @@ export const useAppStore = create<AppState>((set, get) => ({
               });
               try { setSetting('pending_vdot_notification', JSON.stringify({ oldVDOT: profileUpdate.oldVDOT, newVDOT: profileUpdate.newVDOT, source: src })); } catch {}
               // Auto-backup after VDOT change
-              (async () => { try { const { autoBackup } = require('./backup/backup'); await autoBackup(); set({ lastBackupTime: Date.now(), backupDirty: false }); } catch {} })();
+              (async () => { try { const { autoBackup } = require('./backup/backup'); await autoBackup(); { const _t = Date.now(); set({ lastBackupTime: _t, backupDirty: false }); try { setSetting('last_backup_time', String(_t)); } catch {} } } catch {} })();
             }
           }
         }
@@ -955,7 +962,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         const recovery = calculateRecoveryScore(snapshot, {
           restHr: profile?.rest_hr ?? null,
           maxHr: profile?.max_hr ?? null,
-        });
+        }, get().garminHealth);
         set({ healthSnapshot: snapshot, recoveryStatus: recovery });
 
         // Auto-update weight from HealthKit if newer
@@ -1070,6 +1077,21 @@ export const useAppStore = create<AppState>((set, get) => ({
     get().refreshState();
     get().fetchBriefing();
 
+    // Recalculate recovery with Garmin data (may have arrived after health sync)
+    const garminAfterSync = get().garminHealth;
+    const snapshotAfterSync = get().healthSnapshot;
+    if (garminAfterSync && snapshotAfterSync) {
+      try {
+        const { calculateRecoveryScore } = require('./health/recoveryScore');
+        const profile = get().userProfile;
+        const recovery = calculateRecoveryScore(snapshotAfterSync, {
+          restHr: profile?.rest_hr ?? null,
+          maxHr: profile?.max_hr ?? null,
+        }, garminAfterSync);
+        set({ recoveryStatus: recovery });
+      } catch {}
+    }
+
     // Step 4: Proactive rest day coaching check
     try {
       const db = require('./db/database').getDatabase();
@@ -1133,7 +1155,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         try {
           const { autoBackup } = require('./backup/backup');
           await autoBackup();
-          set({ backupDirty: false, lastBackupTime: Date.now() });
+          { const _t = Date.now(); set({ backupDirty: false, lastBackupTime: _t }); try { setSetting('last_backup_time', String(_t)); } catch {} }
           console.log('[SyncAll] Auto-backup triggered (dirty flag)');
         } catch {}
       })();

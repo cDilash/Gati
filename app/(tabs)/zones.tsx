@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { Alert, Pressable, LayoutChangeEvent, PanResponder, GestureResponderEvent } from 'react-native';
 import { ScrollView, YStack, XStack, Text, View, Spinner } from 'tamagui';
-import Svg, { Path, Circle, Line, Defs, LinearGradient, Stop, Rect as SvgRect } from 'react-native-svg';
+import Svg, { Path, Circle, Line, Defs, LinearGradient, Stop, Rect as SvgRect, Text as SvgText } from 'react-native-svg';
 import { useAppStore } from '../../src/store';
 import {
   ZONE_DESCRIPTIONS, ZONE_RPE, formatPaceRange, calculateHRZones,
@@ -15,6 +15,8 @@ import { colors, semantic, zoneColors, sleepStageColors } from '../../src/theme/
 import { calculateInjuryRisk } from '../../src/health/injuryRisk';
 import { GradientText } from '../../src/theme/GradientText';
 import { GradientBorder } from '../../src/theme/GradientBorder';
+import { GarminIcon } from '../../src/components/icons/GarminIcon';
+import { HealthIcon } from '../../src/components/icons/HealthIcon';
 import { PMCChart } from '../../src/components/PMCChart';
 import { PMCSummary, generatePMCInsight } from '../../src/components/PMCSummary';
 
@@ -165,7 +167,7 @@ function RecoveryHero({ recovery, snapshot }: { recovery: RecoveryStatus | null;
         <GradientText text={String(recovery.score)} style={{ fontSize: 36, fontWeight: '800' }} />
       </View>
       <H color={color} fontSize={22} letterSpacing={1.5} marginTop="$3" textTransform="uppercase">{label}</H>
-      <B color="$textSecondary" fontSize={13} marginTop="$1">Based on {recovery.signalCount} signal{recovery.signalCount !== 1 ? 's' : ''}</B>
+      <B color="$textSecondary" fontSize={13} marginTop="$1">Based on {recovery.signals.filter(s => s.score > 0).length} signal{recovery.signals.filter(s => s.score > 0).length !== 1 ? 's' : ''}</B>
       {snapshot?.cachedAt && (
         <B color="$textTertiary" fontSize={11} marginTop="$1">
           Last synced {formatTimeAgo(snapshot.cachedAt)}
@@ -248,9 +250,10 @@ function buildFillPath(points: { x: number; y: number }[], bottom: number): stri
 
 // ─── Resting HR Card (SVG line graph) ────────────────────────
 
-function RestingHRCard({ signal, trendData }: {
+function RestingHRCard({ signal, trendData, garminRhr }: {
   signal: { type: string; value: number | null; baseline: number | null; status: string; score: number; detail: string };
   trendData: RestingHRResult[];
+  garminRhr?: number | null;
 }) {
   const [width, setWidth] = useState(0);
   const statusColor = signal.status === 'good' ? colors.cyan : signal.status === 'fair' ? colors.orange : colors.error;
@@ -258,16 +261,21 @@ function RestingHRCard({ signal, trendData }: {
   const data = trendData.slice(0, 14).reverse(); // oldest → newest
   const values = data.map(d => d.value);
   const baseline = signal.baseline ?? (values.length > 0 ? Math.round(values.reduce((s, v) => s + v, 0) / values.length) : 0);
-  const dangerThreshold = baseline + 5;
 
-  const graphH = 140;
-  const padT = 30;
-  const padB = 24;
+  // Delta from baseline
+  const delta = signal.value != null ? signal.value - baseline : 0;
+  const deltaLabel = delta < 0 ? `↓${Math.abs(delta)} below baseline` : delta === 0 ? '= At baseline' : `↑${delta} above baseline`;
+  const deltaContext = delta <= 0 ? 'Well recovered' : delta <= 3 ? 'Normal variation' : delta <= 6 ? 'Slightly elevated' : 'Significantly elevated';
+  const deltaColor = delta <= 0 ? colors.cyan : delta <= 3 ? colors.textSecondary : delta <= 6 ? colors.orange : colors.error;
+
+  const graphH = 130;
+  const padT = 10;
+  const padB = 4;
   const chartH = graphH - padT - padB;
   const chartW = width;
 
   const yMin = Math.min(...values, baseline) - 3;
-  const yMax = Math.max(...values, dangerThreshold) + 3;
+  const yMax = Math.max(...values, baseline + 5) + 3;
   const yRange = yMax - yMin || 1;
 
   const toY = (v: number) => padT + chartH - ((v - yMin) / yRange) * chartH;
@@ -275,91 +283,101 @@ function RestingHRCard({ signal, trendData }: {
 
   const points = data.map((d, i) => ({ x: toX(i), y: toY(d.value) }));
   const baselineY = toY(baseline);
-  const dangerY = toY(dangerThreshold);
+  const bandTopY = toY(baseline + 2);
+  const bandBotY = toY(baseline - 2);
 
   const { activeIdx, panResponder } = useGraphScrubber(points.map(p => p.x));
 
   return (
-    <YStack backgroundColor="$surface" borderRadius="$6" padding="$4" borderLeftWidth={3} borderLeftColor={statusColor}>
+    <YStack backgroundColor={colors.surface} borderRadius={16} padding={16} borderLeftWidth={3} borderLeftColor={colors.orange}>
       {/* Header */}
-      <XStack alignItems="center" justifyContent="space-between" marginBottom="$2">
-        <XStack alignItems="center" gap="$2">
-          <MaterialCommunityIcons name="heart-pulse" size={18} color={statusColor} />
-          <B color="$color" fontSize={14} fontWeight="600">Resting Heart Rate</B>
+      <XStack alignItems="center" justifyContent="space-between">
+        <XStack alignItems="center" gap={6}>
+          <MaterialCommunityIcons name="heart-pulse" size={18} color={colors.orange} />
+          <B color={colors.textPrimary} fontSize={14} fontWeight="600">Resting Heart Rate</B>
         </XStack>
-        <XStack alignItems="center" gap="$2">
-          {signal.value !== null && <M color="$color" fontSize={18} fontWeight="800">{signal.value}</M>}
-          <B color="$textTertiary" fontSize={12}>bpm</B>
-        </XStack>
+        <M color={colors.orange} fontSize={12} fontWeight="700">{signal.score}/33</M>
       </XStack>
 
-      {/* Line Graph with drag scrubber */}
+      {/* Hero number */}
+      <XStack alignItems="baseline" gap={4} marginTop={8}>
+        <M color={colors.orange} fontSize={32} fontWeight="800">{signal.value ?? '--'}</M>
+        <B color={colors.textTertiary} fontSize={12}>bpm</B>
+      </XStack>
+      <B color={colors.textTertiary} fontSize={11} marginTop={2}>Baseline: {baseline} bpm (14-day avg)</B>
+      <XStack alignItems="center" gap={8} marginTop={4}>
+        <View backgroundColor={deltaColor + '22'} paddingHorizontal={8} paddingVertical={2} borderRadius={6}>
+          <B color={deltaColor} fontSize={11} fontWeight="700">{deltaContext}</B>
+        </View>
+        <B color={colors.textTertiary} fontSize={11}>{deltaLabel}</B>
+      </XStack>
+
+      {/* Trend graph */}
       {data.length >= 3 && (
-        <View style={{ height: graphH, marginBottom: 4 }} onLayout={(e) => setWidth(e.nativeEvent.layout.width)}
+        <View style={{ height: graphH, marginTop: 12 }} onLayout={(e) => setWidth(e.nativeEvent.layout.width)}
           {...(width > 0 ? panResponder.panHandlers : {})}>
           {width > 0 && (
             <>
               <Svg width={width} height={graphH}>
                 <Defs>
-                  <LinearGradient id="rhrFill" x1="0" y1="0" x2="0" y2="1">
-                    <Stop offset="0" stopColor={colors.cyan} stopOpacity="0.2" />
+                  <LinearGradient id="rhrFill2" x1="0" y1="0" x2="0" y2="1">
+                    <Stop offset="0" stopColor={colors.cyan} stopOpacity="0.15" />
                     <Stop offset="1" stopColor={colors.cyan} stopOpacity="0.02" />
-                  </LinearGradient>
-                  <LinearGradient id="rhrDanger" x1="0" y1="0" x2="0" y2="1">
-                    <Stop offset="0" stopColor={colors.error} stopOpacity="0.12" />
-                    <Stop offset="1" stopColor={colors.error} stopOpacity="0.03" />
                   </LinearGradient>
                 </Defs>
 
-                {/* Danger zone */}
-                {dangerY < baselineY && (
-                  <SvgRect x={0} y={dangerY} width={chartW} height={baselineY - dangerY} fill="url(#rhrDanger)" />
-                )}
+                {/* Baseline ±2 bpm band */}
+                <SvgRect x={0} y={bandTopY} width={chartW} height={Math.max(0, bandBotY - bandTopY)}
+                  fill={colors.cyan} opacity={0.08} />
 
-                {/* Gradient fill */}
-                <Path d={buildFillPath(points, padT + chartH)} fill="url(#rhrFill)" />
+                {/* Gradient fill below line */}
+                <Path d={buildFillPath(points, padT + chartH)} fill="url(#rhrFill2)" />
 
-                {/* Baseline dashed */}
+                {/* Baseline dashed line */}
                 <Line x1={0} y1={baselineY} x2={chartW} y2={baselineY}
-                  stroke={colors.textTertiary} strokeWidth={1} strokeDasharray="4,4" />
+                  stroke={colors.textTertiary} strokeWidth={0.8} strokeDasharray="4,4" opacity={0.5} />
 
-                {/* Scrubber vertical line */}
+                {/* Scrubber line */}
                 {activeIdx !== null && points[activeIdx] && (
                   <Line x1={points[activeIdx].x} y1={padT} x2={points[activeIdx].x} y2={padT + chartH}
-                    stroke={colors.textPrimary} strokeWidth={1} strokeOpacity={0.4} />
+                    stroke={colors.textPrimary} strokeWidth={1} strokeOpacity={0.3} />
                 )}
 
-                {/* Main line — cyan base, dots show deviations */}
-                <Path d={buildSmoothPath(points)} fill="none" stroke={colors.cyan} strokeWidth={2} />
+                {/* Main line */}
+                <Path d={buildSmoothPath(points)} fill="none" stroke={colors.orange} strokeWidth={2} opacity={0.7} />
 
-                {/* Dots — colored by value vs baseline */}
+                {/* Dots — dual color: cyan if at/below baseline, orange if above */}
                 {points.map((p, i) => {
                   const v = data[i].value;
-                  const dotColor = v >= dangerThreshold ? colors.error : v > baseline + 2 ? colors.orange : colors.cyan;
+                  const dotColor = v <= baseline + 2 ? colors.cyan : v <= baseline + 5 ? colors.orange : colors.error;
                   const isActive = activeIdx === i;
                   const isLast = i === points.length - 1 && activeIdx === null;
-                  const r = isActive ? 7 : isLast ? 4 : 2.5;
+                  const r = isActive ? 7 : isLast ? 5 : 3;
                   return (
                     <Circle key={i} cx={p.x} cy={p.y} r={r}
-                      fill={isActive || isLast ? dotColor : dotColor + '66'}
+                      fill={isActive || isLast ? dotColor : dotColor + '77'}
                       stroke={isActive ? colors.textPrimary : isLast ? colors.surface : 'none'}
-                      strokeWidth={isActive ? 2 : isLast ? 2 : 0} />
+                      strokeWidth={isActive ? 2 : isLast ? 1.5 : 0} />
                   );
                 })}
+
+                {/* Baseline label on right */}
+                <SvgText x={chartW - 2} y={baselineY - 4} fill={colors.textTertiary} fontSize={9}
+                  fontFamily="JetBrainsMono_400Regular" textAnchor="end" opacity={0.6}>{baseline}</SvgText>
               </Svg>
 
-              {/* Tooltip follows scrubber */}
+              {/* Tooltip */}
               {activeIdx !== null && points[activeIdx] && (
                 <View style={{
                   position: 'absolute',
                   left: Math.max(0, Math.min(points[activeIdx].x - 44, width - 88)),
                   top: 0,
-                  backgroundColor: colors.surfaceHover, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5,
+                  backgroundColor: colors.surfaceHover, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4,
                   borderWidth: 0.5, borderColor: colors.border,
                 }}>
                   <XStack alignItems="center" gap={6}>
-                    <M color="$color" fontSize={15} fontWeight="800">{data[activeIdx].value} bpm</M>
-                    <B color="$textTertiary" fontSize={11}>
+                    <M color={colors.orange} fontSize={14} fontWeight="800">{data[activeIdx].value} bpm</M>
+                    <B color="$textTertiary" fontSize={10}>
                       {new Date(data[activeIdx].date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
                     </B>
                   </XStack>
@@ -372,28 +390,30 @@ function RestingHRCard({ signal, trendData }: {
 
       {/* X-axis labels */}
       {data.length >= 3 && width > 0 && (
-        <XStack justifyContent="space-between" marginTop={-20}>
+        <XStack justifyContent="space-between" marginTop={2}>
           {data.map((d, i) => {
             if (data.length > 7 && i % 2 !== 0 && i !== data.length - 1) return <View key={i} flex={1} />;
-            const dayLabel = new Date(d.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short' }).slice(0, 3);
+            const isToday = i === data.length - 1;
+            const dayLabel = isToday ? 'T' : new Date(d.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'narrow' });
             return (
-              <B key={i} color="$textTertiary" fontSize={9} textAlign="center" flex={1}>{dayLabel}</B>
+              <M key={i} color={isToday ? colors.orange : colors.textTertiary} fontSize={9} textAlign="center" flex={1}
+                fontWeight={isToday ? '700' : '400'}>{dayLabel}</M>
             );
           })}
         </XStack>
       )}
 
-      {/* Baseline label */}
-      {signal.baseline !== null && (
-        <XStack marginTop="$1">
-          <B color="$textTertiary" fontSize={10}>avg: {signal.baseline} bpm</B>
+      {/* Source + Garmin comparison */}
+      <XStack marginTop={8} alignItems="center" justifyContent="space-between">
+        <XStack alignItems="center" gap={4}>
+          <B color={colors.textTertiary} fontSize={10}>by</B>
+          <HealthIcon size={11} />
         </XStack>
-      )}
-
-      {/* Summary */}
-      <XStack marginTop="$2" justifyContent="space-between" alignItems="center">
-        <B color="$textTertiary" fontSize={12}>{signal.detail}</B>
-        <M color={statusColor} fontSize={12} fontWeight="700">{signal.score}/33</M>
+        {garminRhr != null && (
+          <B color={colors.textTertiary} fontSize={10}>
+            Garmin: {garminRhr} bpm{Math.abs((signal.value ?? 0) - garminRhr) > 5 ? ' ⚠' : ''}
+          </B>
+        )}
       </XStack>
     </YStack>
   );
@@ -402,19 +422,22 @@ function RestingHRCard({ signal, trendData }: {
 // ─── Generic Signal Card (for HRV) ──────────────────────────
 
 function SignalCard({ signal, trendData }: {
-  signal: { type: string; value: number | null; baseline: number | null; status: string; score: number; detail: string };
+  signal: { type: string; value: number | null; baseline: number | null; status: string; score: number; detail: string; source?: string };
   trendData: number[];
 }) {
   const statusColor = signal.status === 'good' ? colors.cyan : signal.status === 'fair' ? colors.orange : colors.error;
-  const typeLabels: Record<string, string> = { hrv: 'Heart Rate Variability' };
-  const typeUnits: Record<string, string> = { hrv: 'ms' };
-  const typeIcons: Record<string, string> = { hrv: 'wave' };
+  const typeLabels: Record<string, string> = {
+    hrv: 'Heart Rate Variability', garmin_hrv: 'HRV (Garmin)',
+    body_battery: 'Body Battery', respiratory_rate: 'Respiratory Rate',
+  };
+  const typeUnits: Record<string, string> = { hrv: 'ms', garmin_hrv: 'ms', body_battery: '/100', respiratory_rate: 'br/min' };
+  const typeIcons: Record<string, string> = { hrv: 'wave', garmin_hrv: 'wave', body_battery: 'battery-heart', respiratory_rate: 'lungs' };
 
   return (
     <YStack backgroundColor="$surface" borderRadius="$6" padding="$4" borderLeftWidth={3} borderLeftColor={statusColor}>
       <XStack alignItems="center" justifyContent="space-between">
         <XStack alignItems="center" gap="$2">
-          <MaterialCommunityIcons name={typeIcons[signal.type] as any} size={18} color={statusColor} />
+          <MaterialCommunityIcons name={(typeIcons[signal.type] ?? 'chart-line') as any} size={18} color={statusColor} />
           <B color="$color" fontSize={14} fontWeight="600">{typeLabels[signal.type] ?? signal.type}</B>
         </XStack>
         <XStack alignItems="center" gap="$2">
@@ -442,8 +465,10 @@ function SignalCard({ signal, trendData }: {
       )}
 
       <XStack marginTop="$2" justifyContent="space-between" alignItems="center">
-        <B color="$textTertiary" fontSize={12}>{signal.detail}</B>
-        <M color={statusColor} fontSize={12} fontWeight="700">{signal.score}/33</M>
+        <B color="$textTertiary" fontSize={12} flex={1}>{signal.detail}</B>
+        {signal.score > 0 && (
+          <M color={statusColor} fontSize={12} fontWeight="700">{signal.score}/33</M>
+        )}
       </XStack>
     </YStack>
   );
@@ -525,26 +550,38 @@ function SleepCard({ signal, sleepTrend }: {
   const sleepSelIdx = sleepScrubber.activeIdx;
 
   return (
-    <YStack backgroundColor="$surface" borderRadius="$6" padding="$4" borderLeftWidth={3} borderLeftColor={statusColor}>
+    <YStack backgroundColor={colors.surface} borderRadius={16} padding={16} borderLeftWidth={3} borderLeftColor={statusColor}>
       {/* Header */}
-      <XStack alignItems="center" justifyContent="space-between" marginBottom="$3">
-        <XStack alignItems="center" gap="$2">
+      <XStack alignItems="center" justifyContent="space-between">
+        <XStack alignItems="center" gap={6}>
           <MaterialCommunityIcons name="sleep" size={18} color={statusColor} />
-          <B color="$color" fontSize={14} fontWeight="600">Sleep</B>
-          {latest && <B color="$textTertiary" fontSize={12}>— {formatNightLabel(latest.date)}</B>}
+          <B color={colors.textPrimary} fontSize={14} fontWeight="600">Sleep</B>
+          {latest && <B color={colors.textTertiary} fontSize={12}>— {formatNightLabel(latest.date)}</B>}
         </XStack>
-        <M color={statusColor} fontSize={12} fontWeight="700">{signal.score}/33</M>
+        <M color={colors.orange} fontSize={12} fontWeight="700">{signal.score}/33</M>
       </XStack>
 
-      {/* Main stats row */}
+      {/* Hero value + bed times */}
       {latest && (
-        <XStack justifyContent="space-between" alignItems="baseline" marginBottom="$3">
-          <M color="$color" fontSize={28} fontWeight="800">{(latest.totalMinutes / 60).toFixed(1)} hrs</M>
-          <B color="$textSecondary" fontSize={13}>
+        <XStack justifyContent="space-between" alignItems="baseline" marginTop={8}>
+          <M color={colors.textPrimary} fontSize={32} fontWeight="800">{(latest.totalMinutes / 60).toFixed(1)} hrs</M>
+          <B color={colors.textTertiary} fontSize={12}>
             {formatTime12h(latest.bedStart)} → {formatTime12h(latest.bedEnd)}
           </B>
         </XStack>
       )}
+
+      {/* Status pill */}
+      {(() => {
+        const hrs = latest ? latest.totalMinutes / 60 : 0;
+        const sleepLabel = hrs >= 7.5 ? 'Great Sleep' : hrs >= 7 ? 'Good Sleep' : hrs >= 6 ? 'Fair' : 'Poor Sleep';
+        const pillColor = hrs >= 7 ? colors.cyan : hrs >= 6 ? colors.textSecondary : colors.orange;
+        return (
+          <View alignSelf="flex-start" backgroundColor={pillColor + '22'} paddingHorizontal={8} paddingVertical={2} borderRadius={6} marginTop={4} marginBottom={8}>
+            <B color={pillColor} fontSize={11} fontWeight="700">{sleepLabel}</B>
+          </View>
+        );
+      })()}
 
       {/* Sleep stage bar + breakdown */}
       {latest?.stages && (
@@ -719,6 +756,12 @@ function SleepCard({ signal, sleepTrend }: {
           </YStack>
         );
       })()}
+
+      {/* Source */}
+      <XStack marginTop={8} alignItems="center" gap={4}>
+        <B color={colors.textTertiary} fontSize={10}>by</B>
+        <HealthIcon size={11} />
+      </XStack>
     </YStack>
   );
 }
@@ -802,6 +845,7 @@ export default function RecoveryScreen() {
   const shoes = useAppStore(s => s.shoes);
   const recoveryStatus = useAppStore(s => s.recoveryStatus);
   const healthSnapshot = useAppStore(s => s.healthSnapshot);
+  const garminHealth = useAppStore(s => s.garminHealth);
   const todaysWorkout = useAppStore(s => s.todaysWorkout);
   const weeks = useAppStore(s => s.weeks);
   const workouts = useAppStore(s => s.workouts);
@@ -848,17 +892,128 @@ export default function RecoveryScreen() {
       {/* SECTION 1: Recovery Score Hero */}
       <RecoveryHero recovery={recoveryStatus} snapshot={healthSnapshot} />
 
-      {/* SECTION 2: Recovery Signals */}
+      {/* SECTION 2: Scored Recovery Signals */}
       {recoveryStatus && recoveryStatus.level !== 'unknown' && (
         <YStack marginTop="$4" gap="$3">
+          {/* Resting HR */}
           {hasRHR ? (
-            <RestingHRCard signal={recoveryStatus.signals.find(s => s.type === 'resting_hr')!} trendData={rhrTrendFull} />
+            <RestingHRCard signal={recoveryStatus.signals.find(s => s.type === 'resting_hr')!} trendData={rhrTrendFull} garminRhr={garminHealth?.restingHr} />
           ) : (
             <NoDataCard icon="heart-pulse" label="Resting Heart Rate" message="No recent data — wear your watch overnight" />
           )}
-          {hasHRV && (
-            <SignalCard signal={recoveryStatus.signals.find(s => s.type === 'hrv')!} trendData={hrvTrend} />
-          )}
+
+          {/* HRV — enhanced with baseline range bar */}
+          {(() => {
+            const hrvSignal = recoveryStatus.signals.find(s => s.type === 'garmin_hrv') ?? (hasHRV ? recoveryStatus.signals.find(s => s.type === 'hrv') : null);
+            if (!hrvSignal) return null;
+            const isGarmin = hrvSignal.type === 'garmin_hrv';
+            const statusColor = hrvSignal.status === 'good' ? colors.cyan : hrvSignal.status === 'fair' ? colors.orange : colors.error;
+            const baseLow = garminHealth?.hrvBaselineLow ?? null;
+            const baseHigh = garminHealth?.hrvBaselineHigh ?? null;
+            const weeklyAvg = garminHealth?.hrvWeeklyAvg ?? null;
+            const hrvStatus = garminHealth?.hrvStatus ?? null;
+
+            return (
+              <YStack backgroundColor={colors.surface} borderRadius={16} padding={16} borderLeftWidth={3} borderLeftColor={colors.cyan}>
+                {/* Header */}
+                <XStack alignItems="center" justifyContent="space-between">
+                  <XStack alignItems="center" gap={6}>
+                    <MaterialCommunityIcons name="wave" size={18} color={colors.cyan} />
+                    <B color={colors.textPrimary} fontSize={14} fontWeight="600">{isGarmin ? 'HRV' : 'Heart Rate Variability'}</B>
+                  </XStack>
+                  <M color={colors.orange} fontSize={12} fontWeight="700">{hrvSignal.score}/33</M>
+                </XStack>
+
+                {/* Hero value */}
+                <XStack alignItems="baseline" gap={4} marginTop={8}>
+                  <M color={colors.cyan} fontSize={32} fontWeight="800">{hrvSignal.value}</M>
+                  <B color={colors.textTertiary} fontSize={12}>ms</B>
+                </XStack>
+
+                {/* Context + status pill */}
+                {baseLow != null && baseHigh != null && (
+                  <B color={colors.textTertiary} fontSize={12} marginTop={2}>
+                    {hrvSignal.value != null && hrvSignal.value >= baseLow ? `Within baseline (${baseLow}–${baseHigh})` : `Below baseline (${baseLow}–${baseHigh})`}
+                  </B>
+                )}
+                {hrvStatus && (
+                  <View alignSelf="flex-start" backgroundColor={statusColor + '22'} paddingHorizontal={8} paddingVertical={2} borderRadius={6} marginTop={4}>
+                    <B color={statusColor} fontSize={11} fontWeight="700">{hrvStatus}</B>
+                  </View>
+                )}
+
+                {/* 3-zone baseline range bar */}
+                {baseLow != null && baseHigh != null && hrvSignal.value != null && (
+                  <YStack marginTop={12}>
+                    <B color={colors.textTertiary} fontSize={10} marginBottom={4}>BASELINE RANGE</B>
+                    <View height={12} borderRadius={6} backgroundColor={colors.surfaceHover} overflow="hidden">
+                      {(() => {
+                        const pad = 15;
+                        const rangeMin = Math.min(baseLow - pad, hrvSignal.value - 5);
+                        const rangeMax = Math.max(baseHigh + pad, hrvSignal.value + 5);
+                        const span = rangeMax - rangeMin;
+                        const zoneLeft = ((baseLow - rangeMin) / span) * 100;
+                        const zoneWidth = ((baseHigh - baseLow) / span) * 100;
+                        const markerPos = ((hrvSignal.value - rangeMin) / span) * 100;
+                        const markerColor = hrvSignal.value >= baseLow ? colors.cyan : hrvSignal.value >= baseLow * 0.9 ? colors.orange : colors.error;
+                        return (
+                          <>
+                            {/* Balanced zone */}
+                            <View style={{ position: 'absolute', left: `${zoneLeft}%` as any, width: `${zoneWidth}%` as any, height: 12, backgroundColor: colors.cyan + '30', borderRadius: 6 }} />
+                            {/* Marker dot */}
+                            <View style={{ position: 'absolute', left: `${Math.max(1, Math.min(markerPos - 2.5, 96))}%` as any, width: 12, height: 12, borderRadius: 6, backgroundColor: markerColor, borderWidth: 2, borderColor: colors.surface }} />
+                          </>
+                        );
+                      })()}
+                    </View>
+                    <XStack justifyContent="space-between" marginTop={3}>
+                      <M color={colors.textTertiary} fontSize={9}>{baseLow}</M>
+                      <B color={colors.textTertiary} fontSize={8}>balanced</B>
+                      <M color={colors.textTertiary} fontSize={9}>{baseHigh}</M>
+                    </XStack>
+                  </YStack>
+                )}
+
+                {/* 7-night trend */}
+                {hrvTrend.length >= 3 && (() => {
+                  const trendData = hrvTrend.slice(-7);
+                  const min = Math.min(...trendData) - 5;
+                  const max = Math.max(...trendData) + 5;
+                  const range = max - min || 1;
+                  const trendH = 60;
+                  return (
+                    <YStack marginTop={12}>
+                      <B color={colors.textTertiary} fontSize={10} marginBottom={4}>7-NIGHT TREND</B>
+                      <XStack height={trendH} alignItems="flex-end" gap={3}>
+                        {trendData.map((val, i) => {
+                          const barH = Math.max(4, ((val - min) / range) * (trendH - 8));
+                          const isLast = i === trendData.length - 1;
+                          return (
+                            <YStack key={i} flex={1} alignItems="center">
+                              <View height={barH} width="100%" borderRadius={3}
+                                backgroundColor={isLast ? colors.cyan : colors.cyan + '55'} />
+                              <M color={isLast ? colors.cyan : colors.textTertiary} fontSize={8} marginTop={2}>{val}</M>
+                            </YStack>
+                          );
+                        })}
+                      </XStack>
+                    </YStack>
+                  );
+                })()}
+
+                {/* Weekly avg + source */}
+                <XStack marginTop={10} alignItems="center" justifyContent="space-between">
+                  {weeklyAvg != null && <B color={colors.textTertiary} fontSize={11}>Weekly avg: {weeklyAvg} ms</B>}
+                  <XStack alignItems="center" gap={4}>
+                    <B color={colors.textTertiary} fontSize={10}>by</B>
+                    {isGarmin ? <GarminIcon size={11} /> : <HealthIcon size={11} />}
+                  </XStack>
+                </XStack>
+              </YStack>
+            );
+          })()}
+
+          {/* Sleep */}
           {hasSleep ? (
             <SleepCard
               signal={recoveryStatus.signals.find(s => s.type === 'sleep')!}
@@ -869,27 +1024,202 @@ export default function RecoveryScreen() {
           ) : (
             <NoDataCard icon="sleep" label="Sleep" message="No sleep data last night — wear your watch to bed" />
           )}
-          {hasResp && (
-            <YStack backgroundColor="$surface" borderRadius="$6" padding="$4" borderLeftWidth={3}
-              borderLeftColor={recoveryStatus.signals.find(s => s.type === 'respiratory_rate')!.status === 'good' ? colors.cyan : recoveryStatus.signals.find(s => s.type === 'respiratory_rate')!.status === 'fair' ? colors.orange : colors.error}>
+        </YStack>
+      )}
+
+      {/* GARMIN INSIGHTS — display only, not scored */}
+      {garminHealth && (
+        <YStack marginTop="$4" gap="$3">
+          <XStack alignItems="center" gap={8}>
+            <View height={0.5} flex={1} backgroundColor={colors.border} />
+            <H color={colors.textTertiary} fontSize={10} letterSpacing={1.5}>GARMIN INSIGHTS</H>
+            <View height={0.5} flex={1} backgroundColor={colors.border} />
+          </XStack>
+
+          {/* Body Battery */}
+          {garminHealth.bodyBatteryMorning != null && (() => {
+            const bb = garminHealth.bodyBatteryMorning!;
+            const fillColor = bb >= 80 ? colors.cyan : bb >= 60 ? colors.cyan + 'CC' : bb >= 40 ? colors.orange : colors.error;
+            return (
+              <YStack backgroundColor={colors.surface} borderRadius={16} padding={16}>
+                <XStack alignItems="center" justifyContent="space-between">
+                  <XStack alignItems="center" gap={6}>
+                    <MaterialCommunityIcons name="battery-heart" size={18} color={fillColor} />
+                    <B color={colors.textPrimary} fontSize={14} fontWeight="600">Body Battery</B>
+                  </XStack>
+                  {null}
+                </XStack>
+                <XStack alignItems="baseline" gap={4} marginTop={8}>
+                  <M color={colors.textPrimary} fontSize={28} fontWeight="800">{bb}</M>
+                  <B color={colors.textTertiary} fontSize={12}>/100</B>
+                </XStack>
+                {/* Fill bar */}
+                <View height={8} borderRadius={4} backgroundColor={colors.surfaceHover} marginTop={8} overflow="hidden">
+                  <View height={8} borderRadius={4} backgroundColor={fillColor} width={`${bb}%` as any} />
+                </View>
+                {/* Charged / Drained stats */}
+                <XStack marginTop={8} gap={16}>
+                  {garminHealth.bodyBatteryHigh != null && (
+                    <XStack alignItems="center" gap={4}>
+                      <MaterialCommunityIcons name="arrow-up" size={12} color={colors.cyan} />
+                      <B color={colors.textTertiary} fontSize={11}>High: {garminHealth.bodyBatteryHigh}</B>
+                    </XStack>
+                  )}
+                  {garminHealth.bodyBatteryLow != null && (
+                    <XStack alignItems="center" gap={4}>
+                      <MaterialCommunityIcons name="arrow-down" size={12} color={colors.orange} />
+                      <B color={colors.textTertiary} fontSize={11}>Low: {garminHealth.bodyBatteryLow}</B>
+                    </XStack>
+                  )}
+                  {garminHealth.bodyBatteryCharged != null && (
+                    <B color={colors.textTertiary} fontSize={11}>+{garminHealth.bodyBatteryCharged} charged</B>
+                  )}
+                </XStack>
+              </YStack>
+            );
+          })()}
+
+          {/* Training Readiness */}
+          {garminHealth.trainingReadiness != null && (() => {
+            const tr = garminHealth.trainingReadiness!;
+            const trColor = tr >= 70 ? colors.cyan : tr >= 40 ? colors.orange : colors.error;
+            const trLabel = tr >= 70 ? 'HIGH' : tr >= 40 ? 'MODERATE' : 'LOW';
+            return (
+              <YStack backgroundColor={colors.surface} borderRadius={16} padding={16}>
+                <XStack alignItems="center" justifyContent="space-between">
+                  <XStack alignItems="center" gap={6}>
+                    <MaterialCommunityIcons name="shield-check" size={18} color={trColor} />
+                    <B color={colors.textPrimary} fontSize={14} fontWeight="600">Training Readiness</B>
+                  </XStack>
+                  {null}
+                </XStack>
+                <XStack alignItems="baseline" gap={6} marginTop={8}>
+                  <M color={trColor} fontSize={28} fontWeight="800">{tr}</M>
+                  <View backgroundColor={trColor + '22'} paddingHorizontal={8} paddingVertical={2} borderRadius={4}>
+                    <H color={trColor} fontSize={10} letterSpacing={1}>{trLabel}</H>
+                  </View>
+                </XStack>
+              </YStack>
+            );
+          })()}
+
+          {/* Training Status + Load + ACWR */}
+          {garminHealth.trainingStatus && (() => {
+            const statusColors: Record<string, string> = {
+              Productive: colors.cyan, Recovery: colors.cyan, Peaking: colors.cyan,
+              Maintaining: colors.textSecondary, 'No Status': colors.textTertiary,
+              Unproductive: colors.orange, Detraining: colors.orange,
+              Overreaching: colors.error,
+            };
+            const sColor = statusColors[garminHealth.trainingStatus] ?? colors.textSecondary;
+            return (
+              <YStack backgroundColor={colors.surface} borderRadius={16} padding={16}>
+                <XStack alignItems="center" justifyContent="space-between" marginBottom={8}>
+                  <XStack alignItems="center" gap={6}>
+                    <MaterialCommunityIcons name="chart-timeline-variant" size={18} color={sColor} />
+                    <B color={colors.textPrimary} fontSize={14} fontWeight="600">Training Status</B>
+                  </XStack>
+                  {null}
+                </XStack>
+                <H color={sColor} fontSize={20} letterSpacing={1.5}>{garminHealth.trainingStatus.toUpperCase()}</H>
+
+                {/* Load bar */}
+                {garminHealth.trainingLoad7day != null && (
+                  <YStack marginTop={10}>
+                    <B color={colors.textTertiary} fontSize={11} marginBottom={3}>7-day load: {garminHealth.trainingLoad7day}</B>
+                    <View height={4} borderRadius={2} backgroundColor={colors.surfaceHover} overflow="hidden">
+                      <View height={4} borderRadius={2} backgroundColor={sColor}
+                        width={`${Math.min((garminHealth.trainingLoad7day / 500) * 100, 100)}%` as any} />
+                    </View>
+                  </YStack>
+                )}
+
+                {/* ACWR bar */}
+                {garminHealth.acwr != null && (
+                  <YStack marginTop={8}>
+                    <XStack alignItems="center" gap={4}>
+                      <B color={colors.textTertiary} fontSize={11}>ACWR: </B>
+                      <M color={garminHealth.acwrStatus === 'OPTIMAL' ? colors.cyan : garminHealth.acwrStatus === 'HIGH' ? colors.error : colors.orange}
+                        fontSize={12} fontWeight="700">{garminHealth.acwr.toFixed(1)}</M>
+                      <B color={colors.textTertiary} fontSize={10}>({garminHealth.acwrStatus})</B>
+                    </XStack>
+                    <View height={4} borderRadius={2} backgroundColor={colors.surfaceHover} marginTop={3} overflow="hidden">
+                      {/* Sweet spot zone 0.8-1.3 highlighted */}
+                      <View style={{ position: 'absolute', left: '40%' as any, width: '25%' as any, height: 4, backgroundColor: colors.cyan + '22' }} />
+                      <View height={4} borderRadius={2}
+                        backgroundColor={garminHealth.acwrStatus === 'OPTIMAL' ? colors.cyan : colors.orange}
+                        width={`${Math.min((garminHealth.acwr / 2) * 100, 100)}%` as any} />
+                    </View>
+                    <XStack justifyContent="space-between" marginTop={2}>
+                      <M color={colors.textTertiary} fontSize={8}>0</M>
+                      <B color={colors.textTertiary} fontSize={8}>sweet spot</B>
+                      <M color={colors.textTertiary} fontSize={8}>2.0</M>
+                    </XStack>
+                  </YStack>
+                )}
+              </YStack>
+            );
+          })()}
+
+          {/* VO2max */}
+          {garminHealth.vo2max != null && (
+            <YStack backgroundColor={colors.surface} borderRadius={16} padding={16}>
               <XStack alignItems="center" justifyContent="space-between">
-                <XStack alignItems="center" gap="$2">
-                  <MaterialCommunityIcons name="lungs" size={18} color={recoveryStatus.signals.find(s => s.type === 'respiratory_rate')!.status === 'good' ? colors.cyan : colors.orange} />
-                  <B color="$color" fontSize={14} fontWeight="600">Respiratory Rate</B>
+                <XStack alignItems="center" gap={6}>
+                  <MaterialCommunityIcons name="lungs" size={18} color={colors.cyan} />
+                  <B color={colors.textPrimary} fontSize={14} fontWeight="600">VO2max</B>
                 </XStack>
-                <XStack alignItems="center" gap="$2">
-                  <M color="$color" fontSize={18} fontWeight="800">{healthSnapshot?.respiratoryRate}</M>
-                  <B color="$textTertiary" fontSize={12}>br/min</B>
-                </XStack>
+                {null}
               </XStack>
-              <XStack marginTop="$2" justifyContent="space-between" alignItems="center">
-                <B color="$textTertiary" fontSize={12}>{recoveryStatus.signals.find(s => s.type === 'respiratory_rate')!.detail}</B>
-                <M color={recoveryStatus.signals.find(s => s.type === 'respiratory_rate')!.status === 'good' ? colors.cyan : colors.orange} fontSize={12} fontWeight="700">
-                  {recoveryStatus.signals.find(s => s.type === 'respiratory_rate')!.score}/25
-                </M>
+              <XStack alignItems="baseline" gap={4} marginTop={8}>
+                <M color={colors.textPrimary} fontSize={28} fontWeight="800">{garminHealth.vo2max}</M>
+                <B color={colors.textTertiary} fontSize={12}>ml/kg/min</B>
               </XStack>
+              {userProfile?.vdot_score && (
+                <YStack marginTop={10} backgroundColor={colors.surfaceHover} borderRadius={10} padding={10}>
+                  <XStack justifyContent="space-between">
+                    <YStack alignItems="center" flex={1}>
+                      <GarminIcon size={12} />
+                      <M color={colors.cyan} fontSize={16} fontWeight="800">{garminHealth.vo2max}</M>
+                    </YStack>
+                    <View width={0.5} backgroundColor={colors.border} />
+                    <YStack alignItems="center" flex={1}>
+                      <B color={colors.textTertiary} fontSize={10}>YOUR VDOT</B>
+                      <M color={colors.orange} fontSize={16} fontWeight="800">{userProfile.vdot_score.toFixed(1)}</M>
+                    </YStack>
+                  </XStack>
+                  {garminHealth.vo2max > userProfile.vdot_score + 5 && (
+                    <B color={colors.textTertiary} fontSize={10} textAlign="center" marginTop={6}>
+                      Gap suggests untapped aerobic potential
+                    </B>
+                  )}
+                </YStack>
+              )}
             </YStack>
           )}
+
+          {/* Respiratory Rate (display only) */}
+          {hasResp && (() => {
+            const respSignal = recoveryStatus?.signals.find(s => s.type === 'respiratory_rate');
+            if (!respSignal) return null;
+            const respColor = respSignal.status === 'good' ? colors.cyan : colors.orange;
+            return (
+              <YStack backgroundColor={colors.surface} borderRadius={16} padding={16}>
+                <XStack alignItems="center" justifyContent="space-between">
+                  <XStack alignItems="center" gap={6}>
+                    <MaterialCommunityIcons name="lungs" size={16} color={respColor} />
+                    <B color={colors.textPrimary} fontSize={14} fontWeight="600">Respiratory Rate</B>
+                  </XStack>
+                  {null}
+                </XStack>
+                <XStack alignItems="baseline" gap={4} marginTop={4}>
+                  <M color={colors.textPrimary} fontSize={18} fontWeight="800">{respSignal.value}</M>
+                  <B color={colors.textTertiary} fontSize={11}>br/min</B>
+                </XStack>
+                <B color={colors.textTertiary} fontSize={11} marginTop={2}>{respSignal.detail}</B>
+              </YStack>
+            );
+          })()}
         </YStack>
       )}
 

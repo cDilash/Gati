@@ -37,7 +37,7 @@ export interface PlanChangeRequest {
 
 // ─── System Prompt Builder ──────────────────────────────────
 
-export function buildCoachSystemPrompt(
+export async function buildCoachSystemPrompt(
   profile: UserProfile,
   paceZones: PaceZones,
   currentWeek: TrainingWeek | null,
@@ -51,7 +51,8 @@ export function buildCoachSystemPrompt(
   isRaceWeek: boolean,
   recoveryStatus?: RecoveryStatus | null,
   healthSnapshot?: HealthSnapshot | null,
-): string {
+  garminHealth?: import('../types').GarminHealthData | null,
+): Promise<string> {
   const parts: string[] = [];
 
   parts.push(`You are an expert marathon running coach guiding this athlete through their training.
@@ -154,6 +155,18 @@ Keep responses to 2-4 paragraphs max unless the athlete asks for detailed analys
       for (const d of details) detailMap.set(d.strava_activity_id, d);
     } catch {}
 
+    // Fetch Garmin per-activity data for enrichment
+    let garminActivityMap = new Map<string, any>();
+    try {
+      const { supabase } = require('../backup/supabase');
+      const dates = recentMetrics.map(m => m.date);
+      const { data: gActs } = await supabase
+        .from('garmin_activity_data')
+        .select('*')
+        .in('activity_date', dates);
+      if (gActs) for (const ga of gActs) garminActivityMap.set(ga.activity_date, ga);
+    } catch {}
+
     parts.push('RECENT RUNS (last 7 days):');
     for (let mi = 0; mi < Math.min(recentMetrics.length, 5); mi++) {
       const m = recentMetrics[mi];
@@ -169,6 +182,31 @@ Keep responses to 2-4 paragraphs max unless the athlete asks for detailed analys
       const suffer = detail?.suffer_score ? ` effort:${detail.suffer_score}` : '';
 
       parts.push(`  ${m.date}: ${m.distance_miles.toFixed(1)}mi @ ${pace}/mi${hr}${rpe}${elev}${cadence}${suffer}${gear}`);
+
+      // Garmin per-activity enrichment
+      const ga = garminActivityMap.get(m.date);
+      if (ga) {
+        const teParts: string[] = [];
+        if (ga.aerobic_training_effect != null) {
+          const msg = (ga.aerobic_te_message || '').replace(/_\d+$/, '').replace(/_/g, ' ').toLowerCase();
+          teParts.push(`TE ${ga.aerobic_training_effect} aerobic (${msg})`);
+        }
+        if (ga.stamina_start != null && ga.stamina_end != null) {
+          teParts.push(`Stamina ${ga.stamina_start}→${ga.stamina_end}%`);
+        }
+        if (ga.activity_training_load != null) teParts.push(`Load ${ga.activity_training_load}`);
+        if (ga.temperature_avg_c != null) {
+          const tempF = Math.round(ga.temperature_avg_c * 9 / 5 + 32);
+          teParts.push(`${ga.temperature_avg_c}°C/${tempF}°F`);
+        }
+        if (ga.grade_adjusted_speed != null && ga.grade_adjusted_speed > 0) {
+          const gapSec = Math.round(1609.344 / ga.grade_adjusted_speed);
+          teParts.push(`GAP ${formatPace(gapSec)}/mi`);
+        }
+        if (teParts.length > 0) {
+          parts.push(`    Garmin: ${teParts.join(', ')}`);
+        }
+      }
 
       // Per-mile splits for the last 3 runs (most valuable coaching data)
       if (mi < 3) {
@@ -355,10 +393,11 @@ Keep responses to 2-4 paragraphs max unless the athlete asks for detailed analys
   // Recovery status
   if (recoveryStatus && recoveryStatus.level !== 'unknown') {
     parts.push('RECOVERY STATUS:');
-    parts.push(`Score: ${recoveryStatus.score}/100 (${recoveryStatus.level}) — ${recoveryStatus.signalCount} signals`);
-    for (const s of recoveryStatus.signals) {
+    const scoredSignals = recoveryStatus.signals.filter(s => s.score > 0);
+    parts.push(`Score: ${recoveryStatus.score}/100 (${recoveryStatus.level}) — ${scoredSignals.length} scored signals`);
+    for (const s of scoredSignals) {
       const icon = s.status === 'good' ? '✓' : s.status === 'fair' ? '~' : '✗';
-      parts.push(`  ${icon} ${s.type}: ${s.detail}`);
+      parts.push(`  ${icon} ${s.type}: ${s.detail} (${s.score}/33)`);
     }
     // Include resting HR 14-day trend for context
     if (healthSnapshot?.restingHRTrend && healthSnapshot.restingHRTrend.length >= 3) {
@@ -409,6 +448,28 @@ Keep responses to 2-4 paragraphs max unless the athlete asks for detailed analys
     if (extras.length > 0) {
       parts.push('ADDITIONAL HEALTH DATA:');
       extras.forEach(e => parts.push(`  ${e}`));
+      parts.push('');
+    }
+  }
+
+  // Garmin Connect data
+  if (garminHealth) {
+    const g = garminHealth;
+    // Only include Garmin-exclusive data here (HRV + respiratory already in RECOVERY STATUS)
+    const lines: string[] = [];
+    if (g.vo2max != null) lines.push(`VO2max: ${g.vo2max} ml/kg/min`);
+    if (g.bodyBatteryMorning != null) {
+      lines.push(`Body Battery: ${g.bodyBatteryMorning} morning${g.bodyBatteryCharged != null ? ` (charged ${g.bodyBatteryCharged}, drained ${g.bodyBatteryDrained ?? '?'})` : ''}`);
+    }
+    if (g.stressAvg != null) lines.push(`Stress: avg ${g.stressAvg}/100${g.stressHigh != null ? `, peak ${g.stressHigh}/100` : ''}`);
+    if (g.trainingStatus) lines.push(`Training Status: ${g.trainingStatus}`);
+    if (g.trainingLoad7day != null) lines.push(`Training Load (7-day): ${g.trainingLoad7day} (ACWR: ${g.acwr ?? '?'}, status: ${g.acwrStatus ?? '?'})`);
+    if (g.restingHr != null) lines.push(`Resting HR (Garmin): ${g.restingHr} bpm`);
+    if (g.sleepScore != null) lines.push(`Sleep Score (Garmin): ${g.sleepScore}/100`);
+    if (g.trainingReadiness != null) lines.push(`Training Readiness: ${g.trainingReadiness}/100`);
+    if (lines.length > 0) {
+      parts.push('GARMIN CONNECT DATA:');
+      lines.forEach(l => parts.push(`  ${l}`));
       parts.push('');
     }
   }
