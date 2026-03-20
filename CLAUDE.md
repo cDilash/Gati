@@ -306,11 +306,17 @@ Fetches: activities, detail (splits, laps, best efforts, segments), streams (HR,
 ## AI Architecture
 
 ### Gemini Client (`src/ai/gemini.ts`)
-- Model: `gemini-2.5-flash`
+- **Heavy model**: `gemini-3.1-pro-preview` — plan generation, adaptation, weekly review (~3s response)
+- **Fast model**: `gemini-3-flash-preview` — coach chat, briefings, post-run analysis (~1s response)
+- Both are thinking models (responses include thinking tokens)
+- SDK: `@google/generative-ai` v0.24.1
+- API key: `.env` → `app.config.ts` extra → `expo-constants`
 - Retry with exponential backoff (max 3, 1.5s base)
-- `sendStructuredMessage()` for single-turn (plan generation, briefings)
-- `sendChatMessage()` for multi-turn (coaching chat)
+- Heavy model falls back to fast on failure
+- `sendStructuredMessage()` for single-turn (plan generation, briefings) — accepts optional `timeoutMs`
+- `sendChatMessage()` for multi-turn (coaching chat) — accepts optional `timeoutMs`
 - `extractJSON()` handles markdown fences, code blocks, raw JSON
+- **IMPORTANT**: `buildCoachSystemPrompt()` is async — queries Supabase for Garmin activity data. All Supabase queries inside AI prompt builders MUST have timeouts (Promise.race with 5s) to prevent hangs.
 
 ### Plan Generation (`src/ai/planGenerator.ts`)
 - AI generates full `AIGeneratedPlan` JSON (weeks + workouts)

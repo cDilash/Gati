@@ -13,6 +13,8 @@ import { getWorkoutIcon } from '../../src/utils/workoutIcons';
 import { WeightCheckin } from '../../src/components/WeightCheckin';
 import { RecoveryStatus } from '../../src/types';
 import { colors, semantic } from '../../src/theme/colors';
+import { GradientBorder } from '../../src/theme/GradientBorder';
+import { formatPRTime } from '../../src/utils/personalRecords';
 
 const H = (props: any) => <Text fontFamily="$heading" {...props} />;
 const B = (props: any) => <Text fontFamily="$body" {...props} />;
@@ -67,6 +69,7 @@ export default function TodayScreen() {
   const logCrossTraining = useAppStore(s => s.logCrossTraining);
   const isStravaConnected = useAppStore(s => s.isStravaConnected);
   const deleteCrossTrainingEntry = useAppStore(s => s.deleteCrossTrainingEntry);
+  const newPRNotification = useAppStore(s => s.newPRNotification);
   const fetchBriefing = useAppStore(s => s.fetchBriefing);
   const fetchPostRunAnalysis = useAppStore(s => s.fetchPostRunAnalysis);
   const fetchRaceStrategy = useAppStore(s => s.fetchRaceStrategy);
@@ -399,6 +402,44 @@ export default function TodayScreen() {
         contentContainerStyle={{ padding: 16, paddingBottom: 40 }}
         refreshControl={<RefreshControl refreshing={isSyncing} onRefresh={onRefresh} tintColor={colors.cyan} />}
       >
+      {/* PR Celebration */}
+      {newPRNotification && newPRNotification.prs.length > 0 && (
+        <YStack marginBottom="$4">
+          <GradientBorder side="all" borderRadius={16} borderWidth={2}>
+            <YStack backgroundColor="$surface" borderRadius={16} padding={16}>
+              <XStack alignItems="center" justifyContent="space-between" marginBottom={8}>
+                <XStack alignItems="center" gap={8}>
+                  <MaterialCommunityIcons name="trophy" size={22} color={colors.cyan} />
+                  <H color={colors.cyan} fontSize={15} letterSpacing={1.5}>NEW PERSONAL RECORD!</H>
+                </XStack>
+                <B color="$textTertiary" fontSize={16} onPress={() => {
+                  useAppStore.setState({ newPRNotification: null });
+                  try { const { setSetting } = require('../../src/db/database');
+                    setSetting('dismissed_pr_notification_date', newPRNotification.activityDate);
+                    setSetting('pending_pr_notification', '');
+                  } catch {}
+                }}>✕</B>
+              </XStack>
+              {newPRNotification.prs.map((pr, i) => (
+                <YStack key={i} marginBottom={i < newPRNotification.prs.length - 1 ? 8 : 0}>
+                  <XStack alignItems="baseline" gap={6}>
+                    <B color="$textSecondary" fontSize={13}>{pr.distance}:</B>
+                    <M color={colors.cyan} fontSize={20} fontWeight="800">{formatPRTime(pr.time)}</M>
+                  </XStack>
+                  {pr.previousTime ? (
+                    <B color="$textTertiary" fontSize={11} marginTop={2}>
+                      Previous: {formatPRTime(pr.previousTime)}{pr.previousDate ? ` (${new Date(pr.previousDate + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })})` : ''}
+                    </B>
+                  ) : (
+                    <B color={colors.cyan} fontSize={11} marginTop={2}>First recorded {pr.distance}!</B>
+                  )}
+                </YStack>
+              ))}
+            </YStack>
+          </GradientBorder>
+        </YStack>
+      )}
+
       {/* VDOT Change Notification */}
       {vdotNotification && (
         <YStack backgroundColor="$surface" borderRadius="$6" padding="$4" marginBottom="$4" borderLeftWidth={3}

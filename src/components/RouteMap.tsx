@@ -16,7 +16,7 @@ import {
   LayoutChangeEvent,
 } from 'react-native';
 import MapView, { Polyline, Marker, PROVIDER_DEFAULT } from 'react-native-maps';
-import { Text } from 'tamagui';
+import { Text, XStack } from 'tamagui';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
 
@@ -33,6 +33,19 @@ const COLOR_MODE_LABELS: Record<ColorMode, string> = {
   pace: 'Pace',
   hr: 'HR',
   elevation: 'Elev',
+};
+
+const COLOR_LEGEND_LOW: Record<ColorMode, string> = {
+  distance: 'start',
+  pace: 'fast',
+  hr: 'low',
+  elevation: 'flat',
+};
+const COLOR_LEGEND_HIGH: Record<ColorMode, string> = {
+  distance: 'finish',
+  pace: 'slow',
+  hr: 'high',
+  elevation: 'climb',
 };
 
 const COLOR_MODE_ICONS: Record<ColorMode, string> = {
@@ -267,7 +280,10 @@ export function RouteMap({
   }, [paceStream, hrStream, elevationStream]);
 
   // State
-  const [colorMode, setColorMode] = useState<ColorMode>('distance');
+  // Default to pace if available, otherwise distance
+  const [colorMode, setColorMode] = useState<ColorMode>(
+    paceStream && paceStream.length >= 2 ? 'pace' : 'distance'
+  );
   const [isPlaying, setIsPlaying] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [animProgress, setAnimProgress] = useState(0);
@@ -663,25 +679,62 @@ export function RouteMap({
         </View>
       )}
 
-      {/* ─── Color Mode Toggle (top-right) ─────────────── */}
-      {showColorToggle && !isPlaying && !isPaused && (
-        <Pressable style={styles.colorToggle} onPress={cycleColorMode}>
-          <MaterialCommunityIcons
-            name={COLOR_MODE_ICONS[colorMode] as any}
-            size={14}
-            color={colors.cyan}
-          />
-          <M fontSize={10} fontWeight="600" color={colors.textPrimary} marginLeft={4}>
-            {COLOR_MODE_LABELS[colorMode]}
-          </M>
-        </Pressable>
-      )}
-
-      {/* ─── Play button (before animation starts) ──────── */}
+      {/* ─── Play button (top-right) ──────── */}
       {showReplay && !isPlaying && !isPaused && (
         <Pressable style={styles.playButton} onPress={startReplay}>
           <MaterialCommunityIcons name="play" size={20} color="#FFFFFF" />
         </Pressable>
+      )}
+
+      {/* ─── Color Mode Pills + Legend (below map) ─────── */}
+      {showColorToggle && (
+        <View style={{ position: 'absolute', bottom: showControls ? 60 : 4, left: 0, right: 0 }}>
+          {/* Legend — colors match each mode's actual gradient */}
+          <XStack justifyContent="center" alignItems="center" gap={4} marginBottom={4}>
+            {(() => {
+              const gradients: Record<ColorMode, [string, string, string]> = {
+                distance: [colors.cyan, '#80A0B8', colors.orange],
+                pace: ['#00C800', '#C8C800', '#FF0000'],
+                hr: [colors.cyan, '#80A0B8', colors.orange],
+                elevation: ['#34C759', '#80A84D', '#CC8822'],
+              };
+              const g = gradients[colorMode];
+              return (
+                <>
+                  <M fontSize={9} color={g[0]}>{COLOR_LEGEND_LOW[colorMode]}</M>
+                  <View style={{ width: 60, height: 4, borderRadius: 2, overflow: 'hidden', flexDirection: 'row' }}>
+                    <View style={{ flex: 1, backgroundColor: g[0] }} />
+                    <View style={{ flex: 1, backgroundColor: g[1] }} />
+                    <View style={{ flex: 1, backgroundColor: g[2] }} />
+                  </View>
+                  <M fontSize={9} color={g[2]}>{COLOR_LEGEND_HIGH[colorMode]}</M>
+                </>
+              );
+            })()}
+          </XStack>
+          {/* Pills */}
+          <XStack justifyContent="center" gap={6} paddingHorizontal={8}>
+            {availableModes.map(mode => {
+              const active = colorMode === mode;
+              return (
+                <Pressable key={mode} onPress={() => setColorMode(mode)}
+                  style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}>
+                  <XStack alignItems="center" gap={3}
+                    backgroundColor={active ? colors.cyan + 'DD' : colors.surface + 'CC'}
+                    paddingHorizontal={10} paddingVertical={5} borderRadius={8}>
+                    <MaterialCommunityIcons
+                      name={COLOR_MODE_ICONS[mode] as any} size={12}
+                      color={active ? colors.background : colors.textSecondary} />
+                    <M fontSize={10} fontWeight={active ? '700' : '500'}
+                      color={active ? colors.background : colors.textSecondary}>
+                      {COLOR_MODE_LABELS[mode]}
+                    </M>
+                  </XStack>
+                </Pressable>
+              );
+            })}
+          </XStack>
+        </View>
       )}
 
       {/* ─── Bottom Control Bar (during animation) ──────── */}
@@ -711,17 +764,6 @@ export function RouteMap({
               ]}
             />
           </View>
-
-          {/* Color mode toggle (during replay) */}
-          {showColorToggle && (
-            <Pressable style={styles.colorBadge} onPress={cycleColorMode}>
-              <MaterialCommunityIcons
-                name={COLOR_MODE_ICONS[colorMode] as any}
-                size={12}
-                color={colors.cyan}
-              />
-            </Pressable>
-          )}
 
           {/* Speed badge */}
           <Pressable style={styles.speedBadge} onPress={cycleSpeed}>

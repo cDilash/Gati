@@ -92,6 +92,10 @@ interface AppState {
   // Garmin Connect
   garminHealth: import('./types').GarminHealthData | null;
 
+  // Personal Records
+  personalRecords: import('./types').PersonalRecord[];
+  newPRNotification: import('./types').NewPRNotification | null;
+
   // Cross-Training
   todayCrossTraining: CrossTraining | null;
   weekCrossTraining: CrossTraining[];
@@ -177,6 +181,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   recoveryStatus: null,
   pmcData: null,
   garminHealth: null,
+  personalRecords: [],
+  newPRNotification: null,
   todayCrossTraining: null,
   weekCrossTraining: [],
   isSyncing: false,
@@ -348,6 +354,24 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       // Calculate training load (fire-and-forget)
       try { get().calculateTrainingLoad(); } catch {}
+
+      // Compute personal records
+      try {
+        const { computeAllTimePRs } = require('./utils/personalRecords');
+        set({ personalRecords: computeAllTimePRs() });
+      } catch {}
+
+      // Restore persisted PR notification
+      try {
+        const prNote = getSetting('pending_pr_notification');
+        if (prNote) {
+          const parsed = JSON.parse(prNote);
+          const dismissed = getSetting('dismissed_pr_notification_date');
+          if (parsed?.activityDate && dismissed !== parsed.activityDate) {
+            set({ newPRNotification: parsed });
+          }
+        }
+      } catch {}
 
       // Restore persisted backup time
       try {
@@ -533,19 +557,27 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ coachMessages: getCoachMessages(), isCoachThinking: true });
 
     try {
-      const weekWorkouts = currentWeek
-        ? workouts.filter(w => w.week_number === currentWeek.week_number)
-        : [];
-      const recentMetrics = getRecentMetrics(7);
+      // 45s global timeout for entire coach flow (prompt build + Gemini call)
+      const coachFlow = async () => {
+        const weekWorkouts = currentWeek
+          ? workouts.filter(w => w.week_number === currentWeek.week_number)
+          : [];
+        const recentMetrics = getRecentMetrics(7);
 
-      const systemPrompt = await buildCoachSystemPrompt(
-        userProfile, paceZones, currentWeek, weekWorkouts,
-        todaysWorkout, recentMetrics, weeks, workouts, shoes,
-        daysUntilRace, isRaceWeek, recoveryStatus, get().healthSnapshot,
-        get().garminHealth,
+        const systemPrompt = await buildCoachSystemPrompt(
+          userProfile, paceZones, currentWeek, weekWorkouts,
+          todaysWorkout, recentMetrics, weeks, workouts, shoes,
+          daysUntilRace, isRaceWeek, recoveryStatus, get().healthSnapshot,
+          get().garminHealth,
+        );
+
+        return aiSendCoachMessage(message, systemPrompt, coachMessages);
+      };
+
+      const timeout = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Coach response timed out')), 45_000)
       );
-
-      const response = await aiSendCoachMessage(message, systemPrompt, coachMessages);
+      const response = await Promise.race([coachFlow(), timeout]);
 
       // Save assistant response
       const metadata = response.planChange ? JSON.stringify(response.planChange) : null;
@@ -560,10 +592,13 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ coachMessages: getCoachMessages(), isCoachThinking: false });
     } catch (error: any) {
       console.error('[Coach] Failed:', error);
+      const isTimeout = error?.message?.includes('timed out');
       dbSaveCoachMessage({
         id: Crypto.randomUUID(),
         role: 'assistant',
-        content: "Sorry, I couldn't process that. Please try again in a moment.",
+        content: isTimeout
+          ? 'Response timed out. Try again — sometimes the AI takes a moment.'
+          : "Sorry, I couldn't process that. Please try again in a moment.",
         message_type: 'chat',
         metadata_json: null,
       });
@@ -825,6 +860,26 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       // Recalculate PMC after new Strava data
       try { get().calculateTrainingLoad(); } catch {}
+
+      // Recompute personal records + detect new PRs
+      try {
+        const { computeAllTimePRs, detectNewPRs } = require('./utils/personalRecords');
+        const prs = computeAllTimePRs();
+        set({ personalRecords: prs });
+
+        // Check if today's run set any new PRs
+        if (result.newActivities > 0) {
+          const today = require('./utils/dateUtils').getToday();
+          const dismissed = getSetting('dismissed_pr_notification_date');
+          if (dismissed !== today) {
+            const notification = detectNewPRs(today, null);
+            if (notification) {
+              set({ newPRNotification: notification });
+              try { setSetting('pending_pr_notification', JSON.stringify(notification)); } catch {}
+            }
+          }
+        }
+      } catch {}
 
       // Fetch historical weather for new activities (fire-and-forget)
       (async () => {

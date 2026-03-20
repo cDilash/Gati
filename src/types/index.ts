@@ -597,3 +597,18 @@ export interface GarminHealthData {
   restingHr: number | null;          // bpm
   fetchedAt: string;
 }
+
+// ─── Personal Records ────────────────────────────────────────
+
+export interface PersonalRecord {
+  distance: string;        // "1 mile", "5K", etc.
+  timeSeconds: number;     // fastest moving_time
+  date: string;            // YYYY-MM-DD
+  activityId: number | null; // strava_activity_id
+}
+
+export interface NewPRNotification {
+  prs: { distance: string; time: number; previousTime: number | null; previousDate: string | null }[];
+  activityId: number | null;
+  activityDate: string;
+}

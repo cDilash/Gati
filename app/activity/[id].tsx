@@ -16,6 +16,8 @@ import { colors } from '../../src/theme/colors';
 import { useAppStore } from '../../src/store';
 import { StravaIcon } from '../../src/components/icons/StravaIcon';
 import { GarminIcon } from '../../src/components/icons/GarminIcon';
+import { GradientBorder } from '../../src/theme/GradientBorder';
+import { GradientText } from '../../src/theme/GradientText';
 
 const H = (props: any) => <Text fontFamily="$heading" {...props} />;
 const B = (props: any) => <Text fontFamily="$body" {...props} />;
@@ -111,6 +113,7 @@ export default function ActivityDetailScreen() {
   const [matchedWorkout, setMatchedWorkout] = useState<Workout | null>(null);
   const [showLaps, setShowLaps] = useState(false);
   const [garminActivity, setGarminActivity] = useState<any>(null);
+  const [activeTab, setActiveTab] = useState<'overview' | 'charts' | 'laps'>('overview');
   const [paceScrubIdx, setPaceScrubIdx] = useState<number | null>(null);
   const [hrScrubIdx, setHrScrubIdx] = useState<number | null>(null);
   const [elevScrubIdx, setElevScrubIdx] = useState<number | null>(null);
@@ -187,7 +190,21 @@ export default function ActivityDetailScreen() {
   // Strava link
   const stravaId = metric.strava_activity_id || (detail as any)?.strava_activity_id;
 
+  // Check if we have chart data
+  const hasCharts = splits.length >= 2 || (detail?.hr_stream_json && safeParseJSON(detail.hr_stream_json).length >= 3) ||
+    (detail?.elevation_stream_json && safeParseJSON(detail.elevation_stream_json).length >= 10);
+  const hasLaps = splits.length > 0 || (safeParseJSON(detail?.laps_json).length > 1) ||
+    safeParseJSON(detail?.best_efforts_json).length > 0 || safeParseJSON(detail?.segment_efforts_json).length > 0;
+
+  const TABS = [
+    { key: 'overview' as const, label: 'Overview' },
+    ...(hasCharts ? [{ key: 'charts' as const, label: 'Charts' }] : []),
+    ...(hasLaps ? [{ key: 'laps' as const, label: 'Laps & Splits' }] : []),
+  ];
+
   return (
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
+    {/* ─── Fixed top: Header + Map + Tabs ─── */}
     <ScrollView flex={1} backgroundColor={colors.background} contentContainerStyle={{ paddingBottom: 50 }}>
 
       {/* ─── Header ──────────────────────────────────────── */}
@@ -294,60 +311,153 @@ export default function ActivityDetailScreen() {
         </YStack>
       )}
 
+      {/* ─── Tab Bar ──────────────────────────────────────── */}
+      <XStack backgroundColor={colors.surface} marginHorizontal={16} borderRadius={10} padding={3} marginBottom={12}
+        borderWidth={0.5} borderColor={colors.border}>
+        {TABS.map(tab => {
+          const active = activeTab === tab.key;
+          return (
+            <Pressable key={tab.key} onPress={() => setActiveTab(tab.key)} style={{ flex: 1 }}>
+              <YStack alignItems="center" paddingVertical={8} borderRadius={8}
+                backgroundColor={active ? colors.surfaceHover : 'transparent'}>
+                <B color={active ? colors.cyan : colors.textTertiary} fontSize={13} fontWeight={active ? '700' : '500'}>
+                  {tab.label}
+                </B>
+                {active && <View height={2} width={20} borderRadius={1} backgroundColor={colors.cyan} marginTop={3} />}
+              </YStack>
+            </Pressable>
+          );
+        })}
+      </XStack>
+
+      {/* ════════════════════════════════════════════════════ */}
+      {/* TAB: OVERVIEW                                       */}
+      {/* ════════════════════════════════════════════════════ */}
+      {activeTab === 'overview' && (
+      <YStack>
+
       {/* ─── Hero Stats ──────────────────────────────────── */}
-      <XStack marginHorizontal={16} marginBottom={12} backgroundColor={colors.surface} borderRadius={14} borderWidth={0.5} borderColor={colors.border}>
-        <HeroStat icon="map-marker-distance" iconColor={colors.cyan} value={metric.distance_miles.toFixed(2)} unit="mi" label="Distance" />
-        <View width={0.5} backgroundColor={colors.border} marginVertical={12} />
-        <HeroStat icon="timer-outline" iconColor={colors.textSecondary}
-          value={metric.duration_minutes > 0 ? formatTime(metric.duration_minutes * 60) : (detail?.moving_time_sec ? formatTime(detail.moving_time_sec) : '--')}
-          unit="" label="Duration" />
-        <View width={0.5} backgroundColor={colors.border} marginVertical={12} />
-        <HeroStat icon="speedometer" iconColor={paceColor}
-          value={pace ? formatPace(pace) : '--'} unit="/mi" label="Avg Pace" />
+      <XStack marginHorizontal={16} marginBottom={12} justifyContent="space-between">
+        {/* Distance */}
+        <YStack flex={1} backgroundColor={colors.surface} borderRadius={12} padding={12} alignItems="center" marginRight={6}>
+          <MaterialCommunityIcons name="map-marker-distance" size={16} color={colors.cyan} />
+          <GradientText text={metric.distance_miles.toFixed(1)} style={{ fontSize: 28, fontWeight: '800' }} />
+          <B color={colors.textTertiary} fontSize={10}>mi</B>
+        </YStack>
+        {/* Duration */}
+        <YStack flex={1} backgroundColor={colors.surface} borderRadius={12} padding={12} alignItems="center" marginHorizontal={3}>
+          <MaterialCommunityIcons name="timer-outline" size={16} color={colors.textSecondary} />
+          <M_ fontSize={28} color={colors.textPrimary} fontWeight="800" marginTop={2}>
+            {metric.duration_minutes > 0 ? formatTime(metric.duration_minutes * 60) : (detail?.moving_time_sec ? formatTime(detail.moving_time_sec) : '--')}
+          </M_>
+          <B color={colors.textTertiary} fontSize={10}>duration</B>
+        </YStack>
+        {/* Avg Pace */}
+        <YStack flex={1} backgroundColor={colors.surface} borderRadius={12} padding={12} alignItems="center" marginLeft={6}>
+          <MaterialCommunityIcons name="speedometer" size={16} color={paceColor} />
+          <M_ fontSize={28} color={paceColor} fontWeight="800" marginTop={2}>
+            {pace ? formatPace(pace) : '--'}
+          </M_>
+          <B color={colors.textTertiary} fontSize={10}>/mi</B>
+        </YStack>
       </XStack>
 
       {/* ─── Plan Comparison ─────────────────────────────── */}
-      {matchedWorkout && matchedWorkout.target_distance_miles && (
-        <YStack marginHorizontal={16} marginBottom={12} backgroundColor={colors.surface} borderRadius={12} padding={14}>
-          <H fontSize={11} color={colors.textTertiary} letterSpacing={1.5} textTransform="uppercase" marginBottom={10}>vs Plan</H>
-          <XStack justifyContent="space-between" alignItems="center" marginBottom={4}>
-            <B fontSize={12} color={colors.textTertiary}>Distance</B>
-            <XStack alignItems="baseline" gap={6}>
-              <M_ fontSize={14} fontWeight="700" color={colors.textPrimary}>{metric.distance_miles.toFixed(1)}</M_>
-              <B fontSize={11} color={colors.textTertiary}>/</B>
-              <M_ fontSize={13} color={colors.textSecondary}>{matchedWorkout.target_distance_miles.toFixed(1)} mi</M_>
-              {(() => {
-                const pct = Math.round(((metric.distance_miles - matchedWorkout.target_distance_miles!) / matchedWorkout.target_distance_miles!) * 100);
-                return <M_ fontSize={11} fontWeight="600" color={Math.abs(pct) <= 10 ? colors.cyan : colors.orange}>{pct >= 0 ? '+' : ''}{pct}%</M_>;
-              })()}
-            </XStack>
-          </XStack>
-          {matchedWorkout.target_pace_zone && paceZones && pace && (
-            <XStack justifyContent="space-between" alignItems="center" marginBottom={4}>
-              <B fontSize={12} color={colors.textTertiary}>Pace Zone</B>
-              <XStack alignItems="baseline" gap={6}>
-                <M_ fontSize={14} fontWeight="700" color={paceColor}>{formatPace(pace)}</M_>
-                <B fontSize={11} color={colors.textTertiary}>/</B>
-                <M_ fontSize={13} color={colors.textSecondary}>
-                  {formatPace((paceZones as any)[matchedWorkout.target_pace_zone]?.min ?? 0)}-{formatPace((paceZones as any)[matchedWorkout.target_pace_zone]?.max ?? 0)}
-                </M_>
+      {matchedWorkout && matchedWorkout.target_distance_miles && (() => {
+        const targetDist = matchedWorkout.target_distance_miles!;
+        const distPct = Math.round(((metric.distance_miles - targetDist) / targetDist) * 100);
+        const distRatio = Math.min(metric.distance_miles / targetDist, 1.3);
+        const distOk = Math.abs(distPct) <= 10;
+        const quality = (matchedWorkout as any).execution_quality;
+        const qualityOk = quality === 'on_target' || !quality;
+        const qualityLabel = quality === 'on_target' ? 'On Target'
+          : quality === 'missed_pace' ? 'Pace Below Target'
+          : quality === 'exceeded_pace' ? 'Pace Above Target' : null;
+        const qualityColor = qualityOk ? colors.cyan : colors.orange;
+
+        const zone = matchedWorkout.target_pace_zone && paceZones
+          ? (paceZones as any)[matchedWorkout.target_pace_zone] : null;
+        const paceInZone = pace && zone ? pace >= zone.min && pace <= zone.max : null;
+
+        return (
+          <YStack marginHorizontal={16} marginBottom={12}>
+            <GradientBorder side="all" borderRadius={14} borderWidth={1.5}>
+            <YStack backgroundColor={colors.surface} borderRadius={14} overflow="hidden">
+
+              {/* Header with execution badge */}
+              <XStack padding={14} paddingBottom={8} alignItems="center" justifyContent="space-between">
+                <XStack alignItems="center" gap={6}>
+                  <MaterialCommunityIcons name="clipboard-check-outline" size={16} color={colors.textSecondary} />
+                  <H fontSize={12} color={colors.textSecondary} letterSpacing={1.5}>PLAN COMPARISON</H>
+                </XStack>
+                {qualityLabel && (
+                  <View backgroundColor={qualityColor + '22'} paddingHorizontal={8} paddingVertical={2} borderRadius={6}>
+                    <B fontSize={10} color={qualityColor} fontWeight="700">{qualityLabel}</B>
+                  </View>
+                )}
               </XStack>
-            </XStack>
-          )}
-          {(matchedWorkout as any).execution_quality && (
-            <XStack alignItems="center" gap={6} marginTop={4}>
-              <View width={8} height={8} borderRadius={4}
-                backgroundColor={(matchedWorkout as any).execution_quality === 'on_target' ? colors.cyan : colors.orange} />
-              <B fontSize={12} color={(matchedWorkout as any).execution_quality === 'on_target' ? colors.cyan : colors.orange} fontWeight="600">
-                {(matchedWorkout as any).execution_quality === 'on_target' ? 'On Target'
-                  : (matchedWorkout as any).execution_quality === 'missed_pace' ? 'Pace Below Target'
-                  : (matchedWorkout as any).execution_quality === 'exceeded_pace' ? 'Pace Above Target'
-                  : 'Modified'}
-              </B>
-            </XStack>
-          )}
-        </YStack>
-      )}
+
+              {/* Distance comparison — visual bar */}
+              <YStack paddingHorizontal={14} paddingBottom={10}>
+                <XStack justifyContent="space-between" alignItems="baseline" marginBottom={4}>
+                  <B fontSize={11} color={colors.textTertiary}>Distance</B>
+                  <XStack alignItems="baseline" gap={4}>
+                    <M_ fontSize={15} fontWeight="800" color={colors.textPrimary}>{metric.distance_miles.toFixed(1)}</M_>
+                    <B fontSize={10} color={colors.textTertiary}>of</B>
+                    <M_ fontSize={12} color={colors.textSecondary}>{targetDist.toFixed(1)} mi</M_>
+                    <M_ fontSize={10} fontWeight="700" color={distOk ? colors.cyan : colors.orange}>
+                      {distPct >= 0 ? '+' : ''}{distPct}%
+                    </M_>
+                  </XStack>
+                </XStack>
+                <View height={6} borderRadius={3} backgroundColor={colors.surfaceHover} overflow="hidden">
+                  <View height={6} borderRadius={3}
+                    backgroundColor={distOk ? colors.cyan : colors.orange}
+                    width={`${Math.min(distRatio * 100, 100)}%` as any} />
+                </View>
+              </YStack>
+
+              {/* Pace comparison — if available */}
+              {zone && pace && (
+                <YStack paddingHorizontal={14} paddingBottom={14} borderTopWidth={0.5} borderTopColor={colors.border} paddingTop={10}>
+                  <XStack justifyContent="space-between" alignItems="baseline" marginBottom={4}>
+                    <B fontSize={11} color={colors.textTertiary}>Pace · Zone {matchedWorkout.target_pace_zone}</B>
+                    <XStack alignItems="baseline" gap={4}>
+                      <M_ fontSize={15} fontWeight="800" color={paceInZone ? colors.cyan : colors.orange}>
+                        {formatPace(pace)}
+                      </M_>
+                      <B fontSize={10} color={colors.textTertiary}>target</B>
+                      <M_ fontSize={11} color={colors.textSecondary}>
+                        {formatPace(zone.min)}-{formatPace(zone.max)}
+                      </M_>
+                    </XStack>
+                  </XStack>
+                  {/* Pace position indicator */}
+                  <View height={6} borderRadius={3} backgroundColor={colors.surfaceHover} overflow="hidden">
+                    {(() => {
+                      const range = zone.max - zone.min;
+                      const padded = range * 0.3;
+                      const fullMin = zone.min - padded;
+                      const fullMax = zone.max + padded;
+                      const fullRange = fullMax - fullMin;
+                      const zoneStart = ((zone.min - fullMin) / fullRange) * 100;
+                      const zoneWidth = (range / fullRange) * 100;
+                      const pacePos = Math.max(0, Math.min(((pace - fullMin) / fullRange) * 100, 100));
+                      return (
+                        <>
+                          <View style={{ position: 'absolute', left: `${zoneStart}%` as any, width: `${zoneWidth}%` as any, height: 6, backgroundColor: colors.cyan + '25' }} />
+                          <View style={{ position: 'absolute', left: `${Math.max(0, pacePos - 2)}%` as any, width: 8, height: 8, borderRadius: 4, top: -1, backgroundColor: paceInZone ? colors.cyan : colors.orange, borderWidth: 1.5, borderColor: colors.surface }} />
+                        </>
+                      );
+                    })()}
+                  </View>
+                </YStack>
+              )}
+            </YStack>
+            </GradientBorder>
+          </YStack>
+        );
+      })()}
 
       {/* ─── Secondary Stats Grid (2 columns) ──────────────── */}
       {(() => {
@@ -514,6 +624,26 @@ export default function ActivityDetailScreen() {
           </YStack>
         </YStack>
       )}
+
+      {/* ─── Strava Link (in overview) ─────────────────── */}
+      {stravaId && (
+        <Pressable onPress={() => Linking.openURL(`https://www.strava.com/activities/${stravaId}`)} style={{ marginHorizontal: 16, marginBottom: 12 }}>
+          <XStack backgroundColor={colors.surface} borderRadius={12} padding={14} alignItems="center" justifyContent="center" gap={8}>
+            <StravaIcon size={18} />
+            <B fontSize={13} color={colors.strava} fontWeight="600">View on Strava</B>
+            <MaterialCommunityIcons name="chevron-right" size={16} color={colors.strava} />
+          </XStack>
+        </Pressable>
+      )}
+
+      </YStack>
+      )}
+
+      {/* ════════════════════════════════════════════════════ */}
+      {/* TAB: CHARTS                                         */}
+      {/* ════════════════════════════════════════════════════ */}
+      {activeTab === 'charts' && (
+      <YStack>
 
       {/* ─── Pace Chart ──────────────────────────────────── */}
       {splits.length >= 2 && (() => {
@@ -909,6 +1039,15 @@ export default function ActivityDetailScreen() {
         );
       })()}
 
+      </YStack>
+      )}
+
+      {/* ════════════════════════════════════════════════════ */}
+      {/* TAB: LAPS & SPLITS                                  */}
+      {/* ════════════════════════════════════════════════════ */}
+      {activeTab === 'laps' && (
+      <YStack>
+
       {/* ─── Splits ──────────────────────────────────────── */}
       {splits.length > 0 && (
         <YStack marginHorizontal={16} marginBottom={12}>
@@ -1040,17 +1179,11 @@ export default function ActivityDetailScreen() {
         </YStack>
       )}
 
-      {/* ─── Strava Link ─────────────────────────────────── */}
-      {stravaId && (
-        <Pressable onPress={() => Linking.openURL(`https://www.strava.com/activities/${stravaId}`)} style={{ marginHorizontal: 16, marginBottom: 12 }}>
-          <XStack backgroundColor={colors.surface} borderRadius={12} padding={14} alignItems="center" justifyContent="center" gap={8}>
-            <StravaIcon size={18} />
-            <B fontSize={13} color={colors.strava} fontWeight="600">View on Strava</B>
-            <MaterialCommunityIcons name="chevron-right" size={16} color={colors.strava} />
-          </XStack>
-        </Pressable>
+      </YStack>
       )}
+
     </ScrollView>
+    </View>
   );
 }
 

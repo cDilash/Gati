@@ -614,7 +614,7 @@ export async function getAdaptiveAIDecision(
   try {
     const prompt = buildAdaptivePrompt(ctx);
     const model = genAI.getGenerativeModel({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3-flash-preview',
       generationConfig: {
         responseMimeType: 'application/json',
       },
@@ -694,7 +694,7 @@ Review this plan. Respond with JSON:
 Be conservative. The deterministic engine enforces safety constraints (12% rule, cutbacks, taper). Only suggest tweaks if something looks wrong given the runner's specific situation.`;
 
     const model = genAI.getGenerativeModel({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3-flash-preview',
       generationConfig: { responseMimeType: 'application/json' },
     });
 

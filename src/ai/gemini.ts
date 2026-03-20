@@ -7,6 +7,7 @@
  *
  * Retry with exponential backoff on 429/5xx.
  * Heavy model falls back to fast on failure.
+ * All calls have request-level timeouts to prevent infinite hangs.
  */
 
 import { GoogleGenerativeAI } from '@google/generative-ai';
@@ -22,6 +23,12 @@ const MODELS: Record<ModelTier, string> = {
   fast: 'gemini-3-flash-preview',
 };
 
+// Default timeouts per tier (ms)
+const DEFAULT_TIMEOUTS: Record<ModelTier, number> = {
+  heavy: 60_000,  // 60s for plan generation, adaptation, weekly review
+  fast: 30_000,   // 30s for coach chat, briefings, analysis
+};
+
 const MAX_RETRIES = 3;
 const BASE_DELAY_MS = 1500;
 
@@ -34,11 +41,13 @@ export async function sendStructuredMessage(
   systemInstruction: string,
   userMessage: string,
   tier: ModelTier = 'fast',
+  timeoutMs?: number,
 ): Promise<string> {
   if (!API_KEY) throw new Error('Gemini API key not configured');
 
   const modelName = MODELS[tier];
-  console.log(`[Gemini:${tier}] Structured message → ${modelName}`);
+  const timeout = timeoutMs ?? DEFAULT_TIMEOUTS[tier];
+  console.log(`[Gemini:${tier}] Structured message → ${modelName} (timeout: ${timeout}ms)`);
 
   const model = genAI.getGenerativeModel({
     model: modelName,
@@ -47,7 +56,7 @@ export async function sendStructuredMessage(
 
   try {
     const result = await withRetry(() =>
-      model.generateContent(userMessage)
+      model.generateContent(userMessage, { timeout })
     );
     return result.response.text();
   } catch (error: any) {
@@ -59,7 +68,7 @@ export async function sendStructuredMessage(
         systemInstruction,
       });
       const result = await withRetry(() =>
-        fallbackModel.generateContent(userMessage)
+        fallbackModel.generateContent(userMessage, { timeout })
       );
       return result.response.text();
     }
@@ -75,11 +84,13 @@ export async function sendChatMessage(
   history: Array<{ role: 'user' | 'assistant'; content: string }>,
   userMessage: string,
   tier: ModelTier = 'fast',
+  timeoutMs?: number,
 ): Promise<string> {
   if (!API_KEY) throw new Error('Gemini API key not configured');
 
   const modelName = MODELS[tier];
-  console.log(`[Gemini:${tier}] Chat message → ${modelName}`);
+  const timeout = timeoutMs ?? DEFAULT_TIMEOUTS[tier];
+  console.log(`[Gemini:${tier}] Chat message → ${modelName} (timeout: ${timeout}ms)`);
 
   const model = genAI.getGenerativeModel({
     model: modelName,
@@ -96,7 +107,7 @@ export async function sendChatMessage(
 
   try {
     const result = await withRetry(() =>
-      chat.sendMessage(userMessage)
+      chat.sendMessage(userMessage, { timeout })
     );
     return result.response.text();
   } catch (error: any) {
@@ -108,7 +119,7 @@ export async function sendChatMessage(
       });
       const fallbackChat = fallbackModel.startChat({ history: geminiHistory });
       const result = await withRetry(() =>
-        fallbackChat.sendMessage(userMessage)
+        fallbackChat.sendMessage(userMessage, { timeout })
       );
       return result.response.text();
     }
@@ -151,12 +162,14 @@ async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
       const message = error?.message || '';
       const isRateLimit = status === 429 || message.includes('429');
       const isServerError = status >= 500;
-      const isRetryable = isRateLimit || isServerError;
+      const isTimeout = error?.name === 'AbortError' || message.includes('timeout');
+      const isRetryable = isRateLimit || isServerError || isTimeout;
 
       if (isRetryable && attempt < MAX_RETRIES - 1) {
         const delay = Math.min(BASE_DELAY_MS * Math.pow(2, attempt), 30000);
         const jitter = Math.random() * 500;
-        console.log(`[Gemini] Retry ${attempt + 1}/${MAX_RETRIES} after ${Math.round(delay + jitter)}ms (${isRateLimit ? '429' : status})`);
+        const reason = isRateLimit ? '429' : isTimeout ? 'timeout' : String(status);
+        console.log(`[Gemini] Retry ${attempt + 1}/${MAX_RETRIES} after ${Math.round(delay + jitter)}ms (${reason})`);
         await new Promise(resolve => setTimeout(resolve, delay + jitter));
         continue;
       }

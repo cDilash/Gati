@@ -1446,7 +1446,51 @@ export default function RecoveryScreen() {
         </YStack>
       </CollapsibleSection>
 
-      {/* SECTION 7: Shoes (collapsible) */}
+      {/* SECTION 7: Personal Records */}
+      {(() => {
+        const prs = useAppStore.getState().personalRecords;
+        if (prs.length === 0) return null;
+        const { getDisplayPRs, formatPRTime } = require('../../src/utils/personalRecords');
+        const displayPRs = getDisplayPRs(prs);
+        const router = require('expo-router').useRouter();
+        const latestDate = prs.length > 0 ? prs.reduce((a: any, b: any) => a.date > b.date ? a : b).date : null;
+
+        return (
+          <CollapsibleSection title="Personal Records">
+            <YStack backgroundColor={colors.surface} borderRadius={14} overflow="hidden">
+              {displayPRs.map((pr: any, i: number) => (
+                <Pressable key={pr.distance}
+                  onPress={pr.timeSeconds && pr.activityId ? () => router.push(`/activity/${pr.activityId}`) : undefined}>
+                  <XStack alignItems="center" paddingVertical={10} paddingHorizontal={14}
+                    borderBottomWidth={i < displayPRs.length - 1 ? 0.5 : 0} borderBottomColor={colors.border}>
+                    <B color={colors.textSecondary} fontSize={14} flex={1}>{pr.distance}</B>
+                    {pr.timeSeconds ? (
+                      <>
+                        <M color={pr.date === latestDate ? colors.cyan : colors.textPrimary}
+                          fontSize={16} fontWeight="800" marginRight={8}>
+                          {formatPRTime(pr.timeSeconds)}
+                        </M>
+                        <B color={colors.textTertiary} fontSize={11} width={50}>
+                          {new Date(pr.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                        </B>
+                        {pr.date === latestDate && (
+                          <View backgroundColor={colors.cyan + '22'} paddingHorizontal={5} paddingVertical={1} borderRadius={4} marginLeft={4}>
+                            <B color={colors.cyan} fontSize={8} fontWeight="700">PR</B>
+                          </View>
+                        )}
+                      </>
+                    ) : (
+                      <B color={colors.textTertiary} fontSize={13} fontStyle="italic">Not yet</B>
+                    )}
+                  </XStack>
+                </Pressable>
+              ))}
+            </YStack>
+          </CollapsibleSection>
+        );
+      })()}
+
+      {/* SECTION 8: Shoes (collapsible) */}
       {shoes.length > 0 && (
         <CollapsibleSection title="Shoes">
           {shoes.map(shoe => <ShoeCard key={shoe.id} shoe={shoe} />)}

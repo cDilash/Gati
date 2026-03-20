@@ -155,15 +155,19 @@ Keep responses to 2-4 paragraphs max unless the athlete asks for detailed analys
       for (const d of details) detailMap.set(d.strava_activity_id, d);
     } catch {}
 
-    // Fetch Garmin per-activity data for enrichment
+    // Fetch Garmin per-activity data for enrichment (5s timeout to prevent hang)
     let garminActivityMap = new Map<string, any>();
     try {
       const { supabase } = require('../backup/supabase');
       const dates = recentMetrics.map(m => m.date);
-      const { data: gActs } = await supabase
+      const garminPromise = supabase
         .from('garmin_activity_data')
         .select('*')
         .in('activity_date', dates);
+      const timeout = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Supabase timeout')), 5000)
+      );
+      const { data: gActs } = await Promise.race([garminPromise, timeout]) as any;
       if (gActs) for (const ga of gActs) garminActivityMap.set(ga.activity_date, ga);
     } catch {}
 
