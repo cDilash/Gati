@@ -378,6 +378,10 @@ Fetches: activities, detail (splits, laps, best efforts, segments), streams (HR,
 
 Use these skills proactively — don't wait to be asked. Invoke whenever the task matches the trigger.
 
+### `/gati-architecture`
+**Trigger**: Any work on the Gati codebase — features, bugfixes, audits, architectural questions. Loads the full architecture reference: stack, directories, theme, data flow, unit conversion, AI models, recovery scoring, coding conventions.
+Examples: "add a new screen", "how does sync work", "where are pace zones defined", "fix the recovery score"
+
 ### `/frontend-design`
 **Trigger**: Any task involving creating new screens, redesigning existing UI, building components, changing layouts, or improving visual design. Use BEFORE writing any UI code — it produces higher quality, more distinctive designs than default output.
 Examples: "add a new stats screen", "redesign the workout card", "make the coach chat look better"

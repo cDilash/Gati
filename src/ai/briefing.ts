@@ -300,11 +300,14 @@ export async function generateRestDayBriefing(
     } else if (yesterdayWorkouts.length > 0) {
       const w = yesterdayWorkouts[0];
       if (w.status === 'skipped') {
-        yesterdayContext = `Yesterday's ${w.title} was skipped.`;
+        yesterdayContext = `Yesterday's ${w.title} was skipped — no run data.`;
       } else if (w.workout_type === 'rest') {
         yesterdayContext = 'Yesterday was also a rest day.';
+      } else if (w.status === 'upcoming') {
+        // Still marked upcoming = was not completed (sweep may not have run yet)
+        yesterdayContext = `Yesterday's ${w.title} was not completed — no run recorded.`;
       } else {
-        yesterdayContext = `Yesterday: ${w.title} (${w.target_distance_miles ?? 0}mi planned)`;
+        yesterdayContext = `Yesterday: ${w.title} (${w.target_distance_miles ?? 0}mi planned, no Strava data)`;
       }
     }
 

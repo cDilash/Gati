@@ -78,40 +78,63 @@ export function getDisplayPRs(allPRs: PersonalRecord[]): (PersonalRecord | { dis
 }
 
 /**
- * After a Strava sync, check if the most recent activity has any new PRs.
+ * After a Strava sync, check recent activities for new PRs.
+ * Accepts multiple dates to check (e.g. all newly synced activity dates).
  * Returns a notification if PRs found, null otherwise.
  */
-export function detectNewPRs(activityDate: string, activityId: number | null): NewPRNotification | null {
+export function detectNewPRs(activityDates: string | string[], activityId: number | null): NewPRNotification | null {
   try {
     const { getDatabase } = require('../db/database');
     const db = getDatabase();
 
-    // Get best efforts for this activity
-    const row: { best_efforts_json: string } | null = db.getFirstSync(
-      `SELECT best_efforts_json FROM performance_metric
-       WHERE date = ? AND best_efforts_json IS NOT NULL AND best_efforts_json != '[]'
-       ORDER BY date DESC LIMIT 1`,
-      activityDate,
+    const dates = Array.isArray(activityDates) ? activityDates : [activityDates];
+    if (dates.length === 0) return null;
+
+    // Get best efforts for all specified dates
+    const placeholders = dates.map(() => '?').join(',');
+    const rows: { best_efforts_json: string; date: string; strava_activity_id: number | null }[] = db.getAllSync(
+      `SELECT best_efforts_json, date, strava_activity_id FROM performance_metric
+       WHERE date IN (${placeholders}) AND best_efforts_json IS NOT NULL AND best_efforts_json != '[]'
+       ORDER BY date DESC`,
+      ...dates,
     );
-    if (!row) return null;
+    if (rows.length === 0) return null;
 
-    const efforts: BestEffort[] = JSON.parse(row.best_efforts_json);
-    const newPRs = efforts.filter(e => e.prRank === 1);
-    if (newPRs.length === 0) return null;
+    // Collect all PR efforts across all dates
+    const allNewPRs: { effort: BestEffort; date: string; actId: number | null }[] = [];
+    for (const row of rows) {
+      try {
+        const efforts: BestEffort[] = JSON.parse(row.best_efforts_json);
+        for (const e of efforts) {
+          if (e.prRank === 1) allNewPRs.push({ effort: e, date: row.date, actId: row.strava_activity_id });
+        }
+      } catch {}
+    }
+    if (allNewPRs.length === 0) return null;
 
-    // For each PR, find the previous best
-    const allRows: { best_efforts_json: string; date: string }[] = db.getAllSync(
+    // For each PR, find the previous best (before the earliest checked date)
+    const earliestDate = dates.sort()[0];
+    const historyRows: { best_efforts_json: string; date: string }[] = db.getAllSync(
       `SELECT best_efforts_json, date FROM performance_metric
        WHERE best_efforts_json IS NOT NULL AND best_efforts_json != '[]' AND date < ?
        ORDER BY date DESC`,
-      activityDate,
+      earliestDate,
     );
 
-    const prs = newPRs.map(pr => {
+    // Deduplicate by distance — keep the fastest PR if multiple dates had PRs for same distance
+    const bestByDist = new Map<string, { effort: BestEffort; date: string; actId: number | null }>();
+    for (const p of allNewPRs) {
+      const existing = bestByDist.get(p.effort.name);
+      if (!existing || p.effort.movingTime < existing.effort.movingTime) {
+        bestByDist.set(p.effort.name, p);
+      }
+    }
+
+    const prs = Array.from(bestByDist.values()).map(({ effort: pr }) => {
       let previousTime: number | null = null;
       let previousDate: string | null = null;
 
-      for (const r of allRows) {
+      for (const r of historyRows) {
         try {
           const prevEfforts: BestEffort[] = JSON.parse(r.best_efforts_json);
           const match = prevEfforts.find(e => e.name === pr.name && e.movingTime > 0);
@@ -130,15 +153,18 @@ export function detectNewPRs(activityDate: string, activityId: number | null): N
       };
     });
 
-    return { prs, activityId, activityDate };
+    // Use most recent date as the notification date
+    const latestDate = dates.sort().pop()!;
+    return { prs, activityId, activityDate: latestDate };
   } catch {
     return null;
   }
 }
 
 export function formatPRTime(seconds: number): string {
-  const mins = Math.floor(seconds / 60);
-  const secs = seconds % 60;
+  const total = Math.round(seconds);
+  const mins = Math.floor(total / 60);
+  const secs = total % 60;
   if (mins >= 60) {
     const hrs = Math.floor(mins / 60);
     const remMins = mins % 60;

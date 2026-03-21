@@ -26,7 +26,7 @@ export function toMiles(value: number, unit: UnitSystem): number {
 /** Format distance with unit label */
 export function formatDistance(miles: number, unit: UnitSystem, decimals: number = 1): string {
   const val = displayDistance(miles, unit);
-  return `${val.toFixed(decimals)}${distanceLabel(unit)}`;
+  return `${val.toFixed(decimals)} ${distanceLabel(unit)}`;
 }
 
 /** Short distance label: "mi" or "km" */
@@ -89,8 +89,65 @@ export function formatPaceRangeWithUnit(range: { min: number; max: number }, uni
 
 // ─── Volume ──────────────────────────────────────────────────
 
-/** Format weekly volume: "25 mi/week" or "40 km/week" */
+/** Format weekly volume: "25 mi" or "40 km" */
 export function formatVolume(miles: number, unit: UnitSystem, decimals: number = 0): string {
   const val = displayDistance(miles, unit);
   return `${val.toFixed(decimals)} ${distanceLabel(unit)}`;
+}
+
+// ─── Elevation ──────────────────────────────────────────────
+
+const FT_TO_M = 0.3048;
+
+/** Convert feet (internal) to display unit */
+export function displayElevation(feet: number, unit: UnitSystem): number {
+  return unit === 'metric' ? feet * FT_TO_M : feet;
+}
+
+/** Format elevation with unit label */
+export function formatElevation(feet: number, unit: UnitSystem): string {
+  const val = displayElevation(feet, unit);
+  return `${Math.round(val)} ${elevationLabel(unit)}`;
+}
+
+/** Elevation label: "ft" or "m" */
+export function elevationLabel(unit: UnitSystem): string {
+  return unit === 'metric' ? 'm' : 'ft';
+}
+
+// ─── Height ─────────────────────────────────────────────────
+
+/** Format height: "5'8\"" or "173 cm" */
+export function formatHeight(cm: number, unit: UnitSystem): string {
+  if (unit === 'metric') return `${Math.round(cm)} cm`;
+  const totalInches = cm / 2.54;
+  const feet = Math.floor(totalInches / 12);
+  const inches = Math.round(totalInches % 12);
+  return `${feet}'${inches}"`;
+}
+
+// ─── Weight (from kg) ───────────────────────────────────────
+
+/** Format weight from kg: "172 lbs" or "78 kg" */
+export function formatWeightKg(kg: number, unit: UnitSystem): string {
+  if (unit === 'metric') return `${Math.round(kg)} kg`;
+  return `${Math.round(kg * KG_TO_LBS)} lbs`;
+}
+
+// ─── Temperature ────────────────────────────────────────────
+
+/** Format temperature from °F: "85°F" or "29°C" */
+export function formatTemp(fahrenheit: number, unit: UnitSystem): string {
+  if (unit === 'metric') {
+    const c = (fahrenheit - 32) * 5 / 9;
+    return `${Math.round(c)}°C`;
+  }
+  return `${Math.round(fahrenheit)}°F`;
+}
+
+// ─── Shorthand for pace suffix ──────────────────────────────
+
+/** Pace suffix: "/mi" or "/km" */
+export function paceSuffix(unit: UnitSystem): string {
+  return unit === 'metric' ? '/km' : '/mi';
 }

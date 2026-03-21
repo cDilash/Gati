@@ -9,6 +9,8 @@ import { Text, YStack, XStack, ScrollView, Spinner, View, Input } from 'tamagui'
 import { useRouter } from 'expo-router';
 import { useAppStore } from '../src/store';
 import { useSettingsStore } from '../src/stores/settingsStore';
+import { useUnits } from '../src/hooks/useUnits';
+import { distanceLabel, weightLabel } from '../src/utils/units';
 import { colors } from '../src/theme/colors';
 import { formatPace } from '../src/engine/vdot';
 import { formatPaceRange, calculateHRZones } from '../src/engine/paceZones';
@@ -37,6 +39,7 @@ export default function ProfileScreen() {
   const { userProfile, paceZones, saveProfile, lastSyncTime } = useAppStore();
   const units = useSettingsStore(s => s.units);
   const isMetric = units === 'metric';
+  const u = useUnits();
   const [editing, setEditing] = useState(false);
 
   // Account state
@@ -75,8 +78,8 @@ export default function ProfileScreen() {
     setGender(userProfile.gender);
     setWeightKg(userProfile.weight_kg ? String(userProfile.weight_kg) : '');
     setHeightCm(userProfile.height_cm ? String(userProfile.height_cm) : '');
-    setWeeklyMiles(String(userProfile.current_weekly_miles));
-    setLongestRun(String(userProfile.longest_recent_run));
+    setWeeklyMiles(String(u.rawDist(userProfile.current_weekly_miles).toFixed(1)));
+    setLongestRun(String(u.rawDist(userProfile.longest_recent_run).toFixed(1)));
     setLevel(userProfile.experience_level);
     setRaceName(userProfile.race_name || '');
     setRaceDate(userProfile.race_date);
@@ -109,8 +112,8 @@ export default function ProfileScreen() {
       vdot_score: userProfile.vdot_score,
       max_hr: userProfile.max_hr,
       rest_hr: userProfile.rest_hr,
-      current_weekly_miles: Number(weeklyMiles) || userProfile.current_weekly_miles,
-      longest_recent_run: Number(longestRun) || userProfile.longest_recent_run,
+      current_weekly_miles: weeklyMiles ? (isMetric ? Number(weeklyMiles) * 0.621371 : Number(weeklyMiles)) : userProfile.current_weekly_miles,
+      longest_recent_run: longestRun ? (isMetric ? Number(longestRun) * 0.621371 : Number(longestRun)) : userProfile.longest_recent_run,
       experience_level: level as any,
       race_date: raceDate || userProfile.race_date,
       race_name: raceName.trim() || null,
@@ -152,10 +155,10 @@ export default function ProfileScreen() {
   const progressPct = weeks.length > 0 ? Math.round((currentWeekNumber / weeks.length) * 100) : 0;
 
   const weightDisplay = userProfile.weight_kg
-    ? isMetric ? `${userProfile.weight_kg} kg` : `${Math.round(userProfile.weight_kg * 2.20462)} lbs`
+    ? u.wt(userProfile.weight_kg)
     : null;
   const heightDisplay = userProfile.height_cm
-    ? isMetric ? `${userProfile.height_cm} cm` : `${Math.floor(userProfile.height_cm / 30.48)}'${Math.round((userProfile.height_cm % 30.48) / 2.54)}"`
+    ? u.ht(userProfile.height_cm)
     : null;
 
   if (!editing) {
@@ -249,8 +252,8 @@ export default function ProfileScreen() {
         {/* ─── Running Schedule ──────────────────────────── */}
         <SectionTitle title="Running Schedule" />
         <YStack backgroundColor={colors.surface} borderRadius={14} overflow="hidden">
-          <IconRow icon="road-variant" label="Weekly Mileage" value={isMetric ? `${(userProfile.current_weekly_miles * 1.60934).toFixed(1)} km` : `${userProfile.current_weekly_miles} mi`} source="Strava" updatedAt={(userProfile as any).weekly_mileage_updated_at || lastSyncTime || null} />
-          <IconRow icon="run-fast" label="Longest Recent Run" value={isMetric ? `${(userProfile.longest_recent_run * 1.60934).toFixed(1)} km` : `${userProfile.longest_recent_run} mi`} source="Strava" updatedAt={(userProfile as any).longest_run_updated_at || lastSyncTime || null} />
+          <IconRow icon="road-variant" label="Weekly Mileage" value={u.dist(userProfile.current_weekly_miles)} source="Strava" updatedAt={(userProfile as any).weekly_mileage_updated_at || lastSyncTime || null} />
+          <IconRow icon="run-fast" label="Longest Recent Run" value={u.dist(userProfile.longest_recent_run)} source="Strava" updatedAt={(userProfile as any).longest_run_updated_at || lastSyncTime || null} />
           <XStack paddingVertical={12} paddingHorizontal={14} borderBottomWidth={0.5} borderBottomColor={colors.border} alignItems="center">
             <View width={28} height={28} borderRadius={14} backgroundColor={colors.cyanGhost} alignItems="center" justifyContent="center" marginRight={12}>
               <MaterialCommunityIcons name="calendar-check" size={14} color={colors.cyan} />
@@ -350,8 +353,8 @@ export default function ProfileScreen() {
                     <H color={colors.textTertiary} fontSize={8} letterSpacing={1} marginTop={2}>RUNS</H>
                   </YStack>
                   <YStack flex={1} backgroundColor={colors.surfaceHover} borderRadius={10} padding={10} alignItems="center">
-                    <M color={colors.textPrimary} fontSize={18} fontWeight="800">{Math.round(totalMiles)}</M>
-                    <H color={colors.textTertiary} fontSize={8} letterSpacing={1} marginTop={2}>TOTAL MI</H>
+                    <M color={colors.textPrimary} fontSize={18} fontWeight="800">{Math.round(u.rawDist(totalMiles))}</M>
+                    <H color={colors.textTertiary} fontSize={8} letterSpacing={1} marginTop={2}>TOTAL {u.distLabel.toUpperCase()}</H>
                   </YStack>
                   <YStack flex={1} backgroundColor={colors.surfaceHover} borderRadius={10} padding={10} alignItems="center">
                     <M color={colors.textPrimary} fontSize={18} fontWeight="800">{totalHrs}:{String(totalMn).padStart(2, '0')}</M>
@@ -409,8 +412,8 @@ export default function ProfileScreen() {
           <FormField icon="account" label="Name"><FInput value={name} onChangeText={setName} /></FormField>
           <XStack gap={10}>
             <YStack flex={1}><FormField icon="cake-variant" label="Age"><FInput value={age} onChangeText={setAge} keyboardType="number-pad" mono /></FormField></YStack>
-            <YStack flex={1}><FormField icon="human-male-height" label="Height (cm)"><FInput value={heightCm} onChangeText={setHeightCm} keyboardType="number-pad" mono /></FormField></YStack>
-            <YStack flex={1}><FormField icon="scale-bathroom" label="Weight (kg)"><FInput value={weightKg} onChangeText={setWeightKg} keyboardType="decimal-pad" mono placeholder="—" /></FormField></YStack>
+            <YStack flex={1}><FormField icon="human-male-height" label={`Height (${isMetric ? 'cm' : 'in'})`}><FInput value={heightCm} onChangeText={setHeightCm} keyboardType="number-pad" mono /></FormField></YStack>
+            <YStack flex={1}><FormField icon="scale-bathroom" label={`Weight (${weightLabel(u.units)})`}><FInput value={weightKg} onChangeText={setWeightKg} keyboardType="decimal-pad" mono placeholder="—" /></FormField></YStack>
           </XStack>
           <FormField icon="gender-male-female" label="Gender">
             <SegmentedControl options={GENDERS.map(g => g)} selected={gender === 'male' ? 'Male' : 'Female'} onSelect={(v) => setGender(v.toLowerCase())} />
@@ -424,8 +427,8 @@ export default function ProfileScreen() {
         <SectionTitle title="Running" />
         <YStack backgroundColor={colors.surface} borderRadius={14} padding={14} gap={12} marginBottom={16}>
           <XStack gap={10}>
-            <YStack flex={1}><FormField icon="road-variant" label="Weekly Mi"><FInput value={weeklyMiles} onChangeText={setWeeklyMiles} keyboardType="decimal-pad" mono /></FormField></YStack>
-            <YStack flex={1}><FormField icon="run-fast" label="Longest Run"><FInput value={longestRun} onChangeText={setLongestRun} keyboardType="decimal-pad" mono /></FormField></YStack>
+            <YStack flex={1}><FormField icon="road-variant" label={`Weekly ${u.distLabel}`}><FInput value={weeklyMiles} onChangeText={setWeeklyMiles} keyboardType="decimal-pad" mono /></FormField></YStack>
+            <YStack flex={1}><FormField icon="run-fast" label={`Longest Run (${u.distLabel})`}><FInput value={longestRun} onChangeText={setLongestRun} keyboardType="decimal-pad" mono /></FormField></YStack>
           </XStack>
           <FormField icon="calendar-check" label="Available Days">
             <XStack gap={4} marginTop={4}>

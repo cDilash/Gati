@@ -18,6 +18,9 @@ import { StravaIcon } from '../../src/components/icons/StravaIcon';
 import { GarminIcon } from '../../src/components/icons/GarminIcon';
 import { GradientBorder } from '../../src/theme/GradientBorder';
 import { GradientText } from '../../src/theme/GradientText';
+import { PRBadge } from '../../src/components/PRBadge';
+import { formatPRTime } from '../../src/utils/personalRecords';
+import { useUnits } from '../../src/hooks/useUnits';
 
 const H = (props: any) => <Text fontFamily="$heading" {...props} />;
 const B = (props: any) => <Text fontFamily="$body" {...props} />;
@@ -105,6 +108,7 @@ function useChartScrubber(count: number, padL: number, drawW: number) {
 export default function ActivityDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
+  const u = useUnits();
   const paceZones = useAppStore(s => s.paceZones);
   const shoes = useAppStore(s => s.shoes);
 
@@ -112,6 +116,7 @@ export default function ActivityDetailScreen() {
   const [detail, setDetail] = useState<StravaDetail | null>(null);
   const [matchedWorkout, setMatchedWorkout] = useState<Workout | null>(null);
   const [showLaps, setShowLaps] = useState(false);
+  const [descExpanded, setDescExpanded] = useState(false);
   const [garminActivity, setGarminActivity] = useState<any>(null);
   const [activeTab, setActiveTab] = useState<'overview' | 'charts' | 'laps'>('overview');
   const [paceScrubIdx, setPaceScrubIdx] = useState<number | null>(null);
@@ -203,95 +208,100 @@ export default function ActivityDetailScreen() {
   ];
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.background }}>
-    {/* ─── Fixed top: Header + Map + Tabs ─── */}
+    <View style={{ flex: 1, backgroundColor: colors.background, borderTopWidth: 0.5, borderTopColor: colors.border }}>
+    {/* ─── Drag handle ─── */}
+    <YStack alignItems="center" paddingTop={10} paddingBottom={15}>
+      <View width={36} height={4} borderRadius={2} backgroundColor={colors.textTertiary} opacity={0.5} />
+    </YStack>
     <ScrollView flex={1} backgroundColor={colors.background} contentContainerStyle={{ paddingBottom: 50 }}>
 
-      {/* ─── Header ──────────────────────────────────────── */}
-      <YStack paddingHorizontal={16} paddingTop={16} paddingBottom={8}>
-        <H fontSize={24} letterSpacing={1} color={colors.textPrimary}>
-          {detail?.activity_name || matchedWorkout?.title || 'Run'}
-        </H>
-        <B fontSize={13} color={colors.textSecondary} marginTop={4}>
-          {new Date(metric.date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
-        </B>
-        {matchedWorkout && (
-          <View alignSelf="flex-start" paddingHorizontal={8} paddingVertical={3} borderRadius={6} backgroundColor={colors.surfaceHover} borderWidth={0.5} borderColor={colors.border} marginTop={6}>
-            <B fontSize={11} color={colors.textTertiary}>
-              Week {matchedWorkout.week_number} · {matchedWorkout.workout_type}
+      {/* ─── Compact Header ────────────────────────────────── */}
+      <YStack paddingHorizontal={16} paddingTop={4} paddingBottom={6} gap={3}>
+        {/* Row 1: Title + short date + dismiss */}
+        <XStack justifyContent="space-between" alignItems="center">
+          <H fontSize={22} letterSpacing={0.8} color={colors.textPrimary} flex={1} numberOfLines={1}>
+            {detail?.activity_name || matchedWorkout?.title || 'Run'}
+          </H>
+          <XStack alignItems="center" gap={12}>
+            <B fontSize={12} color={colors.textTertiary}>
+              {new Date(metric.date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
             </B>
-          </View>
-        )}
-      </YStack>
+            <Pressable onPress={() => router.back()} hitSlop={12}
+              style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: colors.surfaceHover, alignItems: 'center', justifyContent: 'center' }}>
+              <MaterialCommunityIcons name="close" size={16} color={colors.textSecondary} />
+            </Pressable>
+          </XStack>
+        </XStack>
 
-      {/* ─── Location + Weather ────────────────────────────── */}
-      {(detail?.location_city || detail?.start_lat != null || detail?.weather_temp_f != null || detail?.timezone) && (
-        <YStack marginHorizontal={16} marginBottom={12} gap={4}>
-          {/* Location: city/state if available, else timezone-derived */}
+        {/* Row 2: Badge + location inline */}
+        <XStack alignItems="center" gap={6} flexWrap="wrap">
+          {matchedWorkout && (
+            <View paddingHorizontal={7} paddingVertical={2} borderRadius={5} backgroundColor={colors.surfaceHover} borderWidth={0.5} borderColor={colors.border}>
+              <B fontSize={10} color={colors.textTertiary}>Wk {matchedWorkout.week_number} · {matchedWorkout.workout_type}</B>
+            </View>
+          )}
           {(detail?.location_city || detail?.timezone) && (
-            <XStack alignItems="center" gap={6}>
-              <MaterialCommunityIcons name="map-marker-outline" size={15} color={colors.cyan} />
-              <B fontSize={13} color={colors.textSecondary}>
+            <XStack alignItems="center" gap={3}>
+              <MaterialCommunityIcons name="map-marker-outline" size={12} color={colors.cyan} />
+              <B fontSize={11} color={colors.textTertiary}>
                 {detail.location_city
                   ? `${detail.location_city}${detail.location_state ? `, ${detail.location_state}` : ''}`
                   : detail.timezone ? detail.timezone.replace(/_/g, ' ').split('/').pop() ?? '' : ''}
               </B>
             </XStack>
           )}
-          {detail?.weather_temp_f != null && (
-            <XStack alignItems="center" gap={6}>
-              <MaterialCommunityIcons
-                name={weatherIcon(detail.weather_condition, detail.weather_temp_f) as any}
-                size={15}
-                color={weatherIconColor(detail.weather_condition, detail.weather_temp_f, detail.weather_wind_mph)}
-              />
-              <M_ fontSize={13} fontWeight="600"
-                color={detail.weather_temp_f > 80 ? colors.orange : detail.weather_temp_f < 40 ? colors.cyan : colors.textPrimary}>
-                {detail.weather_temp_f}°F
-              </M_>
-              {detail.weather_humidity != null && (
-                <B fontSize={12} color={colors.textTertiary}>· {detail.weather_humidity}% humidity</B>
-              )}
-              {detail.weather_wind_mph != null && detail.weather_wind_mph > 0 && (
-                <B fontSize={12} color={detail.weather_wind_mph > 15 ? colors.orange : colors.textTertiary}>
-                  · {detail.weather_wind_mph} mph wind
-                </B>
-              )}
-              {detail.weather_condition && (
-                <B fontSize={12} color={colors.textTertiary}>· {detail.weather_condition}</B>
-              )}
-            </XStack>
-          )}
-          {/* Weather impact note for notable conditions */}
-          {detail?.weather_temp_f != null && (
-            detail.weather_temp_f > 75 || (detail.weather_wind_mph ?? 0) > 12 ||
-            detail.weather_condition === 'Rain' || detail.weather_condition === 'Heavy Rain'
-          ) && (
-            <XStack alignItems="center" gap={6} marginTop={2}>
-              <MaterialCommunityIcons name="alert-circle-outline" size={13} color={colors.orange} />
-              <B fontSize={11} color={colors.orange}>
-                {detail.weather_temp_f! > 80 ? 'Hot conditions likely slowed your pace by 15-20 sec/mile'
-                  : detail.weather_temp_f! > 75 ? 'Warm conditions may have affected effort'
-                  : (detail.weather_wind_mph ?? 0) > 15 ? 'Strong wind likely affected your splits'
-                  : 'Rain may have impacted footing and pace'}
-              </B>
-            </XStack>
-          )}
-        </YStack>
-      )}
+        </XStack>
 
-      {/* ─── Strava Description (quote card) ─────────────── */}
-      {detail?.description && (
-        <YStack marginHorizontal={16} marginBottom={12} backgroundColor={colors.surface} borderRadius={12} padding={14} borderLeftWidth={3} borderLeftColor={colors.border}>
-          <XStack gap={8}>
-            <MaterialCommunityIcons name="format-quote-open" size={16} color={colors.textTertiary} style={{ marginTop: 2 }} />
-            <YStack flex={1}>
-              <B fontSize={13} color={colors.textSecondary} lineHeight={19} fontStyle="italic">{detail.description}</B>
-              <XStack alignItems="center" gap={4} marginTop={4} alignSelf="flex-end">
-                <B fontSize={10} color={colors.textTertiary}>by</B>
-                <StravaIcon size={12} />
+        {/* Row 3: Weather — single dense line */}
+        {detail?.weather_temp_f != null && (
+          <XStack alignItems="center" gap={4} flexWrap="wrap">
+            <MaterialCommunityIcons
+              name={weatherIcon(detail.weather_condition, detail.weather_temp_f) as any}
+              size={13}
+              color={weatherIconColor(detail.weather_condition, detail.weather_temp_f, detail.weather_wind_mph)}
+            />
+            <M_ fontSize={12} fontWeight="600"
+              color={detail.weather_temp_f > 80 ? colors.orange : detail.weather_temp_f < 40 ? colors.cyan : colors.textSecondary}>
+              {u.temp(detail.weather_temp_f)}
+            </M_>
+            {detail.weather_condition && (
+              <B fontSize={11} color={colors.textTertiary}>· {detail.weather_condition}</B>
+            )}
+            {detail.weather_humidity != null && (
+              <B fontSize={11} color={colors.textTertiary}>· {detail.weather_humidity}%</B>
+            )}
+            {detail.weather_wind_mph != null && detail.weather_wind_mph > 0 && (
+              <B fontSize={11} color={detail.weather_wind_mph > 15 ? colors.orange : colors.textTertiary}>
+                · {detail.weather_wind_mph}mph
+              </B>
+            )}
+            {/* Inline weather impact warning */}
+            {(detail.weather_temp_f > 75 || (detail.weather_wind_mph ?? 0) > 12 ||
+              detail.weather_condition === 'Rain' || detail.weather_condition === 'Heavy Rain') && (
+              <XStack alignItems="center" gap={2}>
+                <B fontSize={11} color={colors.textTertiary}>·</B>
+                <MaterialCommunityIcons name="alert-circle-outline" size={11} color={colors.orange} />
+                <B fontSize={10} color={colors.orange}>
+                  {detail.weather_temp_f! > 80 ? 'heat impact'
+                    : detail.weather_temp_f! > 75 ? 'warm'
+                    : (detail.weather_wind_mph ?? 0) > 15 ? 'windy'
+                    : 'rain'}
+                </B>
               </XStack>
-            </YStack>
+            )}
+          </XStack>
+        )}
+
+      </YStack>
+
+      {/* ─── Strava Description ─────────────────────────────── */}
+      {detail?.description && (
+        <YStack marginHorizontal={16} marginBottom={10} backgroundColor={colors.surface} borderRadius={12} padding={12} borderLeftWidth={3} borderLeftColor={colors.border}>
+          <XStack gap={8}>
+            <MaterialCommunityIcons name="format-quote-open" size={14} color={colors.textTertiary} style={{ marginTop: 1 }} />
+            <B fontSize={13} color={colors.textSecondary} lineHeight={19} fontStyle="italic" flex={1}>
+              {detail.description}
+            </B>
           </XStack>
         </YStack>
       )}
@@ -341,13 +351,16 @@ export default function ActivityDetailScreen() {
         {/* Distance */}
         <YStack flex={1} backgroundColor={colors.surface} borderRadius={12} padding={12} alignItems="center" marginRight={6}>
           <MaterialCommunityIcons name="map-marker-distance" size={16} color={colors.cyan} />
-          <GradientText text={metric.distance_miles.toFixed(1)} style={{ fontSize: 28, fontWeight: '800' }} />
-          <B color={colors.textTertiary} fontSize={10}>mi</B>
+          <GradientText text={String(u.rawDist(metric.distance_miles).toFixed(1))} style={{ fontSize: 28, fontWeight: '800' }} />
+          <B color={colors.textTertiary} fontSize={10}>{u.distLabel}</B>
         </YStack>
         {/* Duration */}
         <YStack flex={1} backgroundColor={colors.surface} borderRadius={12} padding={12} alignItems="center" marginHorizontal={3}>
           <MaterialCommunityIcons name="timer-outline" size={16} color={colors.textSecondary} />
-          <M_ fontSize={28} color={colors.textPrimary} fontWeight="800" marginTop={2}>
+          <M_ fontSize={(() => {
+            const dur = metric.duration_minutes > 0 ? formatTime(metric.duration_minutes * 60) : (detail?.moving_time_sec ? formatTime(detail.moving_time_sec) : '--');
+            return dur.length > 5 ? 22 : 28;
+          })()} color={colors.textPrimary} fontWeight="800" marginTop={2} numberOfLines={1} adjustsFontSizeToFit>
             {metric.duration_minutes > 0 ? formatTime(metric.duration_minutes * 60) : (detail?.moving_time_sec ? formatTime(detail.moving_time_sec) : '--')}
           </M_>
           <B color={colors.textTertiary} fontSize={10}>duration</B>
@@ -356,9 +369,9 @@ export default function ActivityDetailScreen() {
         <YStack flex={1} backgroundColor={colors.surface} borderRadius={12} padding={12} alignItems="center" marginLeft={6}>
           <MaterialCommunityIcons name="speedometer" size={16} color={paceColor} />
           <M_ fontSize={28} color={paceColor} fontWeight="800" marginTop={2}>
-            {pace ? formatPace(pace) : '--'}
+            {pace ? u.pace(pace) : '--'}
           </M_>
-          <B color={colors.textTertiary} fontSize={10}>/mi</B>
+          <B color={colors.textTertiary} fontSize={10}>{u.paceSuffix}</B>
         </YStack>
       </XStack>
 
@@ -402,9 +415,9 @@ export default function ActivityDetailScreen() {
                 <XStack justifyContent="space-between" alignItems="baseline" marginBottom={4}>
                   <B fontSize={11} color={colors.textTertiary}>Distance</B>
                   <XStack alignItems="baseline" gap={4}>
-                    <M_ fontSize={15} fontWeight="800" color={colors.textPrimary}>{metric.distance_miles.toFixed(1)}</M_>
+                    <M_ fontSize={15} fontWeight="800" color={colors.textPrimary}>{u.rawDist(metric.distance_miles).toFixed(1)}</M_>
                     <B fontSize={10} color={colors.textTertiary}>of</B>
-                    <M_ fontSize={12} color={colors.textSecondary}>{targetDist.toFixed(1)} mi</M_>
+                    <M_ fontSize={12} color={colors.textSecondary}>{u.dist(targetDist)}</M_>
                     <M_ fontSize={10} fontWeight="700" color={distOk ? colors.cyan : colors.orange}>
                       {distPct >= 0 ? '+' : ''}{distPct}%
                     </M_>
@@ -424,11 +437,11 @@ export default function ActivityDetailScreen() {
                     <B fontSize={11} color={colors.textTertiary}>Pace · Zone {matchedWorkout.target_pace_zone}</B>
                     <XStack alignItems="baseline" gap={4}>
                       <M_ fontSize={15} fontWeight="800" color={paceInZone ? colors.cyan : colors.orange}>
-                        {formatPace(pace)}
+                        {u.pace(pace)}
                       </M_>
                       <B fontSize={10} color={colors.textTertiary}>target</B>
                       <M_ fontSize={11} color={colors.textSecondary}>
-                        {formatPace(zone.min)}-{formatPace(zone.max)}
+                        {u.pace(zone.min)}-{u.pace(zone.max)}
                       </M_>
                     </XStack>
                   </XStack>
@@ -464,7 +477,7 @@ export default function ActivityDetailScreen() {
         const stats: { icon: string; iconColor: string; value: string; unit: string; label: string; isHR?: boolean }[] = [];
         if (metric.avg_hr != null) stats.push({ icon: 'heart-pulse', iconColor: colors.orange, value: `${Math.round(metric.avg_hr)}`, unit: 'bpm', label: 'Avg HR', isHR: true });
         if (metric.max_hr != null) stats.push({ icon: 'heart-pulse', iconColor: colors.orange, value: `${Math.round(metric.max_hr)}`, unit: 'bpm', label: 'Max HR', isHR: true });
-        if (detail?.elevation_gain_ft != null) stats.push({ icon: 'trending-up', iconColor: colors.cyan, value: `${Math.round(detail.elevation_gain_ft)}`, unit: 'ft', label: 'Elevation' });
+        if (detail?.elevation_gain_ft != null) stats.push({ icon: 'trending-up', iconColor: colors.cyan, value: `${Math.round(u.rawElev(detail.elevation_gain_ft))}`, unit: u.elevLabel, label: 'Elevation' });
         if (detail?.calories != null) stats.push({ icon: 'fire', iconColor: colors.cyan, value: `${detail.calories}`, unit: '', label: 'Calories' });
         if (detail?.cadence_avg != null) stats.push({ icon: 'metronome', iconColor: colors.cyan, value: `${Math.round(detail.cadence_avg * 2)}`, unit: 'spm', label: 'Cadence' });
         if (detail?.moving_time_sec != null) stats.push({ icon: 'timer-outline', iconColor: colors.cyan, value: formatTime(detail.moving_time_sec), unit: '', label: 'Moving' });
@@ -505,7 +518,7 @@ export default function ActivityDetailScreen() {
                 {shoeData && (
                   <XStack alignItems="center" gap={6} marginTop={2}>
                     <M_ fontSize={11} color={shoeData.totalMiles > shoeData.maxMiles * 0.8 ? colors.orange : colors.textTertiary}>
-                      {Math.round(shoeData.totalMiles)} mi
+                      {u.dist(shoeData.totalMiles, 0)}
                     </M_>
                     <View flex={1} height={3} borderRadius={1.5} backgroundColor={colors.surfaceHover} maxWidth={80}>
                       <View height={3} borderRadius={1.5}
@@ -616,7 +629,7 @@ export default function ActivityDetailScreen() {
                   <MaterialCommunityIcons name="terrain" size={14} color={colors.textTertiary} />
                   <B color={colors.textTertiary} fontSize={10}>GAP:</B>
                   <M_ color={colors.cyan} fontSize={12} fontWeight="700">
-                    {formatPace(Math.round(1609.344 / garminActivity.grade_adjusted_speed))}/mi
+                    {u.pace(Math.round(1609.344 / garminActivity.grade_adjusted_speed))}{u.paceSuffix}
                   </M_>
                 </XStack>
               )}
@@ -700,7 +713,7 @@ export default function ActivityDetailScreen() {
                   borderWidth: 0.5, borderColor: colors.border,
                 }}>
                   <XStack alignItems="center" gap={6}>
-                    <M_ color={colors.textPrimary} fontSize={14} fontWeight="800">{formatPace(Math.round(paces[paceScrubIdx]))}</M_>
+                    <M_ color={colors.textPrimary} fontSize={14} fontWeight="800">{u.pace(Math.round(paces[paceScrubIdx]))}</M_>
                     <B color={colors.textTertiary} fontSize={10}>Mile {paceScrubIdx + 1}</B>
                     {splits[paceScrubIdx].averageHeartrate && (
                       <M_ color={colors.orange} fontSize={11}>{Math.round(splits[paceScrubIdx].averageHeartrate!)} bpm</M_>
@@ -762,7 +775,7 @@ export default function ActivityDetailScreen() {
                 {[yMin + yRange * 0.2, yMin + yRange * 0.5, yMin + yRange * 0.8].map((p, i) => (
                   <SvgText key={i} x={padL - 4} y={padT + drawH - ((p - yMin) / yRange) * drawH + 3}
                     fontSize={9} fill={colors.textTertiary} textAnchor="end" fontFamily="JetBrainsMono_400Regular">
-                    {formatPace(Math.round(p))}
+                    {u.pace(Math.round(p))}
                   </SvgText>
                 ))}
               </Svg>
@@ -943,7 +956,7 @@ export default function ActivityDetailScreen() {
                   backgroundColor: colors.surfaceHover, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4,
                   borderWidth: 0.5, borderColor: colors.border,
                 }}>
-                  <M_ color={colors.cyan} fontSize={13} fontWeight="800">{Math.round(sampled[elevScrubIdx])} ft</M_>
+                  <M_ color={colors.cyan} fontSize={13} fontWeight="800">{u.elev(sampled[elevScrubIdx])}</M_>
                 </View>
               )}
 
@@ -970,7 +983,7 @@ export default function ActivityDetailScreen() {
               <XStack marginTop={4} gap={12} justifyContent="center">
                 <XStack alignItems="center" gap={3}>
                   <MaterialCommunityIcons name="arrow-up" size={12} color={colors.orange} />
-                  <M_ color={colors.textSecondary} fontSize={11} fontWeight="600">{Math.round(detail.elevation_gain_ft)} ft</M_>
+                  <M_ color={colors.textSecondary} fontSize={11} fontWeight="600">{u.elev(detail.elevation_gain_ft)}</M_>
                 </XStack>
               </XStack>
             </View>
@@ -1072,7 +1085,7 @@ export default function ActivityDetailScreen() {
                   borderBottomWidth={0.5} borderBottomColor={colors.border} backgroundColor={rowBg}>
                   <M_ fontSize={12} color={colors.textTertiary} width={36}>{s.split || i + 1}</M_>
                   <M_ fontSize={13} color={inEasy ? colors.textPrimary : colors.orange} fontWeight="600" width={56}>
-                    {sPace > 0 ? formatPace(sPace) : '\u2014'}
+                    {sPace > 0 ? u.pace(sPace) : '\u2014'}
                   </M_>
                   <M_ fontSize={12} color={s.averageHeartrate ? colors.orange : colors.textTertiary} width={44}>
                     {s.averageHeartrate ? Math.round(s.averageHeartrate) : '\u2014'}
@@ -1106,9 +1119,9 @@ export default function ActivityDetailScreen() {
                 return (
                   <XStack key={i} alignItems="center" paddingVertical={8} paddingHorizontal={12} borderBottomWidth={0.5} borderBottomColor={colors.border}>
                     <M_ fontSize={12} color={colors.textTertiary} width={50}>{lap.name || `Lap ${lap.lapIndex}`}</M_>
-                    <M_ fontSize={12} color={colors.textSecondary} width={50}>{dist} mi</M_>
+                    <M_ fontSize={12} color={colors.textSecondary} width={50}>{u.dist(parseFloat(dist))}</M_>
                     <M_ fontSize={12} color={colors.textSecondary} width={55}>{formatTime(lap.movingTime)}</M_>
-                    <M_ fontSize={13} color={colors.cyan} fontWeight="600" width={50}>{lPace > 0 ? formatPace(lPace) : '\u2014'}</M_>
+                    <M_ fontSize={13} color={colors.cyan} fontWeight="600" width={50}>{lPace > 0 ? u.pace(lPace) : '\u2014'}</M_>
                     <M_ fontSize={12} color={lap.averageHeartrate ? colors.orange : colors.textTertiary} flex={1} textAlign="right">
                       {lap.averageHeartrate ? `${Math.round(lap.averageHeartrate)} bpm` : ''}
                     </M_>
@@ -1129,25 +1142,13 @@ export default function ActivityDetailScreen() {
               const isPR = e.prRank === 1;
               return (
                 <XStack key={i} alignItems="center" paddingVertical={5}
-                  borderLeftWidth={isPR ? 2 : 0} borderLeftColor={colors.cyan}
+                  borderLeftWidth={isPR ? 2 : 0} borderLeftColor={isPR ? colors.cyan : 'transparent'}
                   paddingLeft={isPR ? 8 : 0} marginLeft={isPR ? -4 : 0}>
                   <B fontSize={13} color={colors.textSecondary} flex={1}>{e.name}</B>
-                  <M_ fontSize={14} color={colors.cyan} fontWeight="700" marginRight={isPR ? 8 : 0}>{formatTime(e.movingTime)}</M_>
-                  {isPR && (
-                    <View paddingHorizontal={6} paddingVertical={2} borderRadius={4} backgroundColor={colors.cyanGhost} borderWidth={0.5} borderColor={colors.cyanDim}>
-                      <H fontSize={9} color={colors.cyan} letterSpacing={1}>PR</H>
-                    </View>
-                  )}
-                  {e.prRank === 2 && (
-                    <View paddingHorizontal={5} paddingVertical={2} borderRadius={4} backgroundColor={colors.surfaceHover}>
-                      <H fontSize={9} color={colors.textTertiary} letterSpacing={1}>2nd</H>
-                    </View>
-                  )}
-                  {e.prRank === 3 && (
-                    <View paddingHorizontal={5} paddingVertical={2} borderRadius={4} backgroundColor={colors.surfaceHover}>
-                      <H fontSize={9} color={colors.textTertiary} letterSpacing={1}>3rd</H>
-                    </View>
-                  )}
+                  <M_ fontSize={14} color={isPR ? colors.cyan : colors.textPrimary} fontWeight="700" marginRight={e.prRank && e.prRank <= 3 ? 8 : 0}>
+                    {formatPRTime(e.movingTime)}
+                  </M_>
+                  {e.prRank && e.prRank <= 3 && <PRBadge rank={e.prRank} />}
                 </XStack>
               );
             })}
@@ -1171,7 +1172,7 @@ export default function ActivityDetailScreen() {
                   {seg.komRank != null && seg.komRank <= 10 && <View paddingHorizontal={5} paddingVertical={2} borderRadius={4} backgroundColor={'#FFD70022'}><H fontSize={9} color="#FFD700" letterSpacing={1}>KOM #{seg.komRank}</H></View>}
                 </XStack>
                 <M_ fontSize={12} color={colors.textSecondary} marginTop={3}>
-                  {dist} mi · {formatTime(seg.movingTime)}{sPace > 0 ? ` · ${formatPace(sPace)}/mi` : ''}{seg.averageHeartrate ? ` · ${Math.round(seg.averageHeartrate)} bpm` : ''}
+                  {u.dist(parseFloat(dist))} · {formatTime(seg.movingTime)}{sPace > 0 ? ` · ${u.pace(sPace)}${u.paceSuffix}` : ''}{seg.averageHeartrate ? ` · ${Math.round(seg.averageHeartrate)} bpm` : ''}
                 </M_>
               </YStack>
             );

@@ -15,6 +15,10 @@ import { GradientText } from '../src/theme/GradientText';
 import { GradientButton } from '../src/theme/GradientButton';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { RouteMap } from '../src/components/RouteMap';
+import { formatPRTime } from '../src/utils/personalRecords';
+import { GradientBorder } from '../src/theme/GradientBorder';
+import { PRBadge } from '../src/components/PRBadge';
+import { useUnits } from '../src/hooks/useUnits';
 
 const H = (props: any) => <Text fontFamily="$heading" {...props} />;
 const B = (props: any) => <Text fontFamily="$body" {...props} />;
@@ -23,6 +27,7 @@ const M = (props: any) => <Text fontFamily="$mono" {...props} />;
 const { width: SCREEN_W } = Dimensions.get('window');
 
 export default function PostRunModal() {
+  const u = useUnits();
   const router = useRouter();
   const summary = useAppStore(s => s.pendingPostRunSummary);
   const postRunAnalysis = useAppStore(s => s.postRunAnalysis);
@@ -96,7 +101,7 @@ export default function PostRunModal() {
   }
 
   const distance = metric.distance_miles;
-  const pace = metric.avg_pace_sec_per_mile ? formatPace(metric.avg_pace_sec_per_mile) : '--';
+  const pace = metric.avg_pace_sec_per_mile ? u.pace(metric.avg_pace_sec_per_mile) : '--';
   const duration = metric.duration_minutes;
   const durationStr = duration ? `${Math.floor(duration)}:${String(Math.round((duration % 1) * 60)).padStart(2, '0')}` : '--';
   const hr = metric.avg_hr;
@@ -105,18 +110,28 @@ export default function PostRunModal() {
   const targetDist = workout?.target_distance_miles;
 
   return (
-    <RNScrollView style={{ flex: 1, backgroundColor: colors.background }} contentContainerStyle={{ paddingBottom: 60 }}>
+    <View style={{ flex: 1, backgroundColor: colors.background, borderTopWidth: 0.5, borderTopColor: colors.border }}>
+    {/* Drag handle */}
+    <YStack alignItems="center" paddingTop={10} paddingBottom={6}>
+      <View width={36} height={4} borderRadius={2} backgroundColor={colors.textTertiary} opacity={0.5} />
+    </YStack>
+    {/* Dismiss button */}
+    <Pressable onPress={handleDismiss} hitSlop={12}
+      style={{ position: 'absolute', top: 16, right: 16, zIndex: 10, width: 30, height: 30, borderRadius: 15, backgroundColor: colors.surfaceHover, alignItems: 'center', justifyContent: 'center' }}>
+      <MaterialCommunityIcons name="close" size={16} color={colors.textSecondary} />
+    </Pressable>
+    <RNScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 60 }}>
 
       {/* Section 1: Hero Stats */}
-      <YStack alignItems="center" paddingTop={60} paddingBottom={32} paddingHorizontal={24}>
+      <YStack alignItems="center" paddingTop={40} paddingBottom={32} paddingHorizontal={24}>
         <MaterialCommunityIcons name="check-circle" size={48} color={colors.cyan} />
         <H color={colors.cyan} fontSize={16} letterSpacing={2} marginTop={12}>RUN COMPLETE</H>
 
         {/* Primary stats row */}
         <XStack marginTop={24} gap={24} justifyContent="center">
           <YStack alignItems="center">
-            <GradientText text={distance.toFixed(1)} style={{ fontSize: 36, fontWeight: '800' }} />
-            <B color={colors.textSecondary} fontSize={11} marginTop={2}>miles</B>
+            <GradientText text={String(u.rawDist(distance).toFixed(1))} style={{ fontSize: 36, fontWeight: '800' }} />
+            <B color={colors.textSecondary} fontSize={11} marginTop={2}>{u.distLabel}</B>
           </YStack>
           <YStack alignItems="center">
             <GradientText text={pace} style={{ fontSize: 36, fontWeight: '800' }} />
@@ -144,7 +159,7 @@ export default function PostRunModal() {
           ) : null}
           {elevation ? (
             <YStack alignItems="center">
-              <M color={colors.textPrimary} fontSize={22} fontWeight="700">+{Math.round(elevation)} ft</M>
+              <M color={colors.textPrimary} fontSize={22} fontWeight="700">+{u.elev(elevation)}</M>
               <B color={colors.textTertiary} fontSize={10} marginTop={2}>elevation</B>
             </YStack>
           ) : null}
@@ -177,13 +192,13 @@ export default function PostRunModal() {
           <XStack justifyContent="space-between">
             <YStack flex={1}>
               <B color={colors.textTertiary} fontSize={11} marginBottom={4}>PLANNED</B>
-              <M color={colors.textSecondary} fontSize={16} fontWeight="700">{targetDist.toFixed(1)} mi</M>
+              <M color={colors.textSecondary} fontSize={16} fontWeight="700">{u.dist(targetDist)}</M>
               <B color={colors.textTertiary} fontSize={11} marginTop={2}>{workout.title}</B>
             </YStack>
             <YStack width={1} backgroundColor={colors.border} marginHorizontal={12} />
             <YStack flex={1} alignItems="flex-end">
               <B color={colors.textTertiary} fontSize={11} marginBottom={4}>ACTUAL</B>
-              <M color={colors.textPrimary} fontSize={16} fontWeight="700">{distance.toFixed(1)} mi</M>
+              <M color={colors.textPrimary} fontSize={16} fontWeight="700">{u.dist(distance)}</M>
               <B color={Math.abs(distance - targetDist) <= 0.3 ? colors.cyan : colors.orange} fontSize={11} marginTop={2}>
                 {distance > targetDist ? `+${((distance / targetDist - 1) * 100).toFixed(0)}%` : distance < targetDist ? `${((distance / targetDist - 1) * 100).toFixed(0)}%` : 'on target'}
               </B>
@@ -202,7 +217,8 @@ export default function PostRunModal() {
             const movTime = split.movingTime ?? split.moving_time ?? 0;
             const dist = split.distance ?? 0;
             const avgHr = split.averageHeartrate ?? split.average_heartrate ?? null;
-            const splitPace = avgSpeed > 0 ? formatPace(1609.344 / avgSpeed) : movTime && dist ? formatPace((movTime / dist) * 1609.344) : '--';
+            const secPerMile = avgSpeed > 0 ? Math.round(1609.344 / avgSpeed) : movTime && dist ? Math.round((movTime / dist) * 1609.344) : 0;
+            const splitPace = secPerMile > 0 ? u.pace(secPerMile) : '--';
             const splitDist = dist ? (dist / 1609.344).toFixed(1) : '--';
             return (
               <XStack key={i} paddingVertical={8} borderBottomWidth={i < splits.length - 1 ? 0.5 : 0} borderBottomColor={colors.border} alignItems="center">
@@ -221,24 +237,41 @@ export default function PostRunModal() {
       {metric.best_efforts_json && (() => {
         try {
           const efforts = JSON.parse(metric.best_efforts_json);
-          const prs = efforts.filter((e: any) => (e.prRank ?? e.pr_rank) === 1);
+          const prs = efforts.filter((e: any) => e.prRank === 1);
           if (prs.length === 0) return null;
+
+          // Find previous bests from store
+          const allPRs = useAppStore.getState().personalRecords;
+
           return (
-            <YStack backgroundColor={colors.surface} borderRadius={14} marginHorizontal={16} padding={16} marginBottom={12}>
-              <H color={colors.cyan} fontSize={12} letterSpacing={1.5} marginBottom={12}>NEW PERSONAL RECORDS</H>
-              {prs.map((pr: any, i: number) => {
-                const elapsed = pr.elapsedTime ?? pr.elapsed_time ?? 0;
-                const mins = Math.floor(elapsed / 60);
-                const secs = elapsed % 60;
-                return (
-                  <XStack key={i} alignItems="center" paddingVertical={6} gap={8}>
-                    <MaterialCommunityIcons name="trophy" size={16} color={colors.cyan} />
-                    <B color={colors.textPrimary} fontSize={14} fontWeight="600" flex={1}>{pr.name}</B>
-                    <M color={colors.cyan} fontSize={15} fontWeight="800">{mins}:{String(secs).padStart(2, '0')}</M>
-                  </XStack>
-                );
-              })}
-            </YStack>
+            <GradientBorder side="all" borderRadius={14} borderWidth={1.5} style={{ marginHorizontal: 16, marginBottom: 12 }}>
+              <YStack backgroundColor={colors.surface} borderRadius={14} padding={16}>
+                <XStack alignItems="center" gap={8} marginBottom={12}>
+                  <MaterialCommunityIcons name="trophy" size={18} color={colors.cyan} />
+                  <H color={colors.cyan} fontSize={12} letterSpacing={1.5}>NEW PERSONAL RECORDS</H>
+                </XStack>
+                {prs.map((pr: any, i: number) => {
+                  const time = pr.movingTime ?? pr.elapsedTime ?? 0;
+                  const prev = allPRs.find((p: any) => p.distance === pr.name && p.timeSeconds > time);
+                  return (
+                    <YStack key={i} paddingVertical={6}>
+                      <XStack alignItems="center" gap={8}>
+                        <PRBadge rank={1} />
+                        <B color={colors.textPrimary} fontSize={14} fontWeight="600" flex={1}>{pr.name}</B>
+                        <M color={colors.cyan} fontSize={17} fontWeight="800">{formatPRTime(time)}</M>
+                      </XStack>
+                      {prev ? (
+                        <B color={colors.textTertiary} fontSize={11} marginTop={2} marginLeft={42}>
+                          Previous: {formatPRTime(prev.timeSeconds)}{prev.date ? ` (${new Date(prev.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })})` : ''}
+                        </B>
+                      ) : (
+                        <B color={colors.cyan} fontSize={11} marginTop={2} marginLeft={42}>First recorded {pr.name}!</B>
+                      )}
+                    </YStack>
+                  );
+                })}
+              </YStack>
+            </GradientBorder>
           );
         } catch { return null; }
       })()}
@@ -277,5 +310,6 @@ export default function PostRunModal() {
         )}
       </YStack>
     </RNScrollView>
+    </View>
   );
 }

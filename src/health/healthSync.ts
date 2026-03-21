@@ -12,7 +12,49 @@ import { getStepCount, getStepHistory } from "./steps";
 import { getDatabase } from "../db/database";
 import { HealthSnapshot } from "../types";
 
-const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
+// Morning window: 10-minute cache TTL (sleep data likely syncing from Garmin)
+// Rest of day: 30-minute cache TTL
+function getCacheTTL(): number {
+  const hour = new Date().getHours();
+  const isMorning = hour >= 6 && hour < 10;
+  return isMorning ? 10 * 60 * 1000 : 30 * 60 * 1000;
+}
+
+/**
+ * Compare two snapshots and detect significant changes that should
+ * trigger a recovery score recalculation.
+ */
+export function hasSignificantChanges(
+  oldSnap: HealthSnapshot | null,
+  newSnap: HealthSnapshot,
+): { changed: boolean; reason: string } {
+  if (!oldSnap) return { changed: true, reason: 'first snapshot' };
+
+  // Sleep appeared (was null → now has value)
+  if (oldSnap.sleepHours === null && newSnap.sleepHours !== null) {
+    return { changed: true, reason: 'sleep data arrived' };
+  }
+
+  // Sleep changed significantly (>30 min)
+  if (oldSnap.sleepHours !== null && newSnap.sleepHours !== null &&
+      Math.abs(oldSnap.sleepHours - newSnap.sleepHours) > 0.5) {
+    return { changed: true, reason: 'sleep changed significantly' };
+  }
+
+  // RHR changed (>2 bpm)
+  if (oldSnap.restingHR !== null && newSnap.restingHR !== null &&
+      Math.abs(oldSnap.restingHR - newSnap.restingHR) > 2) {
+    return { changed: true, reason: 'resting HR changed' };
+  }
+
+  // HRV changed (>10 ms)
+  if (oldSnap.hrvRMSSD !== null && newSnap.hrvRMSSD !== null &&
+      Math.abs(oldSnap.hrvRMSSD - newSnap.hrvRMSSD) > 10) {
+    return { changed: true, reason: 'HRV changed' };
+  }
+
+  return { changed: false, reason: '' };
+}
 
 export async function syncHealthData(forceRefresh: boolean = false): Promise<HealthSnapshot | null> {
   // Guard 1: HealthKit available?
@@ -160,7 +202,7 @@ function getCachedSnapshot(): HealthSnapshot | null {
 
     // Check TTL
     const cachedAt = new Date(row.cached_at).getTime();
-    if (Date.now() - cachedAt > CACHE_TTL_MS) return null;
+    if (Date.now() - cachedAt > getCacheTTL()) return null;
 
     return {
       date: row.date,

@@ -255,8 +255,9 @@ function buildUserMessage(
         baselines.push(`Avg resting HR: ${avg}bpm`);
       }
       if (snap.sleepTrend.length >= 3) {
-        const avgSleep = Math.round(snap.sleepTrend.reduce((s: number, n: any) => s + n.totalMinutes, 0) / snap.sleepTrend.length / 60 * 10) / 10;
-        baselines.push(`Avg sleep: ${avgSleep}hrs`);
+        const avgSleepMin = Math.round(snap.sleepTrend.reduce((s: number, n: any) => s + n.totalMinutes, 0) / snap.sleepTrend.length);
+        const { formatSleepDuration } = require('../utils/formatTime');
+        baselines.push(`Avg sleep: ${formatSleepDuration(avgSleepMin)}`);
       }
       if (baselines.length > 0) {
         parts.push(`RECOVERY BASELINE: ${baselines.join(', ')}`);

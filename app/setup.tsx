@@ -19,6 +19,8 @@ import { GradientText } from '../src/theme/GradientText';
 import { GradientButton } from '../src/theme/GradientButton';
 import { StravaIcon } from '../src/components/icons/StravaIcon';
 import { Image } from 'react-native';
+import { useUnits } from '../src/hooks/useUnits';
+import { distanceLabel, weightLabel } from '../src/utils/units';
 
 const H = (props: any) => <Text fontFamily="$heading" {...props} />;
 const B = (props: any) => <Text fontFamily="$body" {...props} />;
@@ -89,6 +91,7 @@ const ChipSelect = ({ options, selected, onToggle }: { options: readonly string[
 
 export default function SetupScreen() {
   const router = useRouter();
+  const u = useUnits();
   const [step, setStep] = useState(1);
 
   // All state (unchanged from previous version)
@@ -128,12 +131,14 @@ export default function SetupScreen() {
 
   const handleConnectStrava = useCallback(async () => {
     setStravaImporting(true);setStravaImportStatus('Connecting...');
-    try{const{connectStrava}=require('../src/strava/auth');const t=await connectStrava();if(!t){setStravaImporting(false);return;} setStravaConnected(true);const{importStravaProfile}=require('../src/strava/profileImport');const d:StravaProfileData=await importStravaProfile((s:string)=>setStravaImportStatus(s));setStravaData(d);const f=new Set<string>();if(d.name){setName(d.name);f.add('name');}if(d.gender){setGender(d.gender);f.add('gender');}if(d.weightKg){setWeightKg(String(Math.round(d.weightKg)));f.add('weight');}if(d.currentWeeklyMiles){setWeeklyMileage(String(d.currentWeeklyMiles));f.add('weeklyMileage');}if(d.longestRecentRun){setLongestRun(String(d.longestRecentRun));f.add('longestRun');}if(d.experienceLevel){setExperienceLevel(d.experienceLevel);f.add('experienceLevel');}if(d.bestEffortDistance){setRaceDistance(d.bestEffortDistance);f.add('raceDistance');}if(d.bestEffortTime){setRaceTime(d.bestEffortTime);f.add('raceTime');}if(d.calculatedVDOT){setCalculatedVDOT(d.calculatedVDOT);f.add('vdot');}setStravaFilledFields(f);setStravaImporting(false);setStep(3);}catch(e:any){Alert.alert('Error',e.message||'Failed');setStravaImporting(false);}
+    try{const{connectStrava}=require('../src/strava/auth');const t=await connectStrava();if(!t){setStravaImporting(false);return;} setStravaConnected(true);const{importStravaProfile}=require('../src/strava/profileImport');const d:StravaProfileData=await importStravaProfile((s:string)=>setStravaImportStatus(s));setStravaData(d);const f=new Set<string>();if(d.name){setName(d.name);f.add('name');}if(d.gender){setGender(d.gender);f.add('gender');}if(d.weightKg){setWeightKg(String(Math.round(d.weightKg)));f.add('weight');}if(d.currentWeeklyMiles){setWeeklyMileage(String(u.rawDist(d.currentWeeklyMiles).toFixed(1)));f.add('weeklyMileage');}if(d.longestRecentRun){setLongestRun(String(u.rawDist(d.longestRecentRun).toFixed(1)));f.add('longestRun');}if(d.experienceLevel){setExperienceLevel(d.experienceLevel);f.add('experienceLevel');}if(d.bestEffortDistance){setRaceDistance(d.bestEffortDistance);f.add('raceDistance');}if(d.bestEffortTime){setRaceTime(d.bestEffortTime);f.add('raceTime');}if(d.calculatedVDOT){setCalculatedVDOT(d.calculatedVDOT);f.add('vdot');}setStravaFilledFields(f);setStravaImporting(false);setStep(3);}catch(e:any){Alert.alert('Error',e.message||'Failed');setStravaImporting(false);}
   }, []);
 
   const saveProfileAndGenerate = useCallback(() => {
     if(!calculatedVDOT)return;const gm:Record<GoalType,string>={'Just Finish':'finish','Time Goal':'time_goal','BQ':'bq','PR':'pr'};const cm:Record<CourseProfile,string>={'Flat':'flat','Rolling':'rolling','Hilly':'hilly','Unknown':'unknown'};const lm:Record<ExperienceLevel,string>={'Beginner':'beginner','Intermediate':'intermediate','Advanced':'advanced'};const gn:Record<Gender,string>={'Male':'male','Female':'female'};let ts:number|null=null;if((goalType==='Time Goal'||goalType==='BQ')&&targetFinishTime.trim())ts=parseRaceTime(targetFinishTime.trim());
-    useAppStore.getState().saveProfile({name:name.trim()||null,age:Number(age),gender:gn[gender] as any,weight_kg:weightKg?Number(weightKg):null,height_cm:heightCm?Number(heightCm):null,vdot_score:calculatedVDOT,max_hr:null,rest_hr:null,current_weekly_miles:Number(weeklyMileage),longest_recent_run:Number(longestRun),experience_level:lm[experienceLevel] as any,race_date:raceDate.trim(),race_name:raceName.trim()||null,race_course_profile:cm[courseProfile] as any,race_goal_type:gm[goalType] as any,target_finish_time_sec:ts,injury_history:injuries.filter(i=>i!=='None'),known_weaknesses:weaknesses,scheduling_notes:schedulingNotes.trim()||null,available_days:availableDays,long_run_day:longRunDay,weight_source:'manual',weight_updated_at:new Date().toISOString().split('T')[0],vdot_updated_at:new Date().toISOString().split('T')[0],vdot_source:'manual',vdot_confidence:'moderate',avatar_base64:null});setStep(7);
+    const { toMiles } = require('../src/utils/units');
+    const wm = Number(weeklyMileage); const lr = Number(longestRun);
+    useAppStore.getState().saveProfile({name:name.trim()||null,age:Number(age),gender:gn[gender] as any,weight_kg:weightKg?Number(weightKg):null,height_cm:heightCm?Number(heightCm):null,vdot_score:calculatedVDOT,max_hr:null,rest_hr:null,current_weekly_miles:toMiles(wm, u.units),longest_recent_run:toMiles(lr, u.units),experience_level:lm[experienceLevel] as any,race_date:raceDate.trim(),race_name:raceName.trim()||null,race_course_profile:cm[courseProfile] as any,race_goal_type:gm[goalType] as any,target_finish_time_sec:ts,injury_history:injuries.filter(i=>i!=='None'),known_weaknesses:weaknesses,scheduling_notes:schedulingNotes.trim()||null,available_days:availableDays,long_run_day:longRunDay,weight_source:'manual',weight_updated_at:new Date().toISOString().split('T')[0],vdot_updated_at:new Date().toISOString().split('T')[0],vdot_source:'manual',vdot_confidence:'moderate',avatar_base64:null});setStep(7);
   }, [calculatedVDOT,name,age,gender,weightKg,weeklyMileage,longestRun,experienceLevel,raceDate,raceName,courseProfile,goalType,targetFinishTime,availableDays,longRunDay,injuries,weaknesses,schedulingNotes]);
 
   const generatePlanRef = useRef(false);
@@ -275,7 +280,7 @@ export default function SetupScreen() {
             <Input height={44} backgroundColor={colors.surfaceHover} borderColor={colors.border} borderRadius={12} color={colors.textPrimary} fontSize={16} fontFamily="$mono" paddingHorizontal={14} placeholder="175" placeholderTextColor="$textTertiary" keyboardType="number-pad" value={heightCm} onChangeText={setHeightCm} />
           </YStack>
           <YStack flex={1}>
-            <XStack alignItems="center" gap={6} marginBottom={4}><MaterialCommunityIcons name="scale-bathroom" size={14} color={colors.textTertiary} /><B color={colors.textTertiary} fontSize={12}>Weight (kg)</B></XStack>
+            <XStack alignItems="center" gap={6} marginBottom={4}><MaterialCommunityIcons name="scale-bathroom" size={14} color={colors.textTertiary} /><B color={colors.textTertiary} fontSize={12}>Weight ({weightLabel(u.units)})</B></XStack>
             <Input height={44} backgroundColor={colors.surfaceHover} borderColor={colors.border} borderRadius={12} color={colors.textPrimary} fontSize={16} fontFamily="$mono" paddingHorizontal={14} placeholder="70" placeholderTextColor="$textTertiary" keyboardType="decimal-pad" value={weightKg} onChangeText={setWeightKg} />
           </YStack>
         </XStack>
@@ -301,11 +306,11 @@ export default function SetupScreen() {
         )}
         <XStack gap={10}>
           <YStack flex={1}>
-            <XStack alignItems="center" gap={6} marginBottom={4}><MaterialCommunityIcons name="road-variant" size={14} color={colors.textTertiary} /><B color={colors.textTertiary} fontSize={12}>Weekly mi <B color={colors.orange} fontSize={12}>*</B>{stravaFilledFields.has('weeklyMileage')?' · Strava':''}</B></XStack>
+            <XStack alignItems="center" gap={6} marginBottom={4}><MaterialCommunityIcons name="road-variant" size={14} color={colors.textTertiary} /><B color={colors.textTertiary} fontSize={12}>Weekly {u.distLabel} <B color={colors.orange} fontSize={12}>*</B>{stravaFilledFields.has('weeklyMileage')?' · Strava':''}</B></XStack>
             <Input height={44} backgroundColor={colors.surfaceHover} borderColor={colors.border} borderRadius={12} color={colors.textPrimary} fontSize={16} fontFamily="$mono" paddingHorizontal={14} placeholder="25" placeholderTextColor="$textTertiary" keyboardType="decimal-pad" value={weeklyMileage} onChangeText={setWeeklyMileage} />
           </YStack>
           <YStack flex={1}>
-            <XStack alignItems="center" gap={6} marginBottom={4}><MaterialCommunityIcons name="run-fast" size={14} color={colors.textTertiary} /><B color={colors.textTertiary} fontSize={12}>Longest run <B color={colors.orange} fontSize={12}>*</B>{stravaFilledFields.has('longestRun')?' · Strava':''}</B></XStack>
+            <XStack alignItems="center" gap={6} marginBottom={4}><MaterialCommunityIcons name="run-fast" size={14} color={colors.textTertiary} /><B color={colors.textTertiary} fontSize={12}>Longest run ({u.distLabel}) <B color={colors.orange} fontSize={12}>*</B>{stravaFilledFields.has('longestRun')?' · Strava':''}</B></XStack>
             <Input height={44} backgroundColor={colors.surfaceHover} borderColor={colors.border} borderRadius={12} color={colors.textPrimary} fontSize={16} fontFamily="$mono" paddingHorizontal={14} placeholder="10" placeholderTextColor="$textTertiary" keyboardType="decimal-pad" value={longestRun} onChangeText={setLongestRun} />
           </YStack>
         </XStack>
@@ -313,9 +318,9 @@ export default function SetupScreen() {
           <XStack alignItems="center" gap={6} marginBottom={8}><MaterialCommunityIcons name="signal-cellular-outline" size={14} color={colors.textTertiary} /><B color={colors.textTertiary} fontSize={12}>{stravaFilledFields.has('experienceLevel')?'Experience · Strava':'Experience'}</B></XStack>
           <YStack gap={10}>
             {([
-              { level: 'Beginner' as ExperienceLevel, icon: 'run', desc: 'New to running or run occasionally. Less than 1 year consistent. Under 15 mi/week.' },
-              { level: 'Intermediate' as ExperienceLevel, icon: 'run-fast', desc: 'Run regularly for 1-3 years. 15-30 mi/week. Completed a 10K or half marathon.' },
-              { level: 'Advanced' as ExperienceLevel, icon: 'trophy', desc: 'Run consistently for 3+ years. 30+ mi/week. Completed a marathon. Understands pace zones.' },
+              { level: 'Beginner' as ExperienceLevel, icon: 'run', desc: `New to running or run occasionally. Less than 1 year consistent. Under ${u.units === 'metric' ? '25 km' : '15 mi'}/week.` },
+              { level: 'Intermediate' as ExperienceLevel, icon: 'run-fast', desc: `Run regularly for 1-3 years. ${u.units === 'metric' ? '25-50 km' : '15-30 mi'}/week. Completed a 10K or half marathon.` },
+              { level: 'Advanced' as ExperienceLevel, icon: 'trophy', desc: `Run consistently for 3+ years. ${u.units === 'metric' ? '50+ km' : '30+ mi'}/week. Completed a marathon. Understands pace zones.` },
             ]).map(({ level: lvl, icon, desc }) => {
               const active = experienceLevel === lvl;
               return (
@@ -584,7 +589,7 @@ export default function SetupScreen() {
         <YStack backgroundColor="$surface" borderRadius="$5" padding="$5" marginBottom="$4">
           <XStack justifyContent="space-between" alignItems="center" paddingVertical="$1"><B color="$textSecondary" fontSize={15}>Total Weeks</B><M color="$color" fontSize={24} fontWeight="700">{planSummary.totalWeeks}</M></XStack>
           <View height={1} backgroundColor="$border" marginVertical="$3" />
-          <XStack justifyContent="space-between" alignItems="center" paddingVertical="$1"><B color="$textSecondary" fontSize={15}>Peak Volume</B><M color="$color" fontSize={24} fontWeight="700">{planSummary.peakVolume} mi</M></XStack>
+          <XStack justifyContent="space-between" alignItems="center" paddingVertical="$1"><B color="$textSecondary" fontSize={15}>Peak Volume</B><M color="$color" fontSize={24} fontWeight="700">{u.dist(planSummary.peakVolume, 0)}</M></XStack>
         </YStack>
         {planSummary.coachingNotes?<YStack backgroundColor="$surface" borderRadius="$5" padding="$4" marginBottom="$4"><H color="$color" fontSize={16} letterSpacing={1} marginBottom="$2">Coach Notes</H><B color="$textSecondary" fontSize={14} lineHeight={20}>{planSummary.coachingNotes}</B></YStack>:null}
         {planSummary.keyPrinciples.length>0&&<YStack backgroundColor="$surface" borderRadius="$5" padding="$4" marginBottom="$4"><H color="$color" fontSize={16} letterSpacing={1} marginBottom="$2">Key Principles</H>{planSummary.keyPrinciples.map((p,i)=><B key={i} color="$textSecondary" fontSize={14} lineHeight={22} paddingLeft="$1">{'\u2022'} {p}</B>)}</YStack>}

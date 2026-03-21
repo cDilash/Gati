@@ -29,6 +29,11 @@ const QUICK_ACTIONS: { label: string; icon: string; borderColor: string }[] = [
 // ─── Markdown-lite renderer ──────────────────────────────────
 
 function RichText({ text, isUser }: { text: string; isUser: boolean }) {
+  // Defensive: if text is empty or not a string, show fallback
+  if (!text || typeof text !== 'string') {
+    return <B color={colors.textSecondary} fontSize={14} lineHeight={21}>(empty)</B>;
+  }
+
   if (isUser) {
     return <B color={colors.textPrimary} fontSize={14} lineHeight={21}>{text}</B>;
   }
@@ -294,11 +299,26 @@ export default function CoachScreen() {
   const requestPlanAdaptation = useAppStore(s => s.requestPlanAdaptation);
   const userProfile = useAppStore(s => s.userProfile);
 
-  const scrollToBottom = useCallback(() => {
-    if (coachMessages.length > 0) setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
+  // Initial mount: snap to bottom without animation (loading history)
+  const didInitialScroll = useRef(false);
+  useEffect(() => {
+    if (coachMessages.length > 0 && !didInitialScroll.current) {
+      didInitialScroll.current = true;
+      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 150);
+    }
   }, [coachMessages.length]);
 
-  useEffect(() => { scrollToBottom(); }, [coachMessages.length]);
+  // New messages: scroll to bottom only when count increases
+  const prevCountRef = useRef(coachMessages.length);
+  useEffect(() => {
+    if (coachMessages.length > prevCountRef.current) {
+      const jump = coachMessages.length - prevCountRef.current;
+      setTimeout(() => {
+        flatListRef.current?.scrollToEnd({ animated: jump <= 2 });
+      }, 100);
+    }
+    prevCountRef.current = coachMessages.length;
+  }, [coachMessages.length]);
 
   const handleSend = useCallback((text?: string) => {
     const msg = (text ?? inputText).trim();
@@ -317,9 +337,18 @@ export default function CoachScreen() {
     ]);
   }, [requestPlanAdaptation]);
 
-  const renderMessage = useCallback(({ item }: { item: CoachMessage }) => (
-    <MessageBubble message={item} onApplyChange={handleApplyChange} />
-  ), [handleApplyChange]);
+  const renderMessage = useCallback(({ item }: { item: CoachMessage }) => {
+    try {
+      return <MessageBubble message={item} onApplyChange={handleApplyChange} />;
+    } catch (e) {
+      console.error('[CoachScreen] MessageBubble render error:', e, 'message id:', item.id);
+      return (
+        <YStack marginBottom={12} marginLeft={8} marginRight={24}>
+          <B color={colors.error} fontSize={12}>Error rendering message</B>
+        </YStack>
+      );
+    }
+  }, [handleApplyChange]);
 
   if (!userProfile) {
     return (
@@ -365,8 +394,9 @@ export default function CoachScreen() {
           data={coachMessages}
           renderItem={renderMessage}
           keyExtractor={item => item.id}
+          extraData={coachMessages.length}
           contentContainerStyle={{ paddingTop: 12, paddingBottom: 8 }}
-          onContentSizeChange={scrollToBottom}
+          maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
         />
       )}
 

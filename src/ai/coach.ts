@@ -19,6 +19,19 @@ import {
 } from '../types';
 import { formatPace, formatTime, predictMarathonTime } from '../engine/vdot';
 import { formatPaceRange, calculateHRZones } from '../engine/paceZones';
+import { getUnits } from '../hooks/useUnits';
+import {
+  formatDistance,
+  formatWeightKg,
+  formatHeight,
+  formatElevation,
+  formatPaceWithUnit,
+  paceLabel,
+  paceSuffix,
+  distanceLabel,
+  distanceLabelFull,
+  formatVolume,
+} from '../utils/units';
 
 // ─── Types ──────────────────────────────────────────────────
 
@@ -53,12 +66,17 @@ export async function buildCoachSystemPrompt(
   healthSnapshot?: HealthSnapshot | null,
   garminHealth?: import('../types').GarminHealthData | null,
 ): Promise<string> {
+  const units = getUnits();
+  const dLabel = distanceLabel(units);
+  const dLabelFull = distanceLabelFull(units);
+  const pLabel = paceLabel(units);
   const parts: string[] = [];
 
   parts.push(`You are an expert marathon running coach guiding this athlete through their training.
 You follow Jack Daniels' methodology and the 80/20 polarized training approach.
 Be concise, direct, encouraging, and specific. Reference actual data, not generic advice.
-Keep responses to 2-4 paragraphs max unless the athlete asks for detailed analysis.`);
+Keep responses to 2-4 paragraphs max unless the athlete asks for detailed analysis.
+Always use ${dLabelFull} for distances, ${pLabel} for paces, and ${units === 'metric' ? 'kg' : 'lbs'} for weight.`);
   parts.push('');
 
   // Profile
@@ -76,10 +94,10 @@ Keep responses to 2-4 paragraphs max unless the athlete asks for detailed analys
   if (profile.height_cm && profile.weight_kg) {
     const heightM = profile.height_cm / 100;
     const bmi = Math.round((profile.weight_kg / (heightM * heightM)) * 10) / 10;
-    parts.push(`- Height: ${profile.height_cm}cm, Weight: ${profile.weight_kg}kg, BMI: ${bmi}`);
+    parts.push(`- Height: ${formatHeight(profile.height_cm, units)}, Weight: ${formatWeightKg(profile.weight_kg, units)}, BMI: ${bmi}`);
     if (bmi > 30) parts.push(`- NOTE: Elevated BMI — favor time-based long run targets, add extra recovery, be conservative with volume`);
   } else if (profile.weight_kg) {
-    parts.push(`- Weight: ${profile.weight_kg}kg`);
+    parts.push(`- Weight: ${formatWeightKg(profile.weight_kg, units)}`);
   }
   if (profile.max_hr) {
     const source = (profile as any).max_hr_source === 'strava' ? 'observed from Strava' : 'formula estimate';
@@ -110,14 +128,21 @@ Keep responses to 2-4 paragraphs max unless the athlete asks for detailed analys
   parts.push('');
 
   // Pace zones
-  parts.push('PACE ZONES (min/mile):');
-  parts.push(`  E: ${formatPaceRange(paceZones.E)} | M: ${formatPaceRange(paceZones.M)} | T: ${formatPaceRange(paceZones.T)} | I: ${formatPaceRange(paceZones.I)} | R: ${formatPaceRange(paceZones.R)}`);
+  parts.push(`PACE ZONES (${pLabel}):`);
+  if (units === 'metric') {
+    // Convert pace ranges to min/km for display
+    const fmtRange = (range: { min: number; max: number }) =>
+      `${formatPaceWithUnit(range.min, units)}-${formatPaceWithUnit(range.max, units)}`;
+    parts.push(`  E: ${fmtRange(paceZones.E)} | M: ${fmtRange(paceZones.M)} | T: ${fmtRange(paceZones.T)} | I: ${fmtRange(paceZones.I)} | R: ${fmtRange(paceZones.R)}`);
+  } else {
+    parts.push(`  E: ${formatPaceRange(paceZones.E)} | M: ${formatPaceRange(paceZones.M)} | T: ${formatPaceRange(paceZones.T)} | I: ${formatPaceRange(paceZones.I)} | R: ${formatPaceRange(paceZones.R)}`);
+  }
   parts.push('');
 
   // Current week
   if (currentWeek) {
     parts.push(`CURRENT WEEK: ${currentWeek.week_number} of ${weeks.length} — ${currentWeek.phase} phase${currentWeek.is_cutback ? ' (cutback)' : ''}`);
-    parts.push(`Volume: ${currentWeek.actual_volume.toFixed(1)} of ${currentWeek.target_volume}mi completed`);
+    parts.push(`Volume: ${formatDistance(currentWeek.actual_volume, units)} of ${formatDistance(currentWeek.target_volume, units)} completed`);
 
     const scheduled = weekWorkouts.filter(w => w.workout_type !== 'rest');
     for (const w of scheduled) {
@@ -126,7 +151,7 @@ Keep responses to 2-4 paragraphs max unless the athlete asks for detailed analys
         const qualityLabel = w.execution_quality === 'missed_pace' ? ' ⚠️ pace missed' : w.execution_quality === 'exceeded_pace' ? ' ⚠️ too fast' : w.execution_quality === 'wrong_type' ? ' ⚠️ wrong workout' : '';
         status += qualityLabel;
       }
-      parts.push(`  [${status}] ${w.scheduled_date}: ${w.title} — ${w.target_distance_miles}mi`);
+      parts.push(`  [${status}] ${w.scheduled_date}: ${w.title} — ${formatDistance(w.target_distance_miles ?? 0, units)}`);
     }
     parts.push('');
   }
@@ -136,7 +161,7 @@ Keep responses to 2-4 paragraphs max unless the athlete asks for detailed analys
     if (todaysWorkout.workout_type === 'rest') {
       parts.push('TODAY: Rest day');
     } else {
-      parts.push(`TODAY: ${todaysWorkout.title} — ${todaysWorkout.target_distance_miles}mi at ${todaysWorkout.target_pace_zone || todaysWorkout.workout_type} pace`);
+      parts.push(`TODAY: ${todaysWorkout.title} — ${formatDistance(todaysWorkout.target_distance_miles ?? 0, units)} at ${todaysWorkout.target_pace_zone || todaysWorkout.workout_type} pace`);
       parts.push(`  ${todaysWorkout.description}`);
     }
     parts.push('');
@@ -158,6 +183,7 @@ Keep responses to 2-4 paragraphs max unless the athlete asks for detailed analys
     // Fetch Garmin per-activity data for enrichment (5s timeout to prevent hang)
     let garminActivityMap = new Map<string, any>();
     try {
+      console.log('[Coach:prompt] Fetching Garmin activity data from Supabase...');
       const { supabase } = require('../backup/supabase');
       const dates = recentMetrics.map(m => m.date);
       const garminPromise = supabase
@@ -168,24 +194,27 @@ Keep responses to 2-4 paragraphs max unless the athlete asks for detailed analys
         setTimeout(() => reject(new Error('Supabase timeout')), 5000)
       );
       const { data: gActs } = await Promise.race([garminPromise, timeout]) as any;
+      console.log('[Coach:prompt] Garmin activity data:', gActs?.length ?? 0, 'rows');
       if (gActs) for (const ga of gActs) garminActivityMap.set(ga.activity_date, ga);
-    } catch {}
+    } catch (e: any) {
+      console.log('[Coach:prompt] Garmin activity fetch failed:', e?.message || e);
+    }
 
     parts.push('RECENT RUNS (last 7 days):');
     for (let mi = 0; mi < Math.min(recentMetrics.length, 5); mi++) {
       const m = recentMetrics[mi];
-      const pace = m.avg_pace_sec_per_mile ? formatPace(m.avg_pace_sec_per_mile) : '?';
+      const pace = m.avg_pace_sec_per_mile ? formatPaceWithUnit(m.avg_pace_sec_per_mile, units) : '?';
       const hr = m.avg_hr ? ` HR:${m.avg_hr}` : '';
       const rpe = m.perceived_exertion ? ` RPE:${m.perceived_exertion}` : '';
       const gear = m.gear_name ? ` [${m.gear_name}]` : '';
 
       // Enrichments from strava detail
       const detail = m.strava_activity_id ? detailMap.get(m.strava_activity_id) : null;
-      const elev = detail?.elevation_gain_ft ? ` +${Math.round(detail.elevation_gain_ft)}ft` : '';
+      const elev = detail?.elevation_gain_ft ? ` +${formatElevation(detail.elevation_gain_ft, units)}` : '';
       const cadence = detail?.cadence_avg ? ` ${Math.round(detail.cadence_avg * 2)}spm` : '';
       const suffer = detail?.suffer_score ? ` effort:${detail.suffer_score}` : '';
 
-      parts.push(`  ${m.date}: ${m.distance_miles.toFixed(1)}mi @ ${pace}/mi${hr}${rpe}${elev}${cadence}${suffer}${gear}`);
+      parts.push(`  ${m.date}: ${formatDistance(m.distance_miles, units)} @ ${pace}${paceSuffix(units)}${hr}${rpe}${elev}${cadence}${suffer}${gear}`);
 
       // Garmin per-activity enrichment
       const ga = garminActivityMap.get(m.date);
@@ -205,7 +234,7 @@ Keep responses to 2-4 paragraphs max unless the athlete asks for detailed analys
         }
         if (ga.grade_adjusted_speed != null && ga.grade_adjusted_speed > 0) {
           const gapSec = Math.round(1609.344 / ga.grade_adjusted_speed);
-          teParts.push(`GAP ${formatPace(gapSec)}/mi`);
+          teParts.push(`GAP ${formatPaceWithUnit(gapSec, units)}${paceSuffix(units)}`);
         }
         if (teParts.length > 0) {
           parts.push(`    Garmin: ${teParts.join(', ')}`);
@@ -220,12 +249,13 @@ Keep responses to 2-4 paragraphs max unless the athlete asks for detailed analys
             const splits = JSON.parse(splitsSource);
             if (splits.length >= 2) {
               const splitPaces = splits.map((sp: any) => {
+                let secPerMile: number | null = null;
                 if (sp.averageSpeed && sp.averageSpeed > 0) {
-                  return formatPace(Math.round(1609.344 / sp.averageSpeed));
+                  secPerMile = Math.round(1609.344 / sp.averageSpeed);
                 } else if (sp.movingTime && sp.distance) {
-                  return formatPace(Math.round((sp.movingTime / sp.distance) * 1609.344));
+                  secPerMile = Math.round((sp.movingTime / sp.distance) * 1609.344);
                 }
-                return '?';
+                return secPerMile ? formatPaceWithUnit(secPerMile, units) : '?';
               });
               parts.push(`    Splits: ${splitPaces.join(' | ')}`);
             }
@@ -254,38 +284,15 @@ Keep responses to 2-4 paragraphs max unless the athlete asks for detailed analys
     parts.push('');
   }
 
-  // Best efforts from Strava
+  // Personal records from all-time bests
   try {
-    const { getDatabase } = require('../db/database');
-    const bestEfforts = getDatabase().getAllSync(
-      `SELECT best_efforts_json FROM performance_metric
-       WHERE best_efforts_json IS NOT NULL AND best_efforts_json != '[]'
-       ORDER BY date DESC LIMIT 5`
-    );
-    if (bestEfforts.length > 0) {
-      const allEfforts: any[] = [];
-      for (const row of bestEfforts) {
-        try { allEfforts.push(...JSON.parse(row.best_efforts_json)); } catch {}
-      }
-      // Find PRs for key distances
-      const prDistances = ['400m', '1/2 mile', '1 mile', '1k', '2 mile', '5k', '10k'];
-      const prs = prDistances
-        .map(dist => {
-          const matching = allEfforts.filter((e: any) => e.name === dist && (e.prRank === 1 || e.pr_rank === 1));
-          if (matching.length === 0) return null;
-          const best = matching[0];
-          const time = best.movingTime ?? best.elapsedTime ?? best.moving_time ?? best.elapsed_time ?? 0;
-          const mins = Math.floor(time / 60);
-          const secs = time % 60;
-          const prDate = (best.startDate ?? best.start_date ?? '').split('T')[0];
-          return `${dist}: ${mins}:${String(secs).padStart(2, '0')}${prDate ? ` (${prDate})` : ''}`;
-        })
-        .filter(Boolean);
-      if (prs.length > 0) {
-        parts.push('PERSONAL RECORDS (from Strava):');
-        parts.push(`  ${prs.join(' | ')}`);
-        parts.push('');
-      }
+    const { computeAllTimePRs, formatPRTime } = require('../utils/personalRecords');
+    const allTimePRs = computeAllTimePRs();
+    if (allTimePRs.length > 0) {
+      const prLines = allTimePRs.map((pr: any) => `${pr.distance}: ${formatPRTime(pr.timeSeconds)} (${pr.date})`);
+      parts.push('PERSONAL RECORDS (all-time bests from Strava):');
+      parts.push(`  ${prLines.join(' | ')}`);
+      parts.push('');
     }
   } catch {}
 
@@ -304,7 +311,7 @@ Keep responses to 2-4 paragraphs max unless the athlete asks for detailed analys
     if (restDayRuns.length > 0) {
       parts.push('REST DAY ACTIVITY:');
       for (const r of restDayRuns) {
-        parts.push(`  ⚠️ ${(r as any).date}: ran ${((r as any).distance_miles as number).toFixed(1)}mi on a scheduled rest day`);
+        parts.push(`  ⚠️ ${(r as any).date}: ran ${formatDistance((r as any).distance_miles, units)} on a scheduled rest day`);
       }
       parts.push('');
     }
@@ -316,7 +323,7 @@ Keep responses to 2-4 paragraphs max unless the athlete asks for detailed analys
     parts.push('VOLUME TREND:');
     for (const w of recentWeeks) {
       const pct = w.target_volume > 0 ? Math.round((w.actual_volume / w.target_volume) * 100) : 0;
-      parts.push(`  Week ${w.week_number}: ${w.actual_volume.toFixed(1)}/${w.target_volume}mi (${pct}%)${w.is_cutback ? ' CB' : ''}`);
+      parts.push(`  Week ${w.week_number}: ${formatDistance(w.actual_volume, units)}/${formatDistance(w.target_volume, units)} (${pct}%)${w.is_cutback ? ' CB' : ''}`);
     }
     const adherence = recentWeeks.reduce((sum, w) => {
       const completed = allWorkouts.filter(wo => wo.week_number === w.week_number && wo.status === 'completed').length;
@@ -354,7 +361,7 @@ Keep responses to 2-4 paragraphs max unless the athlete asks for detailed analys
   if (wornShoes.length > 0) {
     parts.push('SHOE ALERTS:');
     for (const s of wornShoes) {
-      parts.push(`  ${s.name}: ${s.totalMiles.toFixed(0)}/${s.maxMiles}mi (${Math.round(s.totalMiles / s.maxMiles * 100)}%)`);
+      parts.push(`  ${s.name}: ${formatDistance(s.totalMiles, units, 0)}/${formatDistance(s.maxMiles, units, 0)} (${Math.round(s.totalMiles / s.maxMiles * 100)}%)`);
     }
     parts.push('');
   }
@@ -503,6 +510,7 @@ export async function sendCoachMessage(
   systemPrompt: string,
   conversationHistory: CoachMessage[],
 ): Promise<CoachResponse> {
+  console.log('[Coach:sendCoachMessage] isGeminiAvailable:', isGeminiAvailable());
   if (!isGeminiAvailable()) {
     return {
       message: "I'm currently unavailable — check your Gemini API key. Your training plan is still running as scheduled.",
@@ -519,7 +527,9 @@ export async function sendCoachMessage(
       content: m.content,
     }));
 
+  console.log('[Coach:sendCoachMessage] Sending to Gemini, history:', history.length, 'messages, prompt:', systemPrompt.length, 'chars');
   const responseText = await sendChatMessage(systemPrompt, history, userMessage);
+  console.log('[Coach:sendCoachMessage] Gemini responded, length:', responseText.length);
 
   // Parse plan change if present
   const planChange = parsePlanChange(responseText);

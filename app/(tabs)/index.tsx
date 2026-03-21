@@ -1,5 +1,5 @@
-import React, { useEffect, useCallback, useState, useMemo } from 'react';
-import { RefreshControl, TextInput, Pressable, StyleSheet } from 'react-native';
+import React, { useEffect, useCallback, useState, useMemo, useRef } from 'react';
+import { RefreshControl, TextInput, Pressable, StyleSheet, Animated } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ScrollView, YStack, XStack, Text, View, Spinner, Button } from 'tamagui';
 import { useRouter } from 'expo-router';
@@ -15,6 +15,8 @@ import { RecoveryStatus } from '../../src/types';
 import { colors, semantic } from '../../src/theme/colors';
 import { GradientBorder } from '../../src/theme/GradientBorder';
 import { formatPRTime } from '../../src/utils/personalRecords';
+import { PRBadge } from '../../src/components/PRBadge';
+import { useUnits } from '../../src/hooks/useUnits';
 
 const H = (props: any) => <Text fontFamily="$heading" {...props} />;
 const B = (props: any) => <Text fontFamily="$body" {...props} />;
@@ -68,8 +70,27 @@ export default function TodayScreen() {
   const todayCrossTraining = useAppStore(s => s.todayCrossTraining);
   const logCrossTraining = useAppStore(s => s.logCrossTraining);
   const isStravaConnected = useAppStore(s => s.isStravaConnected);
+  const recoveryUpdateToast = useAppStore(s => s.recoveryUpdateToast);
+
+  // Recovery update toast — auto-dismiss after 4 seconds
+  const toastOpacity = useRef(new Animated.Value(0)).current;
+  const [showToast, setShowToast] = useState(false);
+  useEffect(() => {
+    if (recoveryUpdateToast) {
+      setShowToast(true);
+      Animated.timing(toastOpacity, { toValue: 1, duration: 300, useNativeDriver: true }).start();
+      const timer = setTimeout(() => {
+        Animated.timing(toastOpacity, { toValue: 0, duration: 300, useNativeDriver: true }).start(() => {
+          setShowToast(false);
+          useAppStore.setState({ recoveryUpdateToast: null });
+        });
+      }, 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [recoveryUpdateToast]);
   const deleteCrossTrainingEntry = useAppStore(s => s.deleteCrossTrainingEntry);
   const newPRNotification = useAppStore(s => s.newPRNotification);
+  const u = useUnits();
   const fetchBriefing = useAppStore(s => s.fetchBriefing);
   const fetchPostRunAnalysis = useAppStore(s => s.fetchPostRunAnalysis);
   const fetchRaceStrategy = useAppStore(s => s.fetchRaceStrategy);
@@ -94,7 +115,7 @@ export default function TodayScreen() {
     if (isRaceWeek) fetchRaceStrategy();
   }, [activePlan?.id, todaysWorkout?.id, isRaceWeek]);
 
-  // Fetch rest day briefing when on a rest day
+  // Fetch rest day briefing when on a rest day — re-run after sync (sweep may change yesterday's status)
   useEffect(() => {
     if (!activePlan || !todaysWorkout || todaysWorkout.workout_type !== 'rest') return;
     (async () => {
@@ -105,13 +126,26 @@ export default function TodayScreen() {
         yesterday.setDate(yesterday.getDate() - 1);
         const yStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
 
-        const yWorkouts = workouts.filter((w: any) => w.scheduled_date === yStr);
+        // Re-read workouts from store (may have been updated by sweep)
+        const currentWorkouts = useAppStore.getState().workouts;
+        const yWorkouts = currentWorkouts.filter((w: any) => w.scheduled_date === yStr);
         const { getMetricsForDateRange } = require('../../src/db/database');
         const yMetrics = getMetricsForDateRange(yStr, yStr);
+
+        // If yesterday's workout was skipped/not done AND no metrics, skip cache
+        const ySkippedOrMissed = yWorkouts.length > 0 && yWorkouts[0].status !== 'completed' && yMetrics.length === 0;
 
         const recoveryInfo = recoveryStatus
           ? `Recovery score: ${recoveryStatus.score}/100 (${recoveryStatus.level})`
           : null;
+
+        // Clear cache if yesterday's status changed (sweep just ran)
+        if (ySkippedOrMissed) {
+          try {
+            const { getDatabase } = require('../../src/db/database');
+            getDatabase().runSync(`DELETE FROM ai_cache WHERE cache_type = 'rest_briefing' AND cache_key = ?`, [`rest_day_briefing_${today}`]);
+          } catch {}
+        }
 
         const result = await generateRestDayBriefing(
           yWorkouts, yMetrics, paceZones,
@@ -122,7 +156,7 @@ export default function TodayScreen() {
         console.warn('[RestDay] Briefing failed:', e);
       }
     })();
-  }, [activePlan?.id, todaysWorkout?.id]);
+  }, [activePlan?.id, todaysWorkout?.id, isSyncing]);
 
   const handleComplete = useCallback(() => {
     if (!todaysWorkout) return;
@@ -135,7 +169,7 @@ export default function TodayScreen() {
     const { Alert } = require('react-native');
     Alert.alert(
       'Skip today\'s workout?',
-      `This will mark ${todaysWorkout.title} (${todaysWorkout.target_distance_miles?.toFixed(1) ?? '?'} mi) as skipped.`,
+      `This will mark ${todaysWorkout.title} (${todaysWorkout.target_distance_miles ? u.dist(todaysWorkout.target_distance_miles) : '?'}) as skipped.`,
       [
         { text: 'Cancel', style: 'cancel' },
         { text: 'Skip Workout', style: 'destructive', onPress: () => markWorkoutSkipped(todaysWorkout.id) },
@@ -361,7 +395,7 @@ export default function TodayScreen() {
           <YStack marginTop={6}>
             <XStack justifyContent="space-between" alignItems="center" marginBottom={3}>
               <B color="$textTertiary" fontSize={11}>
-                {weekProgress.completedRuns}/{weekProgress.totalRuns} runs · {weekProgress.weekVol.toFixed(1)} of {weekProgress.weekTarget.toFixed(0)} mi
+                {weekProgress.completedRuns}/{weekProgress.totalRuns} runs · {u.dist(weekProgress.weekVol)} of {u.dist(weekProgress.weekTarget, 0)}
               </B>
               <M color={weekProgress.pct >= 80 ? colors.cyan : weekProgress.pct >= 50 ? colors.textSecondary : colors.orange}
                 fontSize={11} fontWeight="700">{weekProgress.pct}%</M>
@@ -422,7 +456,8 @@ export default function TodayScreen() {
               </XStack>
               {newPRNotification.prs.map((pr, i) => (
                 <YStack key={i} marginBottom={i < newPRNotification.prs.length - 1 ? 8 : 0}>
-                  <XStack alignItems="baseline" gap={6}>
+                  <XStack alignItems="center" gap={6}>
+                    <PRBadge rank={1} />
                     <B color="$textSecondary" fontSize={13}>{pr.distance}:</B>
                     <M color={colors.cyan} fontSize={20} fontWeight="800">{formatPRTime(pr.time)}</M>
                   </XStack>
@@ -567,7 +602,7 @@ export default function TodayScreen() {
                 <YStack>
                   <XStack alignItems="center" gap={4}>
                     <MaterialCommunityIcons name="map-marker-distance" size={14} color={colors.cyan} />
-                    <M color="$color" fontSize={20} fontWeight="800">{todaysMetric.distance_miles.toFixed(1)} mi</M>
+                    <M color="$color" fontSize={20} fontWeight="800">{u.dist(todaysMetric.distance_miles)}</M>
                   </XStack>
                   <B color="$textTertiary" fontSize={10} marginLeft={18}>Distance</B>
                 </YStack>
@@ -575,7 +610,7 @@ export default function TodayScreen() {
                   <YStack>
                     <XStack alignItems="center" gap={4}>
                       <MaterialCommunityIcons name="speedometer" size={14} color={colors.cyan} />
-                      <M color="$color" fontSize={20} fontWeight="800">{formatPace(todaysMetric.avg_pace_sec_per_mile)}</M>
+                      <M color="$color" fontSize={20} fontWeight="800">{u.pace(todaysMetric.avg_pace_sec_per_mile)}</M>
                     </XStack>
                     <B color="$textTertiary" fontSize={10} marginLeft={18}>Avg Pace</B>
                   </YStack>
@@ -614,10 +649,10 @@ export default function TodayScreen() {
                 <YStack paddingTop={10} borderTopWidth={0.5} borderTopColor="$border">
                   <XStack alignItems="center" gap={8} flexWrap="wrap">
                     <B color="$textTertiary" fontSize={11}>Planned:</B>
-                    <M color="$textTertiary" fontSize={12} fontWeight="600">{todaysWorkout.target_distance_miles.toFixed(1)} mi</M>
+                    <M color="$textTertiary" fontSize={12} fontWeight="600">{u.dist(todaysWorkout.target_distance_miles)}</M>
                     {todaysWorkout.target_pace_zone && paceZones && (
                       <M color="$textTertiary" fontSize={12}>
-                        @ {todaysWorkout.target_pace_zone} ({formatPace(paceZones[todaysWorkout.target_pace_zone as keyof typeof paceZones]?.min ?? 0)}-{formatPace(paceZones[todaysWorkout.target_pace_zone as keyof typeof paceZones]?.max ?? 0)})
+                        @ {todaysWorkout.target_pace_zone} ({u.pace(paceZones[todaysWorkout.target_pace_zone as keyof typeof paceZones]?.min ?? 0)}-{u.pace(paceZones[todaysWorkout.target_pace_zone as keyof typeof paceZones]?.max ?? 0)})
                       </M>
                     )}
                     {Math.abs(todaysMetric.distance_miles - todaysWorkout.target_distance_miles) <= 0.3 ? (
@@ -661,7 +696,7 @@ export default function TodayScreen() {
                 {todaysWorkout.target_distance_miles != null && (
                   <XStack alignItems="center" gap="$1">
                     <MaterialCommunityIcons name="map-marker-distance" size={16} color={colors.textPrimary} />
-                    <M color="$color" fontSize={20} fontWeight="700">{todaysWorkout.target_distance_miles.toFixed(1)} mi</M>
+                    <M color="$color" fontSize={20} fontWeight="700">{u.dist(todaysWorkout.target_distance_miles)}</M>
                   </XStack>
                 )}
               </XStack>
@@ -676,10 +711,10 @@ export default function TodayScreen() {
                 <XStack justifyContent="space-between" alignItems="center" backgroundColor="$surfaceLight" borderRadius="$4" padding="$3" marginBottom="$3">
                   <B color="$textSecondary" fontSize={13} fontWeight="600">Target Zone: {todaysWorkout.target_pace_zone}</B>
                   <M color="$accent" fontSize={16} fontWeight="700">
-                    {formatPace(paceZones[todaysWorkout.target_pace_zone as keyof typeof paceZones]?.min ?? 0)}
+                    {u.pace(paceZones[todaysWorkout.target_pace_zone as keyof typeof paceZones]?.min ?? 0)}
                     {' - '}
-                    {formatPace(paceZones[todaysWorkout.target_pace_zone as keyof typeof paceZones]?.max ?? 0)}
-                    {' /mi'}
+                    {u.pace(paceZones[todaysWorkout.target_pace_zone as keyof typeof paceZones]?.max ?? 0)}
+                    {' '}{u.paceSuffix}
                   </M>
                 </XStack>
               )}
@@ -699,9 +734,9 @@ export default function TodayScreen() {
                       <YStack flex={1}>
                         <B color="$color" fontSize={14} fontWeight="500">{step.description}</B>
                         <M color="$textTertiary" fontSize={12} marginTop={2}>
-                          {step.distance_miles.toFixed(2)} mi @ {step.pace_zone} zone
+                          {u.dist(step.distance_miles, 2)} @ {step.pace_zone} zone
                           {paceZones && paceZones[step.pace_zone as keyof typeof paceZones]
-                            ? ` (${formatPace(paceZones[step.pace_zone as keyof typeof paceZones].min)}-${formatPace(paceZones[step.pace_zone as keyof typeof paceZones].max)}/mi)`
+                            ? ` (${u.pace(paceZones[step.pace_zone as keyof typeof paceZones].min)}-${u.pace(paceZones[step.pace_zone as keyof typeof paceZones].max)}${u.paceSuffix})`
                             : ''}
                         </M>
                       </YStack>
@@ -761,7 +796,7 @@ export default function TodayScreen() {
                 <YStack marginBottom="$2">
                   <XStack justifyContent="space-between" marginBottom={4}>
                     <M color="$color" fontSize={14} fontWeight="700">
-                      {todaysMetric.distance_miles.toFixed(1)} of {todaysWorkout.target_distance_miles.toFixed(1)} mi
+                      {u.dist(todaysMetric.distance_miles)} of {u.dist(todaysWorkout.target_distance_miles)}
                     </M>
                     <M color={colors.orange} fontSize={14} fontWeight="700">
                       {Math.round((todaysMetric.distance_miles / todaysWorkout.target_distance_miles) * 100)}%
@@ -778,7 +813,7 @@ export default function TodayScreen() {
                   <MaterialCommunityIcons name="robot-outline" size={16} color={colors.cyan} style={{ marginTop: 2 }} />
                   <B color="$textSecondary" fontSize={13} lineHeight={19} flex={1}>
                     {todaysMetric
-                      ? `You still covered ${todaysMetric.distance_miles.toFixed(1)} miles — that's solid work. Falling short on a ${todaysWorkout.workout_type === 'long_run' || todaysWorkout.workout_type === 'long' ? 'long run often comes down to fueling or pacing' : 'hard effort happens — listen to your body'}.`
+                      ? `You still covered ${u.dist(todaysMetric.distance_miles)} — that's solid work. Falling short on a ${todaysWorkout.workout_type === 'long_run' || todaysWorkout.workout_type === 'long' ? 'long run often comes down to fueling or pacing' : 'hard effort happens — listen to your body'}.`
                       : 'Partial completion is still progress. Listen to your body and focus on recovery.'}
                   </B>
                 </XStack>
@@ -809,7 +844,7 @@ export default function TodayScreen() {
                   <H color={colors.orange} fontSize={12} letterSpacing={1} textTransform="uppercase">Workout Skipped</H>
                 </XStack>
                 <B color="$textTertiary" fontSize={13} textDecorationLine="line-through" marginBottom="$3">
-                  {todaysWorkout.title} · {todaysWorkout.target_distance_miles?.toFixed(1) ?? '?'} mi
+                  {todaysWorkout.title} · {todaysWorkout.target_distance_miles ? u.dist(todaysWorkout.target_distance_miles) : '?'}
                 </B>
 
                 {/* Coach encouragement */}
@@ -829,7 +864,7 @@ export default function TodayScreen() {
                   <XStack justifyContent="space-between" marginBottom={4}>
                     <B color="$textTertiary" fontSize={11}>This week's volume</B>
                     <M color="$textSecondary" fontSize={11} fontWeight="600">
-                      {weekVolActual.toFixed(1)} of {weekVolTarget.toFixed(1)} mi ({volPct}%)
+                      {u.dist(weekVolActual)} of {u.dist(weekVolTarget)} ({volPct}%)
                     </M>
                   </XStack>
                   <View backgroundColor="$border" borderRadius={2} height={4}>
@@ -848,7 +883,7 @@ export default function TodayScreen() {
                     <B color="$color" fontSize={14} fontWeight="600">{tomorrowW.title}</B>
                     <M color="$textSecondary" fontSize={12} marginTop={2}>
                       {WORKOUT_TYPE_LABELS[tomorrowW.workout_type] ?? tomorrowW.workout_type}
-                      {tomorrowW.target_distance_miles ? ` · ${tomorrowW.target_distance_miles.toFixed(1)} mi` : ''}
+                      {tomorrowW.target_distance_miles ? ` · ${u.dist(tomorrowW.target_distance_miles)}` : ''}
                     </M>
                   </YStack>
                 )}
@@ -856,6 +891,21 @@ export default function TodayScreen() {
             );
           })()}
         </YStack>
+      )}
+
+      {/* Recovery update toast */}
+      {showToast && recoveryUpdateToast && (
+        <Animated.View style={{ opacity: toastOpacity, marginBottom: 10 }}>
+          <XStack backgroundColor={colors.surface} borderRadius={10} padding={10} alignItems="center" gap={8}
+            borderLeftWidth={3} borderLeftColor={colors.cyan}>
+            <MaterialCommunityIcons name="heart-pulse" size={16} color={colors.cyan} />
+            <B color="$textSecondary" fontSize={12}>
+              Recovery updated: <M color={colors.cyan} fontSize={12} fontWeight="700">{recoveryUpdateToast.oldScore}</M>
+              {' → '}<M color={colors.cyan} fontSize={12} fontWeight="700">{recoveryUpdateToast.newScore}</M>
+              {' '}({recoveryUpdateToast.reason})
+            </B>
+          </XStack>
+        </Animated.View>
       )}
 
       {/* === SUPPORTING CONTEXT === */}
@@ -874,7 +924,13 @@ export default function TodayScreen() {
               <B color={recoveryStatus.score >= 80 ? colors.cyan : colors.orange} fontSize={13} fontWeight="600">
                 {recoveryStatus.level.charAt(0).toUpperCase() + recoveryStatus.level.slice(1)}
               </B>
-              <B color="$textTertiary" fontSize={11}>· {recoveryStatus.signalCount} signals</B>
+              <B color="$textTertiary" fontSize={11}>
+                · {recoveryStatus.signalCount} signal{recoveryStatus.signalCount !== 1 ? 's' : ''}
+                {recoveryStatus.sleepPending ? ' · sleep pending' : ''}
+              </B>
+              {recoveryStatus.sleepPending && (
+                <MaterialCommunityIcons name="clock-outline" size={12} color={colors.textTertiary} />
+              )}
             </XStack>
           )}
           {preWorkoutBriefing && (
@@ -1019,7 +1075,7 @@ export default function TodayScreen() {
           <YStack paddingTop="$3" borderTopWidth={0.5} borderTopColor="$border" alignItems="center" paddingVertical="$4">
             <H color={colors.cyan} fontSize={14} letterSpacing={1.5} textTransform="uppercase" marginBottom="$2">Trust Your Training</H>
             <B color="$textSecondary" fontSize={14} lineHeight={20} textAlign="center">
-              You've put in {currentWeekNumber} weeks and {Math.round(weeks.reduce((s, w) => s + w.actual_volume, 0))} miles.{'\n'}You are ready for this.
+              You've put in {currentWeekNumber} weeks and {u.dist(Math.round(weeks.reduce((s, w) => s + w.actual_volume, 0)), 0)}.{'\n'}You are ready for this.
             </B>
           </YStack>
         </YStack>
@@ -1154,8 +1210,8 @@ export default function TodayScreen() {
                         <B color={colors.textTertiary} fontSize={12} width={30}>{dayName}</B>
                         <B color={textColor} fontSize={12} fontWeight={isToday ? '700' : '400'} flex={1}>
                           {isToday && w.workout_type === 'rest' ? 'Rest' : w.title}
-                          {w.status === 'completed' && w.target_distance_miles ? ` ${w.target_distance_miles.toFixed(1)}mi` : ''}
-                          {!isPast && !isToday && w.target_distance_miles ? ` ${w.target_distance_miles.toFixed(1)}mi` : ''}
+                          {w.status === 'completed' && w.target_distance_miles ? ` ${u.dist(w.target_distance_miles)}` : ''}
+                          {!isPast && !isToday && w.target_distance_miles ? ` ${u.dist(w.target_distance_miles)}` : ''}
                         </B>
                       </XStack>
                     );
@@ -1223,7 +1279,7 @@ export default function TodayScreen() {
               <B color="$color" fontSize={15} fontWeight="600">{tomorrowWorkout.title}</B>
               <M color="$textSecondary" fontSize={12} marginTop={2}>
                 {WORKOUT_TYPE_LABELS[tomorrowWorkout.workout_type] ?? tomorrowWorkout.workout_type}
-                {tomorrowWorkout.target_distance_miles ? ` · ${tomorrowWorkout.target_distance_miles.toFixed(1)} mi` : ''}
+                {tomorrowWorkout.target_distance_miles ? ` · ${u.dist(tomorrowWorkout.target_distance_miles)}` : ''}
               </M>
             </YStack>
           )}

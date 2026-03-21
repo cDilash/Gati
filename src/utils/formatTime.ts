@@ -48,6 +48,26 @@ export function formatRelativeTime(isoOrDate: string | null | undefined): string
 /**
  * Check if a timestamp is stale (older than threshold in days).
  */
+/**
+ * Format sleep duration from total minutes → "7h 36m"
+ */
+export function formatSleepDuration(totalMinutes: number): string {
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = Math.round(totalMinutes % 60);
+  if (hours === 0) return `${minutes}m`;
+  if (minutes === 0) return `${hours}h`;
+  return `${hours}h ${minutes}m`;
+}
+
+/**
+ * Format sleep duration from decimal hours → "7h 36m"
+ * e.g. 7.6 → "7h 36m"
+ */
+export function formatSleepHours(decimalHours: number): string {
+  const totalMinutes = Math.round(decimalHours * 60);
+  return formatSleepDuration(totalMinutes);
+}
+
 export function isStale(isoOrDate: string | null | undefined, thresholdDays: number): boolean {
   if (!isoOrDate) return true;
   try {

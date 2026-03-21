@@ -13,6 +13,10 @@ import { HealthSnapshot, RecoveryStatus, RecoverySignal, GarminHealthData } from
  * (not scored) for the Recovery screen to show as informational cards.
  *
  * Normalized to 0-100 based on available signals. Minimum 2 signals required.
+ *
+ * Sleep pending detection:
+ * - Before 10am: if no sleep data for last night → sleepPending=true (data may still sync)
+ * - After 10am: if no sleep data → sleepMissing=true (likely didn't wear watch)
  */
 export function calculateRecoveryScore(
   snapshot: HealthSnapshot,
@@ -117,18 +121,21 @@ export function calculateRecoveryScore(
     let status: RecoverySignal['status'];
     let detail: string;
 
+    const { formatSleepHours } = require('../utils/formatTime');
+    const sleepStr = formatSleepHours(snapshot.sleepHours);
+
     if (snapshot.sleepHours >= 7.5) {
       score = 33; status = 'good';
-      detail = `${snapshot.sleepHours} hrs — excellent`;
+      detail = `${sleepStr} — excellent`;
     } else if (snapshot.sleepHours >= 6.5) {
       score = 22; status = 'fair';
-      detail = `${snapshot.sleepHours} hrs — adequate`;
+      detail = `${sleepStr} — adequate`;
     } else if (snapshot.sleepHours >= 5.5) {
       score = 11; status = 'poor';
-      detail = `${snapshot.sleepHours} hrs — insufficient`;
+      detail = `${sleepStr} — insufficient`;
     } else {
       score = 5; status = 'poor';
-      detail = `${snapshot.sleepHours} hrs — very low`;
+      detail = `${sleepStr} — very low`;
     }
 
     if (garmin?.sleepScore != null) {
@@ -162,6 +169,10 @@ export function calculateRecoveryScore(
     signals.push({ type: 'respiratory_rate', value: respRate, baseline: Math.round(baseline * 10) / 10, status, score: 0, detail, source: respSource });
   }
 
+  // ── Sleep pending detection ──
+  const hasSleepSignal = signals.some(s => s.type === 'sleep');
+  const { sleepPending, sleepMissing } = detectSleepStatus(hasSleepSignal, snapshot);
+
   // ── Aggregate (only scored signals) ──
   const scoredSignals = signals.filter(s => s.score > 0);
   const signalCount = scoredSignals.length;
@@ -175,6 +186,8 @@ export function calculateRecoveryScore(
       recommendation: signalCount === 0
         ? 'No recovery data available.'
         : 'Not enough recovery signals for a score. Need at least 2.',
+      sleepPending,
+      sleepMissing,
     };
   }
 
@@ -189,11 +202,53 @@ export function calculateRecoveryScore(
 
   return {
     score: normalized,
-    signalCount: scoredSignals.length, // only scored signals (display-only excluded)
+    signalCount: scoredSignals.length,
     level,
     signals,
-    recommendation: getRecommendation(level),
+    recommendation: sleepPending
+      ? getRecommendation(level) + ' Sleep data pending — score may update.'
+      : getRecommendation(level),
+    sleepPending,
+    sleepMissing,
   };
+}
+
+/**
+ * Detect whether last night's sleep data is pending or missing.
+ *
+ * - Before 10am + no sleep for last night → pending (Garmin still syncing)
+ * - After 10am + no sleep → missing (likely didn't wear watch)
+ * - Sleep present with a recent date → neither
+ */
+function detectSleepStatus(
+  hasSleepSignal: boolean,
+  snapshot: HealthSnapshot,
+): { sleepPending: boolean; sleepMissing: boolean } {
+  if (hasSleepSignal) return { sleepPending: false, sleepMissing: false };
+
+  const now = new Date();
+  const currentHour = now.getHours();
+
+  // Check if sleep trend has data for last night
+  const today = now.toISOString().split('T')[0];
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
+
+  const hasLastNightSleep = snapshot.sleepTrend.some(
+    s => s.date === today || s.date === yesterdayStr
+  );
+
+  if (hasLastNightSleep) return { sleepPending: false, sleepMissing: false };
+
+  // No sleep for last night
+  if (currentHour < 10) {
+    // Morning window: sleep data likely still syncing from Garmin → Apple Health
+    return { sleepPending: true, sleepMissing: false };
+  } else {
+    // After 10am: data should have synced by now — likely didn't wear watch
+    return { sleepPending: false, sleepMissing: true };
+  }
 }
 
 function getRecommendation(level: RecoveryStatus['level']): string {

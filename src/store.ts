@@ -85,6 +85,7 @@ interface AppState {
   // Health / Recovery
   healthSnapshot: HealthSnapshot | null;
   recoveryStatus: RecoveryStatus | null;
+  recoveryUpdateToast: { oldScore: number; newScore: number; reason: string } | null;
 
   // Training Load (PMC)
   pmcData: import('./types').PMCData | null;
@@ -179,6 +180,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   raceStrategy: null,
   healthSnapshot: null,
   recoveryStatus: null,
+  recoveryUpdateToast: null,
   pmcData: null,
   garminHealth: null,
   personalRecords: [],
@@ -550,55 +552,77 @@ export const useAppStore = create<AppState>((set, get) => ({
     const state = get();
     const { userProfile, paceZones, currentWeek, workouts, todaysWorkout, shoes, weeks, daysUntilRace, isRaceWeek, coachMessages, recoveryStatus } = state;
 
-    if (!userProfile || !paceZones) return;
+    console.log('[Coach] 1. Starting sendToCoach, message:', message.substring(0, 50));
+
+    if (!userProfile || !paceZones) {
+      console.log('[Coach] ABORT — no userProfile or paceZones');
+      return;
+    }
 
     // Save user message
     dbSaveCoachMessage({ id: Crypto.randomUUID(), role: 'user', content: message, message_type: 'chat', metadata_json: null });
     set({ coachMessages: getCoachMessages(), isCoachThinking: true });
 
+    // 30s safety timeout — guarantees isCoachThinking resets
+    const safetyTimeout = setTimeout(() => {
+      console.log('[Coach] SAFETY TIMEOUT — 30 seconds exceeded, forcing reset');
+      if (get().isCoachThinking) {
+        dbSaveCoachMessage({
+          id: Crypto.randomUUID(),
+          role: 'assistant',
+          content: 'Response timed out. Try again — sometimes the AI takes a moment.',
+          message_type: 'chat',
+          metadata_json: null,
+        });
+        set({ coachMessages: getCoachMessages(), isCoachThinking: false });
+      }
+    }, 30_000);
+
     try {
-      // 45s global timeout for entire coach flow (prompt build + Gemini call)
-      const coachFlow = async () => {
-        const weekWorkouts = currentWeek
-          ? workouts.filter(w => w.week_number === currentWeek.week_number)
-          : [];
-        const recentMetrics = getRecentMetrics(7);
+      console.log('[Coach] 2. Building system prompt...');
+      const weekWorkouts = currentWeek
+        ? workouts.filter(w => w.week_number === currentWeek.week_number)
+        : [];
+      const recentMetrics = getRecentMetrics(7);
 
-        const systemPrompt = await buildCoachSystemPrompt(
-          userProfile, paceZones, currentWeek, weekWorkouts,
-          todaysWorkout, recentMetrics, weeks, workouts, shoes,
-          daysUntilRace, isRaceWeek, recoveryStatus, get().healthSnapshot,
-          get().garminHealth,
-        );
-
-        return aiSendCoachMessage(message, systemPrompt, coachMessages);
-      };
-
-      const timeout = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('Coach response timed out')), 45_000)
+      const systemPrompt = await buildCoachSystemPrompt(
+        userProfile, paceZones, currentWeek, weekWorkouts,
+        todaysWorkout, recentMetrics, weeks, workouts, shoes,
+        daysUntilRace, isRaceWeek, recoveryStatus, get().healthSnapshot,
+        get().garminHealth,
       );
-      const response = await Promise.race([coachFlow(), timeout]);
+      console.log('[Coach] 3. System prompt built, length:', systemPrompt.length, 'chars (~', Math.round(systemPrompt.length / 4), 'tokens)');
+
+      console.log('[Coach] 4. Calling Gemini...');
+      const response = await aiSendCoachMessage(message, systemPrompt, coachMessages);
+      console.log('[Coach] 5. Gemini responded, message length:', response.message.length, 'planChange:', !!response.planChange);
+
+      clearTimeout(safetyTimeout);
 
       // Save assistant response
       const metadata = response.planChange ? JSON.stringify(response.planChange) : null;
+      const assistantId = Crypto.randomUUID();
       dbSaveCoachMessage({
-        id: Crypto.randomUUID(),
+        id: assistantId,
         role: 'assistant',
         content: response.message,
         message_type: response.planChange ? 'plan_change' : 'chat',
         metadata_json: metadata,
       });
 
-      set({ coachMessages: getCoachMessages(), isCoachThinking: false });
+      const updatedMessages = getCoachMessages();
+      console.log('[Coach] 6. Messages after save:', updatedMessages.length, 'last role:', updatedMessages[updatedMessages.length - 1]?.role, 'last id:', updatedMessages[updatedMessages.length - 1]?.id);
+      console.log('[Coach] 6a. Saved assistant id:', assistantId, 'found in list:', updatedMessages.some(m => m.id === assistantId));
+      set({ coachMessages: updatedMessages, isCoachThinking: false });
+      console.log('[Coach] 7. State set, coachMessages length:', get().coachMessages.length);
     } catch (error: any) {
-      console.error('[Coach] Failed:', error);
-      const isTimeout = error?.message?.includes('timed out');
+      clearTimeout(safetyTimeout);
+      console.error('[Coach] ERROR:', error?.message || error);
+      console.error('[Coach] ERROR stack:', error?.stack?.substring(0, 300));
       dbSaveCoachMessage({
         id: Crypto.randomUUID(),
         role: 'assistant',
-        content: isTimeout
-          ? 'Response timed out. Try again — sometimes the AI takes a moment.'
-          : "Sorry, I couldn't process that. Please try again in a moment.",
+        content: "Sorry, I couldn't process that. Please try again in a moment.",
         message_type: 'chat',
         metadata_json: null,
       });
@@ -867,12 +891,12 @@ export const useAppStore = create<AppState>((set, get) => ({
         const prs = computeAllTimePRs();
         set({ personalRecords: prs });
 
-        // Check if today's run set any new PRs
-        if (result.newActivities > 0) {
-          const today = require('./utils/dateUtils').getToday();
+        // Check all synced activities for new PRs (not just today)
+        if (result.newActivities > 0 && result.syncedDates.length > 0) {
           const dismissed = getSetting('dismissed_pr_notification_date');
-          if (dismissed !== today) {
-            const notification = detectNewPRs(today, null);
+          const latestDate = result.syncedDates.sort().pop()!;
+          if (dismissed !== latestDate) {
+            const notification = detectNewPRs(result.syncedDates, null);
             if (notification) {
               set({ newPRNotification: notification });
               try { setSetting('pending_pr_notification', JSON.stringify(notification)); } catch {}
@@ -1009,8 +1033,11 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   syncHealth: async (forceRefresh) => {
     try {
-      const { syncHealthData } = require('./health/healthSync');
+      const { syncHealthData, hasSignificantChanges } = require('./health/healthSync');
       const { calculateRecoveryScore } = require('./health/recoveryScore');
+
+      const oldSnapshot = get().healthSnapshot;
+      const oldRecovery = get().recoveryStatus;
       const snapshot = await syncHealthData(forceRefresh ?? false);
       if (snapshot) {
         const profile = get().userProfile;
@@ -1019,6 +1046,15 @@ export const useAppStore = create<AppState>((set, get) => ({
           maxHr: profile?.max_hr ?? null,
         }, get().garminHealth);
         set({ healthSnapshot: snapshot, recoveryStatus: recovery });
+
+        // Detect significant changes → show recovery update toast
+        if (oldSnapshot && oldRecovery && oldRecovery.level !== 'unknown') {
+          const { changed, reason } = hasSignificantChanges(oldSnapshot, snapshot);
+          if (changed && Math.abs(recovery.score - oldRecovery.score) >= 10) {
+            console.log(`[Store] Recovery updated: ${oldRecovery.score} → ${recovery.score} (${reason})`);
+            set({ recoveryUpdateToast: { oldScore: oldRecovery.score, newScore: recovery.score, reason } });
+          }
+        }
 
         // Auto-update weight from HealthKit if newer
         let needsRefresh = false;

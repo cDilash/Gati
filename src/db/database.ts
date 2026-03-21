@@ -591,10 +591,12 @@ export function saveCoachMessage(message: Omit<CoachMessage, 'created_at'>): voi
 
 export function getCoachMessages(limit: number = 50): CoachMessage[] {
   const database = getDatabase();
-  return database.getAllSync<CoachMessage>(
-    'SELECT * FROM coach_message ORDER BY created_at ASC LIMIT ?',
+  // Select newest N messages (DESC) then reverse to chronological order for display
+  const messages = database.getAllSync<CoachMessage>(
+    'SELECT * FROM coach_message ORDER BY created_at DESC LIMIT ?',
     limit,
   );
+  return messages.reverse();
 }
 
 export function clearCoachMessages(): void {
@@ -731,7 +733,7 @@ export function sweepPastWorkouts(): { skipped: number; lateMatched: number } {
      JOIN training_plan tp ON w.plan_id = tp.id
      WHERE tp.status = 'active'
      AND w.status = 'upcoming'
-     AND w.scheduled_date < ?
+     AND w.scheduled_date <= ?
      AND w.workout_type != 'rest'`,
     [cutoffDate]
   );
@@ -758,13 +760,18 @@ export function sweepPastWorkouts(): { skipped: number; lateMatched: number } {
   // Also auto-skip rest days that are past (keep plan view clean)
   database.runSync(
     `UPDATE workout SET status = 'completed'
-     WHERE status = 'upcoming' AND workout_type = 'rest' AND scheduled_date < ?
+     WHERE status = 'upcoming' AND workout_type = 'rest' AND scheduled_date <= ?
      AND plan_id IN (SELECT id FROM training_plan WHERE status = 'active')`,
     [cutoffDate]
   );
 
   if (skipped > 0 || lateMatched > 0) {
     console.log(`[DB] Sweep: ${skipped} skipped, ${lateMatched} late-matched`);
+    // Clear cached rest day briefing so it regenerates with updated workout statuses
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      database.runSync(`DELETE FROM ai_cache WHERE cache_type = 'rest_briefing' AND cache_key = ?`, [`rest_day_briefing_${today}`]);
+    } catch {}
   }
 
   return { skipped, lateMatched };

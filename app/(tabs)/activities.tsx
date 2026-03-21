@@ -14,6 +14,8 @@ import { PerformanceMetric } from '../../src/types';
 import { PolylineThumbnail } from '../../src/components/PolylineThumbnail';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { colors } from '../../src/theme/colors';
+import { PRBadge } from '../../src/components/PRBadge';
+import { useUnits } from '../../src/hooks/useUnits';
 
 const H = (props: any) => <Text fontFamily="$heading" {...props} />;
 const B = (props: any) => <Text fontFamily="$body" {...props} />;
@@ -59,6 +61,7 @@ function runTypeBg(type: string): string {
 
 export default function ActivitiesScreen() {
   const router = useRouter();
+  const u = useUnits();
   const workouts = useAppStore(s => s.workouts);
   const isStravaConnected = useAppStore(s => s.isStravaConnected);
   const syncStrava = useAppStore(s => s.syncStrava);
@@ -243,8 +246,8 @@ export default function ActivitiesScreen() {
       {/* Hero Stats */}
       <XStack paddingHorizontal={16} paddingVertical={12} gap={8}>
         <HeroStat icon="run-fast" value={String(metrics.length)} label="runs" />
-        <HeroStat icon="map-marker-distance" value={Math.round(totalMiles).toString()} label="total mi" />
-        <HeroStat icon="speedometer" value={avgPace ? formatPace(avgPace) : '--'} label="avg pace" />
+        <HeroStat icon="map-marker-distance" value={Math.round(u.rawDist(totalMiles)).toString()} label={"total " + u.distLabel} />
+        <HeroStat icon="speedometer" value={avgPace ? u.pace(avgPace) : '--'} label="avg pace" />
         <HeroStat icon="clock-outline" value={`${totalHours}:${String(totalMins).padStart(2, '0')}`} label="total hrs" />
       </XStack>
 
@@ -286,7 +289,7 @@ export default function ActivitiesScreen() {
               <YStack paddingTop={20} paddingBottom={10}>
                 <H color="$color" fontSize={20} letterSpacing={1} marginBottom={4}>{item.label}</H>
                 <XStack gap={12} alignItems="center">
-                  <M color={colors.cyan} fontSize={13} fontWeight="600">{item.volume} mi</M>
+                  <M color={colors.cyan} fontSize={13} fontWeight="600">{u.dist(item.volume)}</M>
                   <B color="$textTertiary" fontSize={12}>{item.runs} runs</B>
                   {item.totalMinutes > 0 && <B color="$textTertiary" fontSize={12}>{totalHrs}h {totalMn}m</B>}
                 </XStack>
@@ -332,6 +335,15 @@ export default function ActivitiesScreen() {
     let displayName = stravaName || matched?.title || 'Run';
     displayName = displayName.replace(/^Week \d+\s*[—–-]\s*/i, '');
 
+    // Check if this run has any PRs
+    let hasPR = false;
+    try {
+      if (m.best_efforts_json) {
+        const efforts = JSON.parse(m.best_efforts_json);
+        hasPR = efforts.some((e: any) => e.prRank === 1);
+      }
+    } catch {}
+
     // Duration formatting
     const durMin = Math.round(m.duration_minutes ?? 0);
     const durH = Math.floor(durMin / 60);
@@ -366,6 +378,7 @@ export default function ActivitiesScreen() {
           <B color="$textTertiary" fontSize={11}>{formatDate(m.date)}</B>
           <XStack alignItems="center" gap={6} marginTop={1} marginBottom={4}>
             <B color="$color" fontSize={14} fontWeight="600" flexShrink={1} numberOfLines={1}>{displayName}</B>
+            {hasPR && <PRBadge rank={1} size="sm" />}
             {runType !== 'Outdoor' && (
               <View paddingHorizontal={6} paddingVertical={1} borderRadius={4} backgroundColor={runTypeBg(runType)}>
                 <H fontSize={9} color={runTypeColor(runType)} textTransform="uppercase" letterSpacing={0.8}>{runType}</H>
@@ -377,8 +390,7 @@ export default function ActivitiesScreen() {
           <XStack gap={16} flexWrap="wrap" marginBottom={2}>
             <XStack alignItems="center" gap={3}>
               <MaterialCommunityIcons name="map-marker-distance" size={13} color={colors.cyan} />
-              <M color="$color" fontSize={13} fontWeight="700">{m.distance_miles.toFixed(1)}</M>
-              <M color="$textTertiary" fontSize={10}>mi</M>
+              <M color="$color" fontSize={13} fontWeight="700">{u.dist(m.distance_miles)}</M>
             </XStack>
             {durMin > 0 && (
               <XStack alignItems="center" gap={3}>
@@ -395,7 +407,7 @@ export default function ActivitiesScreen() {
             {elev && elev > 50 ? (
               <XStack alignItems="center" gap={3}>
                 <MaterialCommunityIcons name="elevation-rise" size={13} color={colors.textSecondary} />
-                <M color="$textSecondary" fontSize={12}>{Math.round(elev)} ft</M>
+                <M color="$textSecondary" fontSize={12}>{u.elev(elev)}</M>
               </XStack>
             ) : null}
           </XStack>
@@ -403,7 +415,7 @@ export default function ActivitiesScreen() {
           {/* Matched workout indicator */}
           {matched && (
             <B color="$textTertiary" fontSize={10} marginTop={1}>
-              Plan: {matched.title}{matched.target_distance_miles ? ` · ${matched.target_distance_miles.toFixed(1)}mi` : ''}
+              Plan: {matched.title}{matched.target_distance_miles ? ` · ${u.dist(matched.target_distance_miles)}` : ''}
             </B>
           )}
         </YStack>
@@ -412,8 +424,8 @@ export default function ActivitiesScreen() {
         <YStack alignItems="flex-end" justifyContent="center" marginLeft={6}>
           {pace ? (
             <>
-              <M color={colors.cyan} fontSize={18} fontWeight="800">{formatPace(pace)}</M>
-              <M color="$textTertiary" fontSize={10}>/mi</M>
+              <M color={colors.cyan} fontSize={18} fontWeight="800">{u.pace(pace)}</M>
+              <M color="$textTertiary" fontSize={10}>{u.paceSuffix}</M>
             </>
           ) : (
             <M color="$textTertiary" fontSize={18} fontWeight="800">--</M>

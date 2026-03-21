@@ -453,6 +453,8 @@ export interface RecoveryStatus {
   level: 'ready' | 'moderate' | 'fatigued' | 'rest' | 'unknown';
   signals: RecoverySignal[];
   recommendation: string;
+  sleepPending: boolean;  // true when last night's sleep hasn't synced yet (morning window)
+  sleepMissing: boolean;  // true after 10am when sleep still absent (likely didn't wear watch)
 }
 
 // ─── Cross-Training ──────────────────────────────────────────

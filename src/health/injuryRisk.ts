@@ -10,6 +10,7 @@
  */
 
 import { TrainingWeek, Workout, RecoveryStatus } from '../types';
+import { formatSleepHours } from '../utils/formatTime';
 
 export interface InjuryRiskResult {
   level: 'low' | 'moderate' | 'high';
@@ -82,13 +83,13 @@ export function calculateInjuryRisk(
     const prevAvg = prev3.length > 0 ? prev3.reduce((s, v) => s + v, 0) / prev3.length : recentAvg;
 
     if (recentAvg < 6) {
-      factors.push({ name: 'Sleep', status: 'danger', detail: `Averaging ${recentAvg.toFixed(1)} hrs — critically low`, points: 20 });
+      factors.push({ name: 'Sleep', status: 'danger', detail: `Averaging ${formatSleepHours(recentAvg)} — critically low`, points: 20 });
       totalPoints += 20;
     } else if (recentAvg < 7 || (prevAvg - recentAvg > 0.5)) {
-      factors.push({ name: 'Sleep', status: 'warning', detail: `${recentAvg.toFixed(1)} hrs avg${prevAvg - recentAvg > 0.5 ? ' (declining)' : ' — below optimal'}`, points: 10 });
+      factors.push({ name: 'Sleep', status: 'warning', detail: `${formatSleepHours(recentAvg)} avg${prevAvg - recentAvg > 0.5 ? ' (declining)' : ' — below optimal'}`, points: 10 });
       totalPoints += 10;
     } else {
-      factors.push({ name: 'Sleep', status: 'ok', detail: `${recentAvg.toFixed(1)} hrs avg — good`, points: 0 });
+      factors.push({ name: 'Sleep', status: 'ok', detail: `${formatSleepHours(recentAvg)} avg — good`, points: 0 });
     }
   }
 

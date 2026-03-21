@@ -15,8 +15,8 @@ import { Workout, CrossTraining, CROSS_TRAINING_LABELS, PerformanceMetric, Train
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { getWorkoutIcon } from '../../src/utils/workoutIcons';
 import { colors, phaseColors } from '../../src/theme/colors';
-import { formatPace } from '../../src/engine/vdot';
 import { GradientBorder } from '../../src/theme/GradientBorder';
+import { useUnits } from '../../src/hooks/useUnits';
 
 const H = (props: any) => <Text fontFamily="$heading" {...props} />;
 const B = (props: any) => <Text fontFamily="$body" {...props} />;
@@ -58,6 +58,7 @@ function workoutNameColor(type: string): string {
 
 export default function CalendarScreen() {
   const router = useRouter();
+  const u = useUnits();
   const isLoading = useAppStore(s => s.isLoading);
   const activePlan = useAppStore(s => s.activePlan);
   const userProfile = useAppStore(s => s.userProfile);
@@ -411,7 +412,7 @@ export default function CalendarScreen() {
             }, 0);
             return (
               <XStack alignItems="center" justifyContent="center" gap={8} marginBottom={10}>
-                <M_ color={colors.textSecondary} fontSize={11} fontWeight="700">{totalMi.toFixed(1)} mi</M_>
+                <M_ color={colors.textSecondary} fontSize={11} fontWeight="700">{u.dist(totalMi)}</M_>
                 <B color={colors.textTertiary} fontSize={10}>·</B>
                 <B color={colors.textTertiary} fontSize={10}>{completedRuns}/{weekWO.length} runs</B>
                 {calendarWeek.target_volume > 0 && (
@@ -566,27 +567,27 @@ export default function CalendarScreen() {
                           {isCompleted && metric ? (
                             <YStack>
                               <M_ color={colors.textPrimary} fontSize={11} fontWeight="800">
-                                {metric.distance_miles.toFixed(1)}
+                                {u.dist(metric.distance_miles)}
                               </M_>
                               {metric.avg_pace_sec_per_mile ? (
                                 <M_ color={colors.textTertiary} fontSize={8}>
-                                  {formatPace(metric.avg_pace_sec_per_mile)}
+                                  {u.pace(metric.avg_pace_sec_per_mile)}
                                 </M_>
                               ) : null}
                             </YStack>
                           ) : isPartial && metric ? (
                             <YStack>
                               <M_ color={colors.orange} fontSize={11} fontWeight="800">
-                                {metric.distance_miles.toFixed(1)}
+                                {u.dist(metric.distance_miles)}
                               </M_>
                               <M_ color={colors.textTertiary} fontSize={7}>
-                                of {w.target_distance_miles?.toFixed(1)}
+                                of {u.dist(w.target_distance_miles ?? 0)}
                               </M_>
                             </YStack>
                           ) : (
                             <M_ color={isSkipped ? colors.textTertiary : colors.textPrimary} fontSize={11} fontWeight="700"
                               textDecorationLine={isSkipped ? 'line-through' : 'none'}>
-                              {w.target_distance_miles != null ? w.target_distance_miles.toFixed(1) : '–'}
+                              {w.target_distance_miles != null ? u.dist(w.target_distance_miles) : '–'}
                             </M_>
                           )}
                         </YStack>
@@ -794,7 +795,7 @@ export default function CalendarScreen() {
                     {week.is_cutback && <B color={colors.textTertiary} fontSize={10}>CUTBACK</B>}
                   </XStack>
                   <XStack alignItems="center" gap={6}>
-                    <M_ color={colors.textTertiary} fontSize={12}>{week.target_volume.toFixed(0)} mi</M_>
+                    <M_ color={colors.textTertiary} fontSize={12}>{u.dist(week.target_volume, 0)}</M_>
                     <MaterialCommunityIcons name="chevron-right" size={16} color={colors.textTertiary} />
                   </XStack>
                 </XStack>
@@ -823,7 +824,7 @@ export default function CalendarScreen() {
                           color={volPct >= 80 ? colors.success : colors.orange} />
                       )}
                       <M_ color={week.actual_volume > 0 ? (volPct >= 80 ? colors.cyan : colors.orange) : colors.textSecondary} fontSize={12} fontWeight="700">
-                        {week.actual_volume > 0 ? `${week.actual_volume.toFixed(0)}/${week.target_volume.toFixed(0)} mi` : `${week.target_volume.toFixed(0)} mi`}
+                        {week.actual_volume > 0 ? `${u.dist(week.actual_volume, 0)}/${u.dist(week.target_volume, 0)}` : u.dist(week.target_volume, 0)}
                       </M_>
                       <MaterialCommunityIcons name={isExpanded ? 'chevron-down' : 'chevron-right'} size={16} color={colors.textTertiary} />
                     </XStack>
@@ -876,13 +877,13 @@ export default function CalendarScreen() {
                               {workout.workout_type !== 'rest' && (
                                 <M_ color={isSkipped ? colors.textTertiary : colors.textPrimary} fontSize={12} fontWeight="700"
                                   textDecorationLine={isSkipped ? 'line-through' : 'none'}>
-                                  {metric ? `${metric.distance_miles.toFixed(1)} mi` : workout.target_distance_miles != null ? `${workout.target_distance_miles.toFixed(1)} mi` : ''}
+                                  {metric ? u.dist(metric.distance_miles) : workout.target_distance_miles != null ? u.dist(workout.target_distance_miles) : ''}
                                 </M_>
                               )}
                             </XStack>
                             {metric && (
                               <XStack marginLeft={28} marginTop={3} gap={8}>
-                                {metric.avg_pace_sec_per_mile ? <M_ color={colors.textSecondary} fontSize={11}>{formatPace(metric.avg_pace_sec_per_mile)}/mi</M_> : null}
+                                {metric.avg_pace_sec_per_mile ? <M_ color={colors.textSecondary} fontSize={11}>{u.pace(metric.avg_pace_sec_per_mile)}{u.paceSuffix}</M_> : null}
                                 {metric.avg_hr ? <M_ color={colors.orange} fontSize={11}>{metric.avg_hr} bpm</M_> : null}
                               </XStack>
                             )}

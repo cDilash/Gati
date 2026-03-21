@@ -45,12 +45,18 @@ export default function RootLayout() {
   }, [isLoading, userProfile?.id]);
 
   // Foreground return sync — catch new Strava data after a run
+  // Morning window (6-10am): shorter cooldown (60s) to catch sleep data syncing from Garmin
   useEffect(() => {
     if (!userProfile) return;
     const sub = AppState.addEventListener('change', (state) => {
-      if (state === 'active' && Date.now() - lastSyncRef.current > 120000) {
-        lastSyncRef.current = Date.now();
-        useAppStore.getState().syncAll();
+      if (state === 'active') {
+        const hour = new Date().getHours();
+        const isMorning = hour >= 6 && hour < 10;
+        const cooldown = isMorning ? 60000 : 120000; // 1 min morning, 2 min otherwise
+        if (Date.now() - lastSyncRef.current > cooldown) {
+          lastSyncRef.current = Date.now();
+          useAppStore.getState().syncAll();
+        }
       }
     });
     return () => sub.remove();
@@ -113,31 +119,19 @@ export default function RootLayout() {
           <Stack.Screen name="post-run" options={{ headerShown: false, presentation: 'fullScreenModal', gestureEnabled: true }} />
           <Stack.Screen
             name="workout/[id]"
-            options={({ navigation }) => ({
-              title: 'Workout Details',
+            options={{
               presentation: 'modal',
               gestureEnabled: true,
-              headerLeft: () => null,
-              headerRight: () => (
-                <Pressable onPress={() => navigation.goBack()} hitSlop={12} style={{ marginRight: 8 }}>
-                  <X size={22} color={colors.textSecondary} />
-                </Pressable>
-              ),
-            })}
+              headerShown: false,
+            }}
           />
           <Stack.Screen
             name="activity/[id]"
-            options={({ navigation }) => ({
-              title: 'Activity',
+            options={{
               presentation: 'modal',
               gestureEnabled: true,
-              headerLeft: () => null,
-              headerRight: () => (
-                <Pressable onPress={() => navigation.goBack()} hitSlop={12} style={{ marginRight: 8 }}>
-                  <X size={22} color={colors.textSecondary} />
-                </Pressable>
-              ),
-            })}
+              headerShown: false,
+            }}
           />
           <Stack.Screen
             name="profile"

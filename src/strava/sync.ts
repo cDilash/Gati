@@ -21,6 +21,7 @@ export interface SyncResult {
   newActivities: number;
   matched: number;
   unmatched: number;
+  syncedDates: string[];
 }
 
 // ─── SQLite helpers ────────────────────────────────────────
@@ -355,7 +356,7 @@ export async function syncStravaActivities(options?: {
   afterTimestamp?: number;
   perPage?: number;
 }): Promise<SyncResult> {
-  const result: SyncResult = { newActivities: 0, matched: 0, unmatched: 0 };
+  const result: SyncResult = { newActivities: 0, matched: 0, unmatched: 0, syncedDates: [] };
 
   console.log('[Strava Sync] ════════════════════════════════════');
   console.log('[Strava Sync] Starting sync...');
@@ -445,6 +446,7 @@ export async function syncStravaActivities(options?: {
     }
 
     result.newActivities++;
+    if (!result.syncedDates.includes(activityDate)) result.syncedDates.push(activityDate);
   }
 
   updateLastSyncTimestamp();

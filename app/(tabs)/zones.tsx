@@ -14,7 +14,10 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { colors, semantic, zoneColors, sleepStageColors } from '../../src/theme/colors';
 import { calculateInjuryRisk } from '../../src/health/injuryRisk';
 import { GradientText } from '../../src/theme/GradientText';
+import { useUnits } from '../../src/hooks/useUnits';
 import { GradientBorder } from '../../src/theme/GradientBorder';
+import { formatSleepDuration, formatSleepHours } from '../../src/utils/formatTime';
+import { PRBadge } from '../../src/components/PRBadge';
 import { GarminIcon } from '../../src/components/icons/GarminIcon';
 import { HealthIcon } from '../../src/components/icons/HealthIcon';
 import { PMCChart } from '../../src/components/PMCChart';
@@ -168,6 +171,18 @@ function RecoveryHero({ recovery, snapshot }: { recovery: RecoveryStatus | null;
       </View>
       <H color={color} fontSize={22} letterSpacing={1.5} marginTop="$3" textTransform="uppercase">{label}</H>
       <B color="$textSecondary" fontSize={13} marginTop="$1">Based on {recovery.signals.filter(s => s.score > 0).length} signal{recovery.signals.filter(s => s.score > 0).length !== 1 ? 's' : ''}</B>
+      {recovery.sleepPending && (
+        <XStack alignItems="center" gap={4} marginTop="$2" backgroundColor={colors.surfaceHover} borderRadius={8} paddingHorizontal={10} paddingVertical={4}>
+          <MaterialCommunityIcons name="clock-outline" size={12} color={colors.textTertiary} />
+          <B color="$textTertiary" fontSize={11}>Waiting for last night's sleep data</B>
+        </XStack>
+      )}
+      {recovery.sleepMissing && !recovery.sleepPending && !recovery.signals.some(s => s.type === 'sleep') && (
+        <XStack alignItems="center" gap={4} marginTop="$2" backgroundColor={colors.surfaceHover} borderRadius={8} paddingHorizontal={10} paddingVertical={4}>
+          <MaterialCommunityIcons name="sleep-off" size={12} color={colors.textTertiary} />
+          <B color="$textTertiary" fontSize={11}>No sleep data last night</B>
+        </XStack>
+      )}
       {snapshot?.cachedAt && (
         <B color="$textTertiary" fontSize={11} marginTop="$1">
           Last synced {formatTimeAgo(snapshot.cachedAt)}
@@ -564,7 +579,7 @@ function SleepCard({ signal, sleepTrend }: {
       {/* Hero value + bed times */}
       {latest && (
         <XStack justifyContent="space-between" alignItems="baseline" marginTop={8}>
-          <M color={colors.textPrimary} fontSize={32} fontWeight="800">{(latest.totalMinutes / 60).toFixed(1)} hrs</M>
+          <M color={colors.textPrimary} fontSize={32} fontWeight="800">{formatSleepDuration(latest.totalMinutes)}</M>
           <B color={colors.textTertiary} fontSize={12}>
             {formatTime12h(latest.bedStart)} → {formatTime12h(latest.bedEnd)}
           </B>
@@ -606,21 +621,21 @@ function SleepCard({ signal, sleepTrend }: {
               <XStack alignItems="center" gap={4}>
                 <View width={8} height={8} borderRadius={4} backgroundColor={STAGE_COLORS.deep} />
                 <B color="$textSecondary" fontSize={11}>Deep</B>
-                <M color="$color" fontSize={11} fontWeight="600">{(latest.stages.deepMinutes / 60).toFixed(1)}h</M>
+                <M color="$color" fontSize={11} fontWeight="600">{formatSleepDuration(latest.stages.deepMinutes)}</M>
               </XStack>
             )}
             {latest.stages.lightMinutes > 0 && (
               <XStack alignItems="center" gap={4}>
                 <View width={8} height={8} borderRadius={4} backgroundColor={STAGE_COLORS.light} />
                 <B color="$textSecondary" fontSize={11}>Light</B>
-                <M color="$color" fontSize={11} fontWeight="600">{(latest.stages.lightMinutes / 60).toFixed(1)}h</M>
+                <M color="$color" fontSize={11} fontWeight="600">{formatSleepDuration(latest.stages.lightMinutes)}</M>
               </XStack>
             )}
             {latest.stages.remMinutes > 0 && (
               <XStack alignItems="center" gap={4}>
                 <View width={8} height={8} borderRadius={4} backgroundColor={STAGE_COLORS.rem} />
                 <B color="$textSecondary" fontSize={11}>REM</B>
-                <M color="$color" fontSize={11} fontWeight="600">{(latest.stages.remMinutes / 60).toFixed(1)}h</M>
+                <M color="$color" fontSize={11} fontWeight="600">{formatSleepDuration(latest.stages.remMinutes)}</M>
               </XStack>
             )}
             {latest.stages.awakeMinutes > 0 && (
@@ -723,13 +738,13 @@ function SleepCard({ signal, sleepTrend }: {
                       borderWidth: 0.5, borderColor: colors.border,
                     }}>
                       <XStack alignItems="center" gap={6}>
-                        <M color="$color" fontSize={14} fontWeight="800">{(recentNights[barSelIdx].totalMinutes / 60).toFixed(1)} hrs</M>
+                        <M color="$color" fontSize={14} fontWeight="800">{formatSleepDuration(recentNights[barSelIdx].totalMinutes)}</M>
                         <B color="$textTertiary" fontSize={10}>{formatNightLabel(recentNights[barSelIdx].date)}</B>
                       </XStack>
                       {recentNights[barSelIdx].stages && (
                         <XStack gap={6} marginTop={2}>
-                          <M color={sleepStageColors.deep} fontSize={10}>{(recentNights[barSelIdx].stages!.deepMinutes / 60).toFixed(1)}h deep</M>
-                          <M color={sleepStageColors.rem} fontSize={10}>{(recentNights[barSelIdx].stages!.remMinutes / 60).toFixed(1)}h REM</M>
+                          <M color={sleepStageColors.deep} fontSize={10}>{formatSleepDuration(recentNights[barSelIdx].stages!.deepMinutes)} deep</M>
+                          <M color={sleepStageColors.rem} fontSize={10}>{formatSleepDuration(recentNights[barSelIdx].stages!.remMinutes)} REM</M>
                         </XStack>
                       )}
                     </View>
@@ -747,7 +762,7 @@ function SleepCard({ signal, sleepTrend }: {
                   return (
                     <View key={i} style={{ position: 'absolute', left: cx - 20, width: 40, alignItems: 'center', top: 4 }}>
                       <B color="$textTertiary" fontSize={9}>{formatDayLabel(night.date)}</B>
-                      <M color={sleepHoursColor(hrs)} fontSize={10} fontWeight="600">{hrs.toFixed(1)}</M>
+                      <M color={sleepHoursColor(hrs)} fontSize={10} fontWeight="600">{formatSleepDuration(night.totalMinutes)}</M>
                     </View>
                   );
                 })}
@@ -769,6 +784,7 @@ function SleepCard({ signal, sleepTrend }: {
 // ─── Pace / HR / Fitness / Shoes (from old Zones screen) ────
 
 function PaceZoneRow({ zone, paceZones }: { zone: PaceZoneName; paceZones: PaceZones }) {
+  const u = useUnits();
   const range = paceZones[zone];
   const desc = ZONE_DESCRIPTIONS[zone].split(' \u2014 ')[1] ?? ZONE_DESCRIPTIONS[zone];
   return (
@@ -781,7 +797,7 @@ function PaceZoneRow({ zone, paceZones }: { zone: PaceZoneName; paceZones: PaceZ
           <B color="$textTertiary" fontSize={12}>{ZONE_RPE[zone]}</B>
         </XStack>
         <M color={colors.cyan} fontSize={15} fontWeight="700" marginLeft={28} marginBottom={2}>
-          {formatPaceRange(range)} /mi
+          {formatPaceRange(range)} {u.paceSuffix}
         </M>
         <B color="$textSecondary" fontSize={12} marginLeft={28} lineHeight={16}>{desc}</B>
       </YStack>
@@ -804,6 +820,7 @@ function HRZoneRow({ label, name, min, max, index }: { label: string; name: stri
 }
 
 function ShoeCard({ shoe }: { shoe: Shoe }) {
+  const u = useUnits();
   const percent = shoe.maxMiles > 0 ? shoe.totalMiles / shoe.maxMiles : 0;
   const clampedPercent = Math.min(percent, 1);
   const isWarning = percent >= 0.8;
@@ -825,8 +842,8 @@ function ShoeCard({ shoe }: { shoe: Shoe }) {
         <View height="100%" width={`${clampedPercent * 100}%` as any} borderRadius={3} backgroundColor={barColor} />
       </YStack>
       <XStack alignItems="baseline" gap="$1">
-        <M color={isWarning ? barColor : '$color'} fontSize={14} fontWeight="700">{shoe.totalMiles.toFixed(0)} mi</M>
-        <M color="$textTertiary" fontSize={12}>/ {shoe.maxMiles} mi</M>
+        <M color={isWarning ? barColor : '$color'} fontSize={14} fontWeight="700">{u.dist(shoe.totalMiles, 0)}</M>
+        <M color="$textTertiary" fontSize={12}>/ {u.dist(shoe.maxMiles, 0)}</M>
       </XStack>
       {isWarning && !shoe.retired && (
         <B color={barColor} fontSize={12} fontWeight="600" marginTop="$1">
@@ -840,6 +857,7 @@ function ShoeCard({ shoe }: { shoe: Shoe }) {
 // ─── Main Screen ─────────────────────────────────────────────
 
 export default function RecoveryScreen() {
+  const u = useUnits();
   const userProfile = useAppStore(s => s.userProfile);
   const paceZones = useAppStore(s => s.paceZones);
   const shoes = useAppStore(s => s.shoes);
@@ -1342,7 +1360,7 @@ export default function RecoveryScreen() {
             <B color="$color" fontSize={14} lineHeight={21}>{recoveryStatus.recommendation}</B>
             {todaysWorkout && todaysWorkout.workout_type !== 'rest' && (
               <B color="$textTertiary" fontSize={12} marginTop="$2">
-                Scheduled: {todaysWorkout.title} — {todaysWorkout.target_distance_miles?.toFixed(1)} mi
+                Scheduled: {todaysWorkout.title} — {todaysWorkout.target_distance_miles ? u.dist(todaysWorkout.target_distance_miles) : ''}
               </B>
             )}
           </YStack>
@@ -1458,33 +1476,37 @@ export default function RecoveryScreen() {
         return (
           <CollapsibleSection title="Personal Records">
             <YStack backgroundColor={colors.surface} borderRadius={14} overflow="hidden">
-              {displayPRs.map((pr: any, i: number) => (
-                <Pressable key={pr.distance}
-                  onPress={pr.timeSeconds && pr.activityId ? () => router.push(`/activity/${pr.activityId}`) : undefined}>
-                  <XStack alignItems="center" paddingVertical={10} paddingHorizontal={14}
-                    borderBottomWidth={i < displayPRs.length - 1 ? 0.5 : 0} borderBottomColor={colors.border}>
-                    <B color={colors.textSecondary} fontSize={14} flex={1}>{pr.distance}</B>
-                    {pr.timeSeconds ? (
-                      <>
-                        <M color={pr.date === latestDate ? colors.cyan : colors.textPrimary}
-                          fontSize={16} fontWeight="800" marginRight={8}>
-                          {formatPRTime(pr.timeSeconds)}
-                        </M>
-                        <B color={colors.textTertiary} fontSize={11} width={50}>
-                          {new Date(pr.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                        </B>
-                        {pr.date === latestDate && (
-                          <View backgroundColor={colors.cyan + '22'} paddingHorizontal={5} paddingVertical={1} borderRadius={4} marginLeft={4}>
-                            <B color={colors.cyan} fontSize={8} fontWeight="700">PR</B>
-                          </View>
-                        )}
-                      </>
-                    ) : (
-                      <B color={colors.textTertiary} fontSize={13} fontStyle="italic">Not yet</B>
-                    )}
-                  </XStack>
-                </Pressable>
-              ))}
+              {displayPRs.map((pr: any, i: number) => {
+                const hasTime = pr.timeSeconds != null;
+                const isLatest = hasTime && pr.date === latestDate;
+                return (
+                  <Pressable key={pr.distance}
+                    onPress={hasTime && pr.activityId ? () => router.push(`/activity/${pr.activityId}`) : undefined}>
+                    <XStack alignItems="center" paddingVertical={12} paddingHorizontal={14}
+                      borderBottomWidth={i < displayPRs.length - 1 ? 0.5 : 0} borderBottomColor={colors.border}
+                      borderLeftWidth={isLatest ? 3 : 0} borderLeftColor={isLatest ? colors.cyan : 'transparent'}
+                      opacity={hasTime ? 1 : 0.5}>
+                      <B color={hasTime ? colors.textPrimary : colors.textTertiary} fontSize={14} fontWeight={hasTime ? '600' : '400'} flex={1}>
+                        {pr.distance}
+                      </B>
+                      {hasTime ? (
+                        <>
+                          {isLatest && <View marginRight={8}><PRBadge rank={1} size="sm" /></View>}
+                          <M color={isLatest ? colors.cyan : colors.textPrimary}
+                            fontSize={18} fontWeight="800" marginRight={10}>
+                            {formatPRTime(pr.timeSeconds)}
+                          </M>
+                          <B color={colors.textTertiary} fontSize={11} width={48} textAlign="right">
+                            {new Date(pr.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                          </B>
+                        </>
+                      ) : (
+                        <M color={colors.textTertiary} fontSize={14}>——</M>
+                      )}
+                    </XStack>
+                  </Pressable>
+                );
+              })}
             </YStack>
           </CollapsibleSection>
         );
