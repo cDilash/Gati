@@ -58,16 +58,17 @@ function getLastSyncTimestamp(): number | null {
   }
 }
 
-function updateLastSyncTimestamp(): void {
+function updateLastSyncTimestamp(unixSeconds?: number): void {
   try {
     const db = getDb();
-    // Store as ISO string with Z suffix so it's unambiguously UTC
-    const nowUtc = new Date().toISOString();
+    const value = unixSeconds
+      ? new Date(unixSeconds * 1000).toISOString()
+      : new Date().toISOString();
     db.runSync(
       'UPDATE strava_tokens SET last_sync_at = ? WHERE id = 1',
-      nowUtc,
+      value,
     );
-    console.log(`[Strava Sync] Updated last_sync_at = ${nowUtc}`);
+    console.log(`[Strava Sync] Updated last_sync_at = ${value}`);
   } catch (e) {
     console.warn('[Strava Sync] updateLastSyncTimestamp failed:', e);
   }
@@ -375,8 +376,15 @@ export async function syncStravaActivities(options?: {
     });
   }
   if (activities.length === 0) {
-    console.log('[Strava Sync] No new activities from Strava API');
-    updateLastSyncTimestamp();
+    console.log('[Strava Sync] No new activities — keeping last_sync_at unchanged');
+    // Safety: if last_sync_at is less than 24h old and we got 0 results,
+    // roll it back 24h so we don't miss activities that Strava is still processing
+    const currentSync = getLastSyncTimestamp();
+    const oneDayAgo = Math.floor(Date.now() / 1000) - 86400;
+    if (currentSync && currentSync > oneDayAgo) {
+      console.log('[Strava Sync] Rolling back last_sync_at by 24h for safety');
+      updateLastSyncTimestamp(oneDayAgo);
+    }
     rematchOrphanedMetrics();
     console.log('[Strava Sync] ════════════════════════════════════');
     return result;
@@ -457,7 +465,18 @@ export async function syncStravaActivities(options?: {
     if (!result.syncedDates.includes(activityDate)) result.syncedDates.push(activityDate);
   }
 
-  updateLastSyncTimestamp();
+  // Update last_sync_at to the latest activity's start time (not "now")
+  // This prevents skipping activities that Strava processes out of order
+  if (result.newActivities > 0) {
+    const latestActivityTime = Math.max(
+      ...activities.map(a => Math.floor(new Date(a.startDate).getTime() / 1000))
+    );
+    updateLastSyncTimestamp(latestActivityTime);
+    console.log(`[Strava Sync] Set last_sync_at to latest activity: ${new Date(latestActivityTime * 1000).toISOString()}`);
+  } else {
+    // All activities were duplicates/blocked — don't advance timestamp
+    console.log('[Strava Sync] No new imports — last_sync_at unchanged');
+  }
   rematchOrphanedMetrics();
   await backfillPolylines();
   await reverseGeocodeLocations();
@@ -477,8 +496,8 @@ function rematchOrphanedMetrics(): void {
     // Old code stored UTC date (start_date) instead of local date (start_date_local).
     // E.g., a 7 PM PDT run on March 18 was stored as date="2026-03-19" (UTC).
     // Fix: use utc_offset from strava_activity_detail to derive the correct local date.
-    const { getToday, addDaysToDate } = require('../utils/dateUtils');
-    const fiftyDaysAgo = addDaysToDate(getToday(), -56);
+    const { getToday, addDays } = require('../utils/dateUtils');
+    const fiftyDaysAgo = addDays(getToday(), -56);
     const utcOrphans = db.getAllSync<{ pm_id: string; strava_id: number; pm_date: string; utc_offset: number | null }>(
       `SELECT pm.id as pm_id, pm.strava_activity_id as strava_id, pm.date as pm_date, sad.utc_offset
        FROM performance_metric pm

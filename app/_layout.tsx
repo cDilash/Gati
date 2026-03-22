@@ -117,6 +117,8 @@ export default function RootLayout() {
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen name="setup" options={{ headerShown: false, presentation: 'fullScreenModal' }} />
           <Stack.Screen name="post-run" options={{ headerShown: false, presentation: 'fullScreenModal', gestureEnabled: true }} />
+          <Stack.Screen name="weekly-checkin" options={{ headerShown: false, presentation: 'fullScreenModal', gestureEnabled: true }} />
+          <Stack.Screen name="week-review" options={{ headerShown: false, presentation: 'fullScreenModal', gestureEnabled: true }} />
           <Stack.Screen
             name="workout/[id]"
             options={{

@@ -72,12 +72,36 @@ export async function buildCoachSystemPrompt(
   const pLabel = paceLabel(units);
   const parts: string[] = [];
 
+  // Check if weekly planning mode
+  let isWeekly = false;
+  let latestCheckin: any = null;
+  try {
+    const { isWeeklyPlanningMode, getLatestCheckin } = require('../engine/weeklyPlanning');
+    isWeekly = isWeeklyPlanningMode();
+    if (isWeekly) latestCheckin = getLatestCheckin();
+  } catch {}
+
   parts.push(`You are an expert marathon running coach guiding this athlete through their training.
 You follow Jack Daniels' methodology and the 80/20 polarized training approach.
 Be concise, direct, encouraging, and specific. Reference actual data, not generic advice.
 Keep responses to 2-4 paragraphs max unless the athlete asks for detailed analysis.
-Always use ${dLabelFull} for distances, ${pLabel} for paces, and ${units === 'metric' ? 'kg' : 'lbs'} for weight.`);
+Always use ${dLabelFull} for distances, ${pLabel} for paces, and ${units === 'metric' ? 'kg' : 'lbs'} for weight.${isWeekly ? `
+This athlete uses WEEK-BY-WEEK adaptive planning. Each week is generated fresh based on a check-in questionnaire.
+If they ask to "adjust my plan" or "change this week": suggest specific workout swaps for the CURRENT week only.
+For next week changes: tell them to update through the weekly check-in on Sunday.` : ''}`);
   parts.push('');
+
+  // Weekly check-in context
+  if (isWeekly && latestCheckin) {
+    parts.push('WEEKLY CHECK-IN (latest):');
+    parts.push(`  Lifting: ${latestCheckin.strengthDays?.length > 0 ? latestCheckin.strengthDays.join(', ') : 'none'}${latestCheckin.legDay ? ` (leg: ${latestCheckin.legDay})` : ''}`);
+    parts.push(`  Running days: ${latestCheckin.availableDays?.join(', ') ?? '?'}`);
+    parts.push(`  Energy: ${latestCheckin.energyLevel}, Soreness: ${latestCheckin.soreness}, Sleep: ${latestCheckin.sleepQuality}`);
+    if (latestCheckin.injuryStatus) parts.push(`  Injury: ${latestCheckin.injuryStatus}`);
+    parts.push(`  Focus: ${latestCheckin.focus}`);
+    if (latestCheckin.notes) parts.push(`  Notes: "${latestCheckin.notes}"`);
+    parts.push('');
+  }
 
   // Profile
   parts.push('ATHLETE PROFILE:');
@@ -307,7 +331,7 @@ Always use ${dLabelFull} for distances, ${pLabel} for paces, and ${units === 'me
        WHERE tp.status = 'active'
        AND pm.date >= ?
        AND pm.workout_id IS NULL`,
-      require('../utils/dateUtils').addDaysToDate(require('../utils/dateUtils').getToday(), -14)
+      require('../utils/dateUtils').addDays(require('../utils/dateUtils').getToday(), -14)
     );
     if (restDayRuns.length > 0) {
       parts.push('REST DAY ACTIVITY:');

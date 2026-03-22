@@ -368,6 +368,91 @@ export interface BackupInfo {
   appVersion: string | null;
 }
 
+// ─── Weekly Planning (Week-by-Week Adaptive) ────────────────
+
+export type WeekDay = 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | 'saturday' | 'sunday';
+
+export type EnergyLevel = 'high' | 'moderate' | 'low' | 'exhausted';
+export type SorenessLevel = 'none' | 'mild' | 'moderate' | 'severe';
+export type SleepQualityLevel = 'great' | 'ok' | 'poor' | 'terrible';
+export type PhaseName = 'base' | 'build' | 'peak' | 'taper' | 'race_week';
+
+export interface WeeklyCheckin {
+  id: string;
+  weekNumber: number;
+  raceWeekNumber: number; // countdown to race
+  createdAt: string;
+  strengthDays: WeekDay[];
+  legDay: WeekDay | null;
+  availableDays: WeekDay[];
+  preferredLongRunDay: WeekDay;
+  timeConstraints: string | null;
+  energyLevel: EnergyLevel;
+  soreness: SorenessLevel;
+  injuryStatus: string | null;
+  sleepQuality: SleepQualityLevel;
+  focus: string;
+  notes: string | null;
+}
+
+export interface TrainingPhaseInfo {
+  phase: PhaseName;
+  weekNumber: number;
+  targetWeeklyMiles: number;
+  weeksUntilRace: number;
+}
+
+export interface GeneratedWorkout {
+  day: WeekDay;
+  date: string;
+  type: string;
+  distanceMiles: number;
+  description: string;
+  targetPaceZone: string;
+  hrZone: string;
+  notes: string | null;
+}
+
+export interface GeneratedWeek {
+  weekNumber: number;
+  phase: PhaseName;
+  totalPlannedMiles: number;
+  rationale: string;
+  workouts: GeneratedWorkout[];
+}
+
+export interface WeekGeneration {
+  id: string;
+  weekNumber: number;
+  checkinId: string;
+  phase: PhaseName;
+  generatedAt: string;
+  promptSummary: string | null;
+  aiResponse: string | null;
+  accepted: boolean;
+  rejectedReason: string | null;
+}
+
+export interface PreviousWeekSummary {
+  weekNumber: number;
+  plannedMiles: number;
+  actualMiles: number;
+  completedRuns: number;
+  totalRuns: number;
+  runs: {
+    date: string;
+    type: string;
+    distanceMiles: number;
+    paceSecPerMile: number | null;
+    avgHR: number | null;
+    status: string;
+  }[];
+  recoveryScoreAvg: number | null;
+  garminVO2max: number | null;
+  garminTrainingStatus: string | null;
+  garminACWR: number | null;
+}
+
 // ─── Health / Recovery ───────────────────────────────────────
 
 export interface RestingHRResult {

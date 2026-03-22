@@ -255,8 +255,17 @@ export function savePlan(
   let workoutCount = 0;
 
   database.withTransactionSync(() => {
-    // Deactivate any existing active plan
+    // Deactivate any existing active plan and clean up its data
     database.runSync("UPDATE training_plan SET status = 'abandoned', updated_at = datetime('now') WHERE status = 'active'");
+
+    // Unlink metrics from abandoned plan workouts (preserve metrics, just clear the FK)
+    database.runSync(
+      `UPDATE performance_metric SET workout_id = NULL
+       WHERE workout_id IN (SELECT id FROM workout WHERE plan_id IN (SELECT id FROM training_plan WHERE status = 'abandoned'))`
+    );
+    // Delete workouts and weeks from abandoned plans (FK-safe: metrics unlinked above)
+    database.runSync(`DELETE FROM workout WHERE plan_id IN (SELECT id FROM training_plan WHERE status = 'abandoned')`);
+    database.runSync(`DELETE FROM training_week WHERE plan_id IN (SELECT id FROM training_plan WHERE status = 'abandoned')`);
 
     // Save the plan
     database.runSync(
@@ -274,7 +283,7 @@ export function savePlan(
     for (const week of plan.weeks) {
       const weekId = Crypto.randomUUID();
       database.runSync(
-        `INSERT INTO training_week (id, plan_id, week_number, phase, target_volume, is_cutback, ai_notes)
+        `INSERT OR REPLACE INTO training_week (id, plan_id, week_number, phase, target_volume, is_cutback, ai_notes)
          VALUES (?, ?, ?, ?, ?, ?, ?)`,
         weekId,
         planId,
@@ -316,6 +325,89 @@ export function savePlan(
   });
 
   return { planId, weekCount, workoutCount };
+}
+
+/**
+ * Apply an adaptation to the EXISTING active plan (in-place update).
+ * Only replaces UPCOMING workouts — completed/skipped/partial are preserved.
+ * Does NOT create a new plan row.
+ */
+export function applyAdaptation(
+  adaptedPlan: AIGeneratedPlan,
+  planId: string,
+  startDate: string,
+): { updatedWeeks: number; updatedWorkouts: number } {
+  const database = getDatabase();
+  let updatedWeeks = 0;
+  let updatedWorkouts = 0;
+
+  // Safety check: don't let workout count exceed 200
+  const existing = database.getFirstSync<{ cnt: number }>('SELECT count(*) as cnt FROM workout WHERE plan_id = ?', planId);
+  if (existing && existing.cnt > 200) {
+    console.error(`[DB] SAFETY: ${existing.cnt} workouts for plan — running dedup first`);
+    deduplicateWorkouts();
+  }
+
+  database.withTransactionSync(() => {
+    // Update plan_json with the new adapted plan
+    database.runSync(
+      `UPDATE training_plan SET plan_json = ?, updated_at = datetime('now') WHERE id = ?`,
+      JSON.stringify(adaptedPlan), planId,
+    );
+
+    for (const week of adaptedPlan.weeks) {
+      // Upsert training_week (INSERT OR REPLACE works here — UNIQUE on plan_id, week_number)
+      const existingWeek = database.getFirstSync<{ id: string }>(
+        'SELECT id FROM training_week WHERE plan_id = ? AND week_number = ?', planId, week.weekNumber
+      );
+      const weekId = existingWeek?.id ?? Crypto.randomUUID();
+      database.runSync(
+        `INSERT OR REPLACE INTO training_week (id, plan_id, week_number, phase, target_volume, is_cutback, ai_notes)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        weekId, planId, week.weekNumber, week.phase, week.targetVolume, week.isCutback ? 1 : 0, week.aiNotes ?? null,
+      );
+      updatedWeeks++;
+
+      // Delete ONLY upcoming workouts for this week (preserve completed/skipped/partial)
+      database.runSync(
+        `DELETE FROM workout WHERE plan_id = ? AND week_number = ? AND status = 'upcoming'`,
+        planId, week.weekNumber,
+      );
+
+      // Calculate week start date
+      const weekStart = addDaysToDate(startDate, (week.weekNumber - 1) * 7);
+
+      // Insert new workouts for this week
+      for (const workout of week.workouts) {
+        const scheduledDate = addDaysToDate(weekStart, workout.dayOfWeek);
+
+        // Check if a non-upcoming workout already exists on this date (don't overwrite)
+        const existingWorkout = database.getFirstSync<{ id: string }>(
+          `SELECT id FROM workout WHERE plan_id = ? AND scheduled_date = ? AND status != 'upcoming'`,
+          planId, scheduledDate,
+        );
+        if (existingWorkout) continue; // Skip — there's a completed/skipped workout on this date
+
+        database.runSync(
+          `INSERT INTO workout
+           (id, plan_id, week_number, day_of_week, scheduled_date, workout_type, title,
+            description, target_distance_miles, target_pace_zone, intervals_json, status)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'upcoming')`,
+          Crypto.randomUUID(), planId, week.weekNumber, workout.dayOfWeek, scheduledDate,
+          workout.type, workout.title, workout.description,
+          workout.distanceMiles ?? null, workout.paceZone ?? null,
+          workout.intervals ? JSON.stringify(workout.intervals) : null,
+        );
+        updatedWorkouts++;
+      }
+    }
+  });
+
+  // Recalculate volumes from real data
+  recalculateWeeklyVolumes();
+
+  console.log(`[DB] Adaptation applied in-place: ${updatedWeeks} weeks, ${updatedWorkouts} workouts updated`);
+  return { updatedWeeks, updatedWorkouts };
 }
 
 export function deleteActivePlan(): void {
@@ -363,18 +455,8 @@ export function getAllWorkouts(planId: string): Workout[] {
     planId,
   );
 
-  // Fallback: if no workouts found for this plan_id, try re-associating orphaned workouts
   if (workouts.length === 0) {
-    const orphanCount = (database.getFirstSync('SELECT COUNT(*) as cnt FROM workout') as any)?.cnt ?? 0;
-    if (orphanCount > 0) {
-      console.log(`[DB] No workouts for plan ${planId.substring(0,8)}, but ${orphanCount} orphaned workouts found — re-associating`);
-      database.runSync('UPDATE workout SET plan_id = ? WHERE plan_id != ?', planId, planId);
-      database.runSync('UPDATE training_week SET plan_id = ? WHERE plan_id != ?', planId, planId);
-      workouts = database.getAllSync<Workout>(
-        'SELECT * FROM workout WHERE plan_id = ? ORDER BY scheduled_date',
-        planId,
-      );
-    }
+    console.log(`[DB] No workouts found for plan ${planId.substring(0,8)} — normal for fresh plan`);
   }
 
   // Fix: re-derive week numbers if they don't start on Monday (from v1 restore)
@@ -699,8 +781,8 @@ export function getCrossTrainingForWeek(weekStart: string, weekEnd: string): imp
 
 export function getCrossTrainingHistory(daysBack: number): import('../types').CrossTraining[] {
   const database = getDatabase();
-  const { getToday, addDaysToDate } = require('../utils/dateUtils');
-  const cutoffStr = addDaysToDate(getToday(), -daysBack);
+  const { getToday, addDays } = require('../utils/dateUtils');
+  const cutoffStr = addDays(getToday(), -daysBack);
   const rows = database.getAllSync<any>(
     'SELECT * FROM cross_training WHERE date >= ? ORDER BY date DESC',
     [cutoffStr]
@@ -714,6 +796,166 @@ export function deleteCrossTraining(id: string): void {
 }
 
 // ─── Sweep & Volume ─────────────────────────────────────────
+
+/**
+ * Clean up plan data: ensure exactly ONE active plan, remove orphaned workouts
+ * from abandoned plans, and deduplicate any remaining duplicate rows.
+ */
+export function deduplicateWorkouts(): number {
+  const database = getDatabase();
+  try {
+    // Disable FK checks during cleanup to avoid constraint ordering issues
+    database.execSync('PRAGMA foreign_keys = OFF');
+
+    const totalBefore = (database.getFirstSync<any>('SELECT count(*) as cnt FROM workout'))?.cnt ?? 0;
+    const weeksBefore = (database.getFirstSync<any>('SELECT count(*) as cnt FROM training_week'))?.cnt ?? 0;
+    const plansBefore = (database.getFirstSync<any>('SELECT count(*) as cnt FROM training_plan'))?.cnt ?? 0;
+    console.log(`[Dedup] BEFORE: ${totalBefore} workouts, ${weeksBefore} weeks, ${plansBefore} plans`);
+
+    // Step 1: Find the ONE active plan to keep (most recent)
+    const activePlan = database.getFirstSync<{ id: string }>(
+      `SELECT id FROM training_plan WHERE status = 'active' ORDER BY created_at DESC LIMIT 1`
+    );
+    if (!activePlan) {
+      console.log('[Dedup] No active plan — nothing to clean');
+      database.execSync('PRAGMA foreign_keys = ON');
+      return 0;
+    }
+    const keepPlanId = activePlan.id;
+    console.log(`[Dedup] Keeping plan: ${keepPlanId.substring(0, 8)}`);
+
+    // Step 2: Mark all other active plans as abandoned
+    database.runSync(
+      `UPDATE training_plan SET status = 'abandoned' WHERE status = 'active' AND id != ?`, [keepPlanId]
+    );
+
+    // Step 3: Unlink metrics from workouts we're about to delete (preserve metrics)
+    database.runSync(
+      `UPDATE performance_metric SET workout_id = NULL
+       WHERE workout_id IN (SELECT id FROM workout WHERE plan_id != ?)`,
+      [keepPlanId]
+    );
+
+    // Step 4: DELETE WORKOUTS from non-active plans (FK-safe: metrics unlinked)
+    database.runSync(`DELETE FROM workout WHERE plan_id != ?`, [keepPlanId]);
+
+    // Step 4: DELETE TRAINING_WEEKS from non-active plans SECOND
+    database.runSync(`DELETE FROM training_week WHERE plan_id != ?`, [keepPlanId]);
+
+    // Step 5: DELETE abandoned plan rows THIRD
+    database.runSync(`DELETE FROM training_plan WHERE id != ?`, [keepPlanId]);
+
+    // Step 6: DEDUP workouts within active plan — brute force, one per date
+    const allWorkouts = database.getAllSync<{ rowid: number; id: string; scheduled_date: string; status: string }>(
+      `SELECT rowid, id, scheduled_date, status FROM workout WHERE plan_id = ? ORDER BY scheduled_date, rowid`,
+      [keepPlanId]
+    );
+
+    const keeperIds = new Set<string>();
+    const byDate = new Map<string, typeof allWorkouts>();
+    for (const w of allWorkouts) {
+      if (!byDate.has(w.scheduled_date)) byDate.set(w.scheduled_date, []);
+      byDate.get(w.scheduled_date)!.push(w);
+    }
+
+    for (const [, rows] of byDate) {
+      // Sort: completed=1, partial=2, skipped=3, upcoming=4, then lowest rowid
+      rows.sort((a, b) => {
+        const pri: Record<string, number> = { completed: 1, partial: 2, skipped: 3 };
+        const pa = pri[a.status] ?? 4;
+        const pb = pri[b.status] ?? 4;
+        return pa !== pb ? pa - pb : a.rowid - b.rowid;
+      });
+      keeperIds.add(rows[0].id);
+    }
+
+    const deleteIds = allWorkouts.map(w => w.id).filter(id => !keeperIds.has(id));
+    for (const id of deleteIds) {
+      // Unlink any metrics pointing to this workout before deleting (FK safety)
+      database.runSync('UPDATE performance_metric SET workout_id = NULL WHERE workout_id = ?', [id]);
+      database.runSync('DELETE FROM workout WHERE id = ?', [id]);
+    }
+
+    // Step 7: DEDUP training_weeks — one per week_number
+    const allWeeks = database.getAllSync<{ rowid: number; id: string; week_number: number }>(
+      `SELECT rowid, id, week_number FROM training_week WHERE plan_id = ? ORDER BY week_number, rowid`,
+      [keepPlanId]
+    );
+    const seenWeeks = new Set<number>();
+    for (const w of allWeeks) {
+      if (seenWeeks.has(w.week_number)) {
+        database.runSync('DELETE FROM training_week WHERE id = ?', [w.id]);
+      } else {
+        seenWeeks.add(w.week_number);
+      }
+    }
+
+    // Re-enable FK checks
+    database.execSync('PRAGMA foreign_keys = ON');
+
+    // Step 8: Rematch orphaned performance_metrics to current workouts
+    // (metrics may point to workout IDs from deleted plans)
+    const orphanedMetrics = database.getAllSync<{ id: string; date: string; workout_id: string | null }>(
+      `SELECT id, date, workout_id FROM performance_metric
+       WHERE workout_id IS NULL
+          OR workout_id NOT IN (SELECT id FROM workout)`
+    );
+    if (orphanedMetrics.length > 0) {
+      console.log(`[Dedup] Rematching ${orphanedMetrics.length} orphaned metrics`);
+      for (const m of orphanedMetrics) {
+        const match = database.getFirstSync<{ id: string }>(
+          `SELECT id FROM workout WHERE plan_id = ? AND scheduled_date = ? LIMIT 1`,
+          [keepPlanId, m.date]
+        );
+        if (match) {
+          database.runSync('UPDATE performance_metric SET workout_id = ? WHERE id = ?', [match.id, m.id]);
+          database.runSync(
+            `UPDATE workout SET status = 'completed' WHERE id = ? AND status = 'upcoming'`,
+            [match.id]
+          );
+        }
+      }
+      console.log(`[Dedup] Rematched ${orphanedMetrics.length} metrics`);
+    }
+
+    // Step 9: Sweep past upcoming workouts as skipped
+    const { getToday } = require('../utils/dateUtils');
+    const today = getToday();
+    database.runSync(
+      `UPDATE workout SET status = 'skipped'
+       WHERE plan_id = ? AND scheduled_date < ? AND status = 'upcoming'
+       AND workout_type != 'rest'
+       AND id NOT IN (SELECT workout_id FROM performance_metric WHERE workout_id IS NOT NULL)`,
+      [keepPlanId, today]
+    );
+    // Mark past rest days as completed
+    database.runSync(
+      `UPDATE workout SET status = 'completed'
+       WHERE plan_id = ? AND scheduled_date < ? AND status = 'upcoming' AND workout_type = 'rest'`,
+      [keepPlanId, today]
+    );
+
+    // Step 10: Recalculate volumes
+    recalculateWeeklyVolumes();
+
+    // Print final state
+    const totalAfter = (database.getFirstSync<any>('SELECT count(*) as cnt FROM workout'))?.cnt ?? 0;
+    const weeksAfter = (database.getFirstSync<any>('SELECT count(*) as cnt FROM training_week'))?.cnt ?? 0;
+    const plansAfter = (database.getFirstSync<any>('SELECT count(*) as cnt FROM training_plan'))?.cnt ?? 0;
+    const dupsAfter = (database.getFirstSync<any>(
+      `SELECT count(*) as cnt FROM (SELECT scheduled_date FROM workout GROUP BY scheduled_date HAVING count(*) > 1)`
+    ))?.cnt ?? 0;
+
+    console.log(`[Dedup] AFTER: ${totalAfter} workouts, ${weeksAfter} weeks, ${plansAfter} plans, ${dupsAfter} duplicate dates`);
+    console.log(`[Dedup] Removed: ${totalBefore - totalAfter} workouts, ${weeksBefore - weeksAfter} weeks, ${plansBefore - plansAfter} plans`);
+
+    return totalBefore - totalAfter;
+  } catch (e: any) {
+    console.error('[Dedup] FAILED:', e?.message ?? e);
+    try { database.execSync('PRAGMA foreign_keys = ON'); } catch {}
+    return 0;
+  }
+}
 
 export function sweepPastWorkouts(): { skipped: number; lateMatched: number } {
   const database = getDatabase();

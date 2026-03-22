@@ -485,6 +485,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   storePlan: (plan, vdot, startDate) => {
     const result = savePlan(plan, vdot, startDate);
     get().refreshState();
+    try { setSetting('plan_last_updated', new Date().toISOString()); setSetting('plan_update_source', 'generated'); } catch {}
     // Auto-backup after plan generation (fire-and-forget)
     (async () => { try { const { autoBackup } = require('./backup/backup'); await autoBackup(); { const _t = Date.now(); set({ lastBackupTime: _t, backupDirty: false }); try { setSetting('last_backup_time', String(_t)); } catch {} } } catch {} })();
     return result;
@@ -516,6 +517,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       // Step 4: Refresh store state
       get().refreshState();
+      try { setSetting('plan_last_updated', new Date().toISOString()); setSetting('plan_update_source', 'generated'); } catch {}
 
       return {
         success: true,
@@ -724,8 +726,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   // ─── Plan Adaptation ─────────────────────────────────────
 
   requestPlanAdaptation: async (reason) => {
+    console.log('[Store] requestPlanAdaptation called, reason:', reason?.substring(0, 100));
     const { activePlan, userProfile, paceZones, currentWeekNumber, workouts } = get();
     if (!activePlan || !userProfile || !paceZones) {
+      console.log('[Store] Adaptation ABORT — missing:', !activePlan ? 'plan' : !userProfile ? 'profile' : 'paceZones');
       return { success: false, error: 'No active plan or profile' };
     }
 
@@ -748,10 +752,17 @@ export const useAppStore = create<AppState>((set, get) => ({
         userProfile, paceZones,
       );
 
-      // Save the adapted plan
-      const today = getToday();
-      savePlan(result.plan, userProfile.vdot_score, today);
+      // Apply adaptation IN-PLACE (update existing plan, don't create new one)
+      const { applyAdaptation, getDatabase: getDb } = require('./db/database');
+      // Get the plan's actual start date from the earliest workout
+      const firstWorkout = getDb().getFirstSync(
+        'SELECT scheduled_date FROM workout WHERE plan_id = ? ORDER BY scheduled_date ASC LIMIT 1',
+        [activePlan.id]
+      ) as { scheduled_date: string } | null;
+      const planStartDate = firstWorkout?.scheduled_date ?? getToday();
+      applyAdaptation(result.plan, activePlan.id, planStartDate);
       get().refreshState();
+      try { setSetting('plan_last_updated', new Date().toISOString()); setSetting('plan_update_source', 'adapted'); } catch {}
 
       // Log the adaptation as a coach message
       const Crypto = require('expo-crypto');
@@ -1153,7 +1164,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     // Step 2: Sweep past workouts AFTER Strava sync (so new activities are matched first)
     if (state.activePlan) {
       try {
-        const { sweepPastWorkouts } = require('./db/database');
+        const { deduplicateWorkouts, sweepPastWorkouts } = require('./db/database');
+        deduplicateWorkouts(); // Fix any duplicate workout rows from adaptation
         sweepPastWorkouts();
       } catch {}
     }

@@ -173,27 +173,75 @@ function TypingDots() {
 
 interface PlanChangeMetadata { reason?: string; [key: string]: unknown }
 
-function PlanChangeSuggestion({ metadata, onApply, onDismiss }: { metadata: PlanChangeMetadata; onApply: () => void; onDismiss: () => void }) {
+function PlanChangeSuggestion({ metadata, onApply, onDismiss }: { metadata: PlanChangeMetadata; onApply: () => Promise<{ success: boolean; summary?: string; error?: string }>; onDismiss: () => void }) {
+  const [state, setState] = useState<'idle' | 'applying' | 'applied' | 'error'>('idle');
+  const [errorMsg, setErrorMsg] = useState('');
+
+  const handleApply = async () => {
+    setState('applying');
+    try {
+      const r = await onApply();
+      if (r.success) {
+        setState('applied');
+      } else {
+        setErrorMsg(r.error ?? 'Failed to apply.');
+        setState('error');
+      }
+    } catch (e: any) {
+      setErrorMsg(e?.message ?? 'Something went wrong.');
+      setState('error');
+    }
+  };
+
   return (
     <GradientBorder borderWidth={1.5} borderRadius={14} style={{ marginTop: 12 }}>
       <YStack padding={14}>
         <XStack alignItems="center" gap={8} marginBottom={8}>
           <View width={28} height={28} borderRadius={14} backgroundColor={colors.cyanGhost} alignItems="center" justifyContent="center">
-            <MaterialCommunityIcons name="calendar-edit" size={15} color={colors.cyan} />
+            <MaterialCommunityIcons name={state === 'applied' ? 'check-circle' : 'calendar-edit'} size={15} color={state === 'applied' ? colors.success : colors.cyan} />
           </View>
-          <H color={colors.textSecondary} fontSize={11} letterSpacing={1.5} textTransform="uppercase">Plan Suggestion</H>
+          <H color={state === 'applied' ? colors.success : colors.textSecondary} fontSize={11} letterSpacing={1.5} textTransform="uppercase">
+            {state === 'applied' ? 'Plan Updated' : 'Plan Suggestion'}
+          </H>
         </XStack>
         {metadata.reason && <B color={colors.textSecondary} fontSize={13} lineHeight={19} marginBottom={12}>{metadata.reason}</B>}
-        <YStack gap={8}>
-          <YStack backgroundColor={colors.cyan} borderRadius={10} paddingVertical={10} alignItems="center"
-            pressStyle={{ opacity: 0.8 }} onPress={onApply}>
-            <B color={colors.background} fontSize={14} fontWeight="700">Apply Change</B>
+
+        {state === 'applied' ? (
+          <XStack alignItems="center" gap={6} justifyContent="center" paddingVertical={8}>
+            <MaterialCommunityIcons name="check" size={16} color={colors.success} />
+            <B color={colors.success} fontSize={14} fontWeight="700">Applied</B>
+          </XStack>
+        ) : state === 'error' ? (
+          <YStack gap={8}>
+            <B color={colors.error} fontSize={12} textAlign="center">{errorMsg}</B>
+            <YStack backgroundColor={colors.cyan} borderRadius={10} paddingVertical={10} alignItems="center"
+              pressStyle={{ opacity: 0.8 }} onPress={handleApply}>
+              <B color={colors.background} fontSize={14} fontWeight="700">Retry</B>
+            </YStack>
           </YStack>
-          <YStack borderWidth={1} borderColor={colors.border} borderRadius={10} paddingVertical={10} alignItems="center"
-            pressStyle={{ opacity: 0.8 }} onPress={onDismiss}>
-            <B color={colors.textSecondary} fontSize={13} fontWeight="600">Keep as Planned</B>
+        ) : (
+          <YStack gap={8}>
+            <YStack backgroundColor={state === 'applying' ? colors.surfaceHover : colors.cyan} borderRadius={10} paddingVertical={10} alignItems="center"
+              opacity={state === 'applying' ? 0.7 : 1}
+              pressStyle={state === 'applying' ? {} : { opacity: 0.8 }}
+              onPress={state === 'applying' ? undefined : handleApply}>
+              {state === 'applying' ? (
+                <XStack alignItems="center" gap={8}>
+                  <Spinner size="small" color={colors.cyan} />
+                  <B color={colors.cyan} fontSize={14} fontWeight="700">Applying...</B>
+                </XStack>
+              ) : (
+                <B color={colors.background} fontSize={14} fontWeight="700">Apply Change</B>
+              )}
+            </YStack>
+            {state !== 'applying' && (
+              <YStack borderWidth={1} borderColor={colors.border} borderRadius={10} paddingVertical={10} alignItems="center"
+                pressStyle={{ opacity: 0.8 }} onPress={onDismiss}>
+                <B color={colors.textSecondary} fontSize={13} fontWeight="600">Keep as Planned</B>
+              </YStack>
+            )}
           </YStack>
-        </YStack>
+        )}
       </YStack>
     </GradientBorder>
   );
@@ -201,7 +249,7 @@ function PlanChangeSuggestion({ metadata, onApply, onDismiss }: { metadata: Plan
 
 // ─── Message Bubble ──────────────────────────────────────────
 
-function MessageBubble({ message, onApplyChange }: { message: CoachMessage; onApplyChange: (reason: string) => void }) {
+function MessageBubble({ message, onApplyChange }: { message: CoachMessage; onApplyChange: (reason: string) => Promise<{ success: boolean; summary?: string; error?: string }> }) {
   const isUser = message.role === 'user';
   const isSystem = message.role === 'system';
   const isPlanChange = message.message_type === 'plan_change';
@@ -261,7 +309,7 @@ function MessageBubble({ message, onApplyChange }: { message: CoachMessage; onAp
             <PlanChangeSuggestion
               metadata={metadata}
               onApply={() => onApplyChange(metadata?.reason ?? 'Plan adaptation requested')}
-              onDismiss={() => {}}
+              onDismiss={() => { /* keep as planned — no action needed */ }}
             />
           )}
         </YStack>
@@ -334,14 +382,16 @@ export default function CoachScreen() {
     scrollToBottom(true);
   }, [inputText, isCoachThinking, sendToCoach]);
 
-  const handleApplyChange = useCallback(async (reason: string) => {
-    Alert.alert('Apply Plan Change', `${reason}\n\nThis will adapt your training plan.`, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Apply', onPress: async () => {
-        const r = await requestPlanAdaptation(reason);
-        Alert.alert(r.success ? 'Plan Updated' : 'Error', r.success ? (r.summary ?? 'Done.') : (r.error ?? 'Failed.'));
-      }},
-    ]);
+  const handleApplyChange = useCallback(async (reason: string): Promise<{ success: boolean; summary?: string; error?: string }> => {
+    console.log('[Coach] Applying plan change, reason:', reason?.substring(0, 100));
+    try {
+      const r = await requestPlanAdaptation(reason);
+      console.log('[Coach] Adaptation result:', JSON.stringify(r).substring(0, 200));
+      return r;
+    } catch (e: any) {
+      console.error('[Coach] Adaptation error:', e?.message);
+      return { success: false, error: e?.message ?? 'Failed to apply changes.' };
+    }
   }, [requestPlanAdaptation]);
 
   const renderMessage = useCallback(({ item }: { item: CoachMessage }) => {

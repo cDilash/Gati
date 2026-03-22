@@ -342,6 +342,32 @@ export default function SettingsScreen() {
         <SettingsRow icon="refresh" iconColor={colors.orange} label="Regenerate Plan"
           subtitle={activePlan ? 'Delete current plan and create new' : 'Generate your first plan'}
           onPress={handleRegeneratePlan} loading={isGenerating} destructive={!!activePlan} />
+        <SettingsRow icon="calendar-week" iconColor={colors.cyan} label="Switch to Weekly Planning"
+          subtitle="AI generates one week at a time based on check-ins"
+          onPress={() => {
+            const { Alert } = require('react-native');
+            Alert.alert(
+              'Switch to Weekly Planning?',
+              'Future workouts will be removed. The AI will generate one week at a time based on your weekly check-in. Completed runs are preserved.',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Switch', onPress: () => {
+                  try {
+                    const { transitionToWeeklyPlanning } = require('../../src/engine/weeklyPlanning');
+                    const result = transitionToWeeklyPlanning();
+                    useAppStore.getState().refreshState();
+                    Alert.alert(
+                      'Switched to Weekly Planning',
+                      `Preserved ${result.preservedCompleted} completed runs.\nDeleted ${result.deletedUpcoming} future workouts.\n\nPhase: ${result.currentPhase.phase} (${result.currentPhase.weeksUntilRace} weeks to race)\n\nTap "Plan My Week" to generate your first adaptive week.`,
+                    );
+                    router.push('/weekly-checkin' as any);
+                  } catch (e: any) {
+                    Alert.alert('Error', e?.message ?? 'Failed to transition.');
+                  }
+                }},
+              ]
+            );
+          }} />
       </YStack>
 
       {/* ─── Account ──────────────────────────────────────── */}

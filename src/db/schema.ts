@@ -261,6 +261,54 @@ CREATE TABLE IF NOT EXISTS deleted_strava_activities (
   deleted_at TEXT NOT NULL DEFAULT (datetime('now'))
 );`;
 
+// ─── Weekly Check-in ────────────────────────────────────────
+
+export const CREATE_WEEKLY_CHECKIN = `
+CREATE TABLE IF NOT EXISTS weekly_checkin (
+  id TEXT PRIMARY KEY,
+  week_number INTEGER NOT NULL,
+  race_week_number INTEGER NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  strength_days TEXT,
+  leg_day TEXT,
+  available_days TEXT,
+  preferred_long_run_day TEXT,
+  time_constraints TEXT,
+  energy_level TEXT CHECK(energy_level IN ('high','moderate','low','exhausted')),
+  soreness TEXT CHECK(soreness IN ('none','mild','moderate','severe')),
+  injury_status TEXT,
+  sleep_quality TEXT CHECK(sleep_quality IN ('great','ok','poor','terrible')),
+  focus TEXT,
+  notes TEXT
+);`;
+
+// ─── Training Phase Tracking ────────────────────────────────
+
+export const CREATE_TRAINING_PHASE = `
+CREATE TABLE IF NOT EXISTS training_phase (
+  id TEXT PRIMARY KEY,
+  phase TEXT NOT NULL CHECK(phase IN ('base','build','peak','taper','race_week')),
+  started_at TEXT NOT NULL,
+  week_number INTEGER NOT NULL,
+  target_weekly_miles REAL,
+  notes TEXT
+);`;
+
+// ─── Week Generation History ────────────────────────────────
+
+export const CREATE_WEEK_GENERATION = `
+CREATE TABLE IF NOT EXISTS week_generation (
+  id TEXT PRIMARY KEY,
+  week_number INTEGER NOT NULL,
+  checkin_id TEXT REFERENCES weekly_checkin(id),
+  phase TEXT NOT NULL,
+  generated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  prompt_summary TEXT,
+  ai_response TEXT,
+  accepted INTEGER NOT NULL DEFAULT 0,
+  rejected_reason TEXT
+);`;
+
 // ─── Indexes ────────────────────────────────────────────────
 
 export const CREATE_WORKOUT_DATE_INDEX = `
@@ -295,4 +343,7 @@ export const ALL_TABLES = [
   CREATE_CROSS_TRAINING_DATE_INDEX,
   CREATE_TRAINING_LOAD_CACHE,
   CREATE_DELETED_STRAVA_ACTIVITIES,
+  CREATE_WEEKLY_CHECKIN,
+  CREATE_TRAINING_PHASE,
+  CREATE_WEEK_GENERATION,
 ];

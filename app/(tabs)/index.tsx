@@ -14,6 +14,7 @@ import { WeightCheckin } from '../../src/components/WeightCheckin';
 import { RecoveryStatus } from '../../src/types';
 import { colors, semantic } from '../../src/theme/colors';
 import { GradientBorder } from '../../src/theme/GradientBorder';
+import { GradientButton } from '../../src/theme/GradientButton';
 import { formatPRTime } from '../../src/utils/personalRecords';
 import { PRBadge } from '../../src/components/PRBadge';
 import { useUnits } from '../../src/hooks/useUnits';
@@ -91,6 +92,14 @@ export default function TodayScreen() {
   const deleteCrossTrainingEntry = useAppStore(s => s.deleteCrossTrainingEntry);
   const newPRNotification = useAppStore(s => s.newPRNotification);
   const u = useUnits();
+
+  // Weekly planning prompt
+  const [showWeeklyPrompt, setShowWeeklyPrompt] = useState(() => {
+    try {
+      const { shouldPromptWeeklyPlan, shouldPromptCurrentWeek } = require('../../src/engine/weeklyPlanning');
+      return shouldPromptWeeklyPlan() || shouldPromptCurrentWeek();
+    } catch { return false; }
+  });
   const fetchBriefing = useAppStore(s => s.fetchBriefing);
   const fetchPostRunAnalysis = useAppStore(s => s.fetchPostRunAnalysis);
   const fetchRaceStrategy = useAppStore(s => s.fetchRaceStrategy);
@@ -436,6 +445,27 @@ export default function TodayScreen() {
         contentContainerStyle={{ padding: 16, paddingBottom: 40 }}
         refreshControl={<RefreshControl refreshing={isSyncing} onRefresh={onRefresh} tintColor={colors.cyan} />}
       >
+      {/* Weekly Plan Prompt */}
+      {showWeeklyPrompt && (
+        <YStack marginBottom="$4">
+          <GradientBorder side="all" borderRadius={16} borderWidth={1.5}>
+            <YStack backgroundColor="$surface" borderRadius={16} padding={16}>
+              <XStack alignItems="center" justifyContent="space-between" marginBottom={8}>
+                <XStack alignItems="center" gap={8}>
+                  <MaterialCommunityIcons name="calendar-plus" size={20} color={colors.cyan} />
+                  <H color={colors.cyan} fontSize={14} letterSpacing={1.5}>PLAN YOUR WEEK</H>
+                </XStack>
+                <B color="$textTertiary" fontSize={14} onPress={() => setShowWeeklyPrompt(false)}>✕</B>
+              </XStack>
+              <B color="$textSecondary" fontSize={13} lineHeight={19} marginBottom={12}>
+                Ready to plan your training? A quick check-in helps the AI build your perfect week.
+              </B>
+              <GradientButton label="Plan My Week →" onPress={() => router.push('/weekly-checkin')} size="md" />
+            </YStack>
+          </GradientBorder>
+        </YStack>
+      )}
+
       {/* PR Celebration */}
       {newPRNotification && newPRNotification.prs.length > 0 && (
         <YStack marginBottom="$4">

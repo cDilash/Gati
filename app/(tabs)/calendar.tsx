@@ -73,6 +73,11 @@ export default function CalendarScreen() {
 
   const [expandedWeeks, setExpandedWeeks] = useState<Set<number>>(() => new Set(currentWeekNumber > 0 ? [currentWeekNumber] : []));
   const [digestDismissed, setDigestDismissed] = useState(false);
+
+  // Plan last updated timestamp
+  const planLastUpdated = useMemo(() => {
+    try { const { getSetting } = require('../../src/db/database'); return getSetting('plan_last_updated') ?? null; } catch { return null; }
+  }, [activePlan?.id]);
   const [arcWidth, setArcWidth] = useState(0);
   const flatListRef = useRef<FlatList>(null);
 
@@ -685,13 +690,117 @@ export default function CalendarScreen() {
               <View height={6} borderRadius={3} backgroundColor={colors.surfaceHover} overflow="hidden">
                 <View height={6} borderRadius={3} backgroundColor={colors.cyan} width={`${progressPct}%` as any} />
               </View>
-              <M_ color={colors.textTertiary} fontSize={11} fontWeight="600" marginTop={4} textAlign="right">{progressPct}%</M_>
+              <XStack justifyContent="space-between" alignItems="center" marginTop={4}>
+                {planLastUpdated ? (
+                  <XStack alignItems="center" gap={3}>
+                    <MaterialCommunityIcons name="update" size={11} color={colors.textTertiary} />
+                    <B color={colors.textTertiary} fontSize={10}>Updated {(() => {
+                      const diff = Date.now() - new Date(planLastUpdated).getTime();
+                      const mins = Math.floor(diff / 60000);
+                      if (mins < 1) return 'just now';
+                      if (mins < 60) return `${mins}m ago`;
+                      const hrs = Math.floor(mins / 60);
+                      if (hrs < 24) return `${hrs}h ago`;
+                      return new Date(planLastUpdated).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                    })()}</B>
+                  </XStack>
+                ) : <View />}
+                <M_ color={colors.textTertiary} fontSize={11} fontWeight="600">{progressPct}%</M_>
+              </XStack>
+
+              {/* Phase progress bar */}
+              {(() => {
+                try {
+                  const { calculatePhase } = require('../../src/engine/weeklyPlanning');
+                  const { getToday } = require('../../src/utils/dateUtils');
+                  const phase = calculatePhase(userProfile?.race_date ?? getToday(), getToday());
+                  const phases: { key: string; label: string; color: string }[] = [
+                    { key: 'base', label: 'BASE', color: colors.cyan },
+                    { key: 'build', label: 'BUILD', color: colors.orange },
+                    { key: 'peak', label: 'PEAK', color: colors.orange },
+                    { key: 'taper', label: 'TAPER', color: colors.cyan },
+                    { key: 'race_week', label: 'RACE', color: '#FFD700' },
+                  ];
+                  const activeIdx = phases.findIndex(p => p.key === phase.phase);
+                  return (
+                    <XStack marginTop={10} gap={3} alignItems="center">
+                      {phases.map((p, i) => (
+                        <YStack key={p.key} flex={1} alignItems="center" gap={2}>
+                          <View height={3} width="100%" borderRadius={1.5}
+                            backgroundColor={i <= activeIdx ? p.color : colors.surfaceHover} />
+                          <H fontSize={7} color={i === activeIdx ? p.color : colors.textTertiary} letterSpacing={0.5}>{p.label}</H>
+                        </YStack>
+                      ))}
+                    </XStack>
+                  );
+                } catch { return null; }
+              })()}
+
+              {/* Plan Next Week button — shows when next week has no workouts */}
+              {(() => {
+                try {
+                  const { shouldPromptWeeklyPlan } = require('../../src/engine/weeklyPlanning');
+                  if (!shouldPromptWeeklyPlan()) return null;
+                  return (
+                    <Pressable onPress={() => router.push('/weekly-checkin' as any)} style={{ marginTop: 10 }}>
+                      <XStack backgroundColor={colors.cyanGhost} borderRadius={10} paddingVertical={10} paddingHorizontal={14}
+                        alignItems="center" justifyContent="center" gap={6} borderWidth={1} borderColor={colors.cyanDim}>
+                        <MaterialCommunityIcons name="calendar-plus" size={16} color={colors.cyan} />
+                        <B color={colors.cyan} fontSize={13} fontWeight="700">Plan Next Week</B>
+                      </XStack>
+                    </Pressable>
+                  );
+                } catch { return null; }
+              })()}
             </YStack>
             </YStack>
           );
         }
 
-        // ─── Volume Arc ─────────────────────────────
+        // ─── Weekly Volume Trend (week-by-week mode) ─────
+        if (item.type === 'arc') {
+          try {
+            const { isWeeklyPlanningMode, getCompletedWeeksSummary } = require('../../src/engine/weeklyPlanning');
+            if (isWeeklyPlanningMode()) {
+              const history = getCompletedWeeksSummary();
+              if (history.length >= 2) {
+                return (
+                  <YStack marginBottom={12}>
+                    <H color={colors.textSecondary} fontSize={11} letterSpacing={1.5} textTransform="uppercase" marginBottom={8}>Volume Trend</H>
+                    <YStack backgroundColor={colors.surface} borderRadius={14} padding={14}>
+                      <XStack justifyContent="space-between" gap={4}>
+                        {history.slice(-6).map((w: any, i: number, arr: any[]) => {
+                          const maxVol = Math.max(...arr.map((x: any) => x.actualMiles), 1);
+                          const pct = Math.round((w.actualMiles / maxVol) * 100);
+                          const prev = i > 0 ? arr[i - 1].actualMiles : w.actualMiles;
+                          const change = prev > 0 ? Math.round(((w.actualMiles - prev) / prev) * 100) : 0;
+                          return (
+                            <YStack key={w.weekNumber} flex={1} alignItems="center" gap={4}>
+                              <M_ color={colors.textPrimary} fontSize={11} fontWeight="700">
+                                {u.rawDist(w.actualMiles).toFixed(0)}
+                              </M_>
+                              <View height={60} width={16} borderRadius={8} backgroundColor={colors.surfaceHover} justifyContent="flex-end" overflow="hidden">
+                                <View height={`${Math.max(pct, 5)}%` as any} backgroundColor={colors.cyan} borderRadius={8} />
+                              </View>
+                              <B color={colors.textTertiary} fontSize={8}>W{w.weekNumber}</B>
+                              {i > 0 && change !== 0 && (
+                                <M_ color={change > 0 ? colors.cyan : colors.orange} fontSize={8} fontWeight="600">
+                                  {change > 0 ? '+' : ''}{change}%
+                                </M_>
+                              )}
+                            </YStack>
+                          );
+                        })}
+                      </XStack>
+                    </YStack>
+                  </YStack>
+                );
+              }
+            }
+          } catch {}
+        }
+
+        // ─── Volume Arc (legacy) ─────────────────────
         if (item.type === 'arc') {
           return (
             <YStack marginBottom={12} onLayout={(e: LayoutChangeEvent) => setArcWidth(e.nativeEvent.layout.width)}>

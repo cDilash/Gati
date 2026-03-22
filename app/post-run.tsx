@@ -4,7 +4,7 @@
  */
 
 import { useEffect, useState, useMemo } from 'react';
-import { ScrollView as RNScrollView, Pressable, Dimensions } from 'react-native';
+import { ScrollView as RNScrollView, Pressable, Dimensions, Platform, StatusBar } from 'react-native';
 import { YStack, XStack, Text, View, Spinner } from 'tamagui';
 import { useRouter } from 'expo-router';
 import { useAppStore } from '../src/store';
@@ -110,14 +110,14 @@ export default function PostRunModal() {
   const targetDist = workout?.target_distance_miles;
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.background, borderTopWidth: 0.5, borderTopColor: colors.border }}>
+    <View style={{ flex: 1, backgroundColor: colors.background, paddingTop: Platform.OS === 'ios' ? 54 : (StatusBar.currentHeight ?? 24) + 8 }}>
     {/* Drag handle */}
     <YStack alignItems="center" paddingTop={10} paddingBottom={6}>
       <View width={36} height={4} borderRadius={2} backgroundColor={colors.textTertiary} opacity={0.5} />
     </YStack>
     {/* Dismiss button */}
     <Pressable onPress={handleDismiss} hitSlop={12}
-      style={{ position: 'absolute', top: 16, right: 16, zIndex: 10, width: 30, height: 30, borderRadius: 15, backgroundColor: colors.surfaceHover, alignItems: 'center', justifyContent: 'center' }}>
+      style={{ position: 'absolute', top: (Platform.OS === 'ios' ? 54 : (StatusBar.currentHeight ?? 24) + 8) + 8, right: 16, zIndex: 10, width: 30, height: 30, borderRadius: 15, backgroundColor: colors.surfaceHover, alignItems: 'center', justifyContent: 'center' }}>
       <MaterialCommunityIcons name="close" size={16} color={colors.textSecondary} />
     </Pressable>
     <RNScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 60 }}>
@@ -130,14 +130,17 @@ export default function PostRunModal() {
         {/* Primary stats row */}
         <XStack marginTop={24} gap={24} justifyContent="center">
           <YStack alignItems="center">
+            <MaterialCommunityIcons name="map-marker-distance" size={16} color={colors.cyan} />
             <GradientText text={String(u.rawDist(distance).toFixed(1))} style={{ fontSize: 36, fontWeight: '800' }} />
             <B color={colors.textSecondary} fontSize={11} marginTop={2}>{u.distLabel}</B>
           </YStack>
           <YStack alignItems="center">
+            <MaterialCommunityIcons name="speedometer" size={16} color={colors.cyan} />
             <GradientText text={pace} style={{ fontSize: 36, fontWeight: '800' }} />
             <B color={colors.textSecondary} fontSize={11} marginTop={2}>avg pace</B>
           </YStack>
           <YStack alignItems="center">
+            <MaterialCommunityIcons name="timer-outline" size={16} color={colors.textSecondary} />
             <GradientText text={durationStr} style={{ fontSize: 36, fontWeight: '800' }} />
             <B color={colors.textSecondary} fontSize={11} marginTop={2}>duration</B>
           </YStack>
@@ -147,18 +150,21 @@ export default function PostRunModal() {
         <XStack marginTop={20} gap={24} justifyContent="center">
           {hr ? (
             <YStack alignItems="center">
-              <M color={colors.orange} fontSize={22} fontWeight="800">{hr}</M>
+              <MaterialCommunityIcons name="heart-pulse" size={14} color={colors.orange} />
+              <M color={colors.orange} fontSize={22} fontWeight="800">{Math.round(hr)}</M>
               <B color={colors.textTertiary} fontSize={10} marginTop={2}>avg HR</B>
             </YStack>
           ) : null}
           {calories ? (
             <YStack alignItems="center">
+              <MaterialCommunityIcons name="fire" size={14} color={colors.cyan} />
               <M color={colors.textPrimary} fontSize={22} fontWeight="700">{calories}</M>
               <B color={colors.textTertiary} fontSize={10} marginTop={2}>calories</B>
             </YStack>
           ) : null}
           {elevation ? (
             <YStack alignItems="center">
+              <MaterialCommunityIcons name="trending-up" size={14} color={colors.cyan} />
               <M color={colors.textPrimary} fontSize={22} fontWeight="700">+{u.elev(elevation)}</M>
               <B color={colors.textTertiary} fontSize={10} marginTop={2}>elevation</B>
             </YStack>
