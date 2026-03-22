@@ -477,12 +477,15 @@ function rematchOrphanedMetrics(): void {
     // Old code stored UTC date (start_date) instead of local date (start_date_local).
     // E.g., a 7 PM PDT run on March 18 was stored as date="2026-03-19" (UTC).
     // Fix: use utc_offset from strava_activity_detail to derive the correct local date.
+    const { getToday, addDaysToDate } = require('../utils/dateUtils');
+    const fiftyDaysAgo = addDaysToDate(getToday(), -56);
     const utcOrphans = db.getAllSync<{ pm_id: string; strava_id: number; pm_date: string; utc_offset: number | null }>(
       `SELECT pm.id as pm_id, pm.strava_activity_id as strava_id, pm.date as pm_date, sad.utc_offset
        FROM performance_metric pm
        JOIN strava_activity_detail sad ON sad.strava_activity_id = pm.strava_activity_id
-       WHERE pm.workout_id IS NULL AND pm.date >= date('now', '-56 days')
-       AND sad.utc_offset IS NOT NULL`
+       WHERE pm.workout_id IS NULL AND pm.date >= ?
+       AND sad.utc_offset IS NOT NULL`,
+      fiftyDaysAgo
     );
 
     for (const o of utcOrphans) {

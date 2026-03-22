@@ -163,7 +163,7 @@ export async function syncHealthData(forceRefresh: boolean = false): Promise<Hea
   if (todayResp !== null) signalCount++;
 
   const snapshot: HealthSnapshot = {
-    date: new Date().toISOString().split("T")[0],
+    date: require('../utils/dateUtils').getToday(),
     restingHR: todayRHR,
     hrvRMSSD: todayHRV,
     sleepHours: todaySleep ? Math.round(todaySleep * 10) / 10 : null,
@@ -193,7 +193,7 @@ export async function syncHealthData(forceRefresh: boolean = false): Promise<Hea
 function getCachedSnapshot(): HealthSnapshot | null {
   try {
     const db = getDatabase();
-    const today = new Date().toISOString().split("T")[0];
+    const today = require('../utils/dateUtils').getToday();
     const row = db.getFirstSync<any>(
       'SELECT * FROM health_snapshot WHERE date = ?',
       [today]

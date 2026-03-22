@@ -280,7 +280,7 @@ export async function generateRestDayBriefing(
 ): Promise<RestDayBriefing | null> {
   if (!isGeminiAvailable()) return null;
 
-  const today = new Date().toISOString().split('T')[0];
+  const today = require('../utils/dateUtils').getToday();
   const cacheKey = `rest_day_briefing_${today}`;
   const cached = getCachedAIContent('rest_briefing', cacheKey);
   if (cached) {
@@ -382,7 +382,7 @@ export async function generateSkipBriefing(
 ): Promise<string | null> {
   if (!isGeminiAvailable()) return null;
 
-  const today = new Date().toISOString().split('T')[0];
+  const today = require('../utils/dateUtils').getToday();
   const cacheKey = `skip_briefing_${today}`;
   const cached = getCachedAIContent('skip_briefing', cacheKey);
   if (cached) return cached;

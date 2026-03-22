@@ -305,8 +305,9 @@ Always use ${dLabelFull} for distances, ${pLabel} for paces, and ${units === 'me
        JOIN workout w ON w.scheduled_date = pm.date AND w.workout_type = 'rest'
        JOIN training_plan tp ON w.plan_id = tp.id
        WHERE tp.status = 'active'
-       AND pm.date >= date('now', '-14 days')
-       AND pm.workout_id IS NULL`
+       AND pm.date >= ?
+       AND pm.workout_id IS NULL`,
+      require('../utils/dateUtils').addDaysToDate(require('../utils/dateUtils').getToday(), -14)
     );
     if (restDayRuns.length > 0) {
       parts.push('REST DAY ACTIVITY:');

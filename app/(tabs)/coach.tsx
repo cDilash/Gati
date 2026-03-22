@@ -299,23 +299,27 @@ export default function CoachScreen() {
   const requestPlanAdaptation = useAppStore(s => s.requestPlanAdaptation);
   const userProfile = useAppStore(s => s.userProfile);
 
-  // Initial mount: snap to bottom without animation (loading history)
+  // Auto-scroll: only when user is near the bottom (don't yank during history browsing)
+  const isNearBottom = useRef(true);
   const didInitialScroll = useRef(false);
+
+  const scrollToBottom = useCallback((animated = true) => {
+    setTimeout(() => flatListRef.current?.scrollToEnd({ animated }), 250);
+  }, []);
+
+  // Initial mount: snap to bottom
   useEffect(() => {
     if (coachMessages.length > 0 && !didInitialScroll.current) {
       didInitialScroll.current = true;
-      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 150);
+      scrollToBottom(false);
     }
   }, [coachMessages.length]);
 
-  // New messages: scroll to bottom only when count increases
+  // New messages: auto-scroll if user is near bottom
   const prevCountRef = useRef(coachMessages.length);
   useEffect(() => {
-    if (coachMessages.length > prevCountRef.current) {
-      const jump = coachMessages.length - prevCountRef.current;
-      setTimeout(() => {
-        flatListRef.current?.scrollToEnd({ animated: jump <= 2 });
-      }, 100);
+    if (coachMessages.length > prevCountRef.current && isNearBottom.current) {
+      scrollToBottom(true);
     }
     prevCountRef.current = coachMessages.length;
   }, [coachMessages.length]);
@@ -325,6 +329,9 @@ export default function CoachScreen() {
     if (!msg || isCoachThinking) return;
     setInputText('');
     sendToCoach(msg);
+    // Always scroll when user sends — they expect to see their message
+    isNearBottom.current = true;
+    scrollToBottom(true);
   }, [inputText, isCoachThinking, sendToCoach]);
 
   const handleApplyChange = useCallback(async (reason: string) => {
@@ -396,7 +403,14 @@ export default function CoachScreen() {
           keyExtractor={item => item.id}
           extraData={coachMessages.length}
           contentContainerStyle={{ paddingTop: 12, paddingBottom: 8 }}
-          maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
+          onScroll={(e) => {
+            const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+            isNearBottom.current = contentOffset.y >= contentSize.height - layoutMeasurement.height - 120;
+          }}
+          scrollEventThrottle={100}
+          onContentSizeChange={() => {
+            if (isNearBottom.current) scrollToBottom(true);
+          }}
         />
       )}
 

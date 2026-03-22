@@ -127,7 +127,7 @@ function buildUserMessage(
   paceZones: PaceZones,
   stravaHistory: PerformanceMetric[] | null,
 ): string {
-  const today = new Date().toISOString().split('T')[0];
+  const today = require('../utils/dateUtils').getToday();
   const totalWeeks = Math.max(4, Math.floor(daysBetween(today, profile.race_date) / 7));
 
   const parts: string[] = [];

@@ -699,9 +699,8 @@ export function getCrossTrainingForWeek(weekStart: string, weekEnd: string): imp
 
 export function getCrossTrainingHistory(daysBack: number): import('../types').CrossTraining[] {
   const database = getDatabase();
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - daysBack);
-  const cutoffStr = cutoff.toISOString().split('T')[0];
+  const { getToday, addDaysToDate } = require('../utils/dateUtils');
+  const cutoffStr = addDaysToDate(getToday(), -daysBack);
   const rows = database.getAllSync<any>(
     'SELECT * FROM cross_training WHERE date >= ? ORDER BY date DESC',
     [cutoffStr]
@@ -769,7 +768,7 @@ export function sweepPastWorkouts(): { skipped: number; lateMatched: number } {
     console.log(`[DB] Sweep: ${skipped} skipped, ${lateMatched} late-matched`);
     // Clear cached rest day briefing so it regenerates with updated workout statuses
     try {
-      const today = new Date().toISOString().split('T')[0];
+      const today = require('../utils/dateUtils').getToday();
       database.runSync(`DELETE FROM ai_cache WHERE cache_type = 'rest_briefing' AND cache_key = ?`, [`rest_day_briefing_${today}`]);
     } catch {}
   }
@@ -852,7 +851,7 @@ export function deleteActivity(metricId: string): DeletedActivitySnapshot | null
 
     // 7. Clear AI caches
     database.runSync(`DELETE FROM ai_cache WHERE cache_type = 'analysis'`);
-    const today = new Date().toISOString().split('T')[0];
+    const today = require('../utils/dateUtils').getToday();
     database.runSync(`DELETE FROM ai_cache WHERE cache_type = 'rest_briefing' AND cache_key = ?`, [`rest_day_briefing_${today}`]);
 
     // 8. Invalidate training load cache
