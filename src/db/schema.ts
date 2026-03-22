@@ -253,6 +253,14 @@ CREATE TABLE IF NOT EXISTS training_load_cache (
   calculated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );`;
 
+// ─── Deleted Activity Blocklist ─────────────────────────────
+
+export const CREATE_DELETED_STRAVA_ACTIVITIES = `
+CREATE TABLE IF NOT EXISTS deleted_strava_activities (
+  strava_activity_id TEXT PRIMARY KEY,
+  deleted_at TEXT NOT NULL DEFAULT (datetime('now'))
+);`;
+
 // ─── Indexes ────────────────────────────────────────────────
 
 export const CREATE_WORKOUT_DATE_INDEX = `
@@ -286,4 +294,5 @@ export const ALL_TABLES = [
   CREATE_CROSS_TRAINING,
   CREATE_CROSS_TRAINING_DATE_INDEX,
   CREATE_TRAINING_LOAD_CACHE,
+  CREATE_DELETED_STRAVA_ACTIVITIES,
 ];

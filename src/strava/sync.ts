@@ -396,6 +396,14 @@ export async function syncStravaActivities(options?: {
       console.log(`[Strava Sync] Activity ${activity.id} "${activity.name}" — already imported, skipping`);
       continue;
     }
+    // Skip if user previously deleted this activity
+    try {
+      const { isStravaActivityBlocked } = require('../db/database');
+      if (isStravaActivityBlocked(activity.id)) {
+        console.log(`[Strava Sync] Activity ${activity.id} "${activity.name}" — user deleted, blocked`);
+        continue;
+      }
+    } catch {}
     console.log(`[Strava Sync] Activity ${activity.id} "${activity.name}" ${activity.startDate.split('T')[0]} — NEW, importing...`);
 
     // Fetch detailed data + streams

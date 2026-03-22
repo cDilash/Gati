@@ -358,6 +358,7 @@ export interface BackupData {
   } | null;
   crossTraining?: any[];
   trainingLoadCache?: any[];
+  deletedStravaActivities?: any[];
 }
 
 export interface BackupInfo {

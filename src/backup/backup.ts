@@ -42,6 +42,9 @@ export function serializeDatabase(): BackupData {
   let trainingLoadCache: any[] = [];
   try { trainingLoadCache = db.getAllSync<any>('SELECT * FROM training_load_cache'); } catch {}
 
+  let deletedStravaActivities: any[] = [];
+  try { deletedStravaActivities = db.getAllSync<any>('SELECT * FROM deleted_strava_activities'); } catch {}
+
   let appSettings: any[] = [];
   try { appSettings = db.getAllSync<any>('SELECT * FROM app_settings'); } catch {}
 
@@ -86,6 +89,7 @@ export function serializeDatabase(): BackupData {
     stravaTokens,
     crossTraining,
     trainingLoadCache,
+    deletedStravaActivities,
   };
 }
 
@@ -454,6 +458,16 @@ export async function restoreDatabase(
           db.runSync(
             `INSERT OR REPLACE INTO training_load_cache (id, pmc_json, data_hash, calculated_at) VALUES (?, ?, ?, ?)`,
             tlc.id ?? 1, tlc.pmc_json, tlc.data_hash ?? '', tlc.calculated_at ?? new Date().toISOString(),
+          );
+        } catch {}
+      }
+
+      // ── Restore deleted activity blocklist
+      for (const d of (data as any).deletedStravaActivities ?? []) {
+        try {
+          db.runSync(
+            `INSERT OR IGNORE INTO deleted_strava_activities (strava_activity_id, deleted_at) VALUES (?, ?)`,
+            d.strava_activity_id, d.deleted_at ?? new Date().toISOString(),
           );
         } catch {}
       }

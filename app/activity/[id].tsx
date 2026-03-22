@@ -3,7 +3,7 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import { Linking, Pressable, PanResponder, GestureResponderEvent } from 'react-native';
+import { Linking, Pressable, PanResponder, GestureResponderEvent, Alert } from 'react-native';
 import { Text, YStack, XStack, ScrollView, Spinner, View, } from 'tamagui';
 import Svg, { Rect as SvgRect, Line as SvgLine, Circle as SvgCircle, Path as SvgPath, Defs, LinearGradient as SvgGrad, Stop as SvgStop, Text as SvgText } from 'react-native-svg';
 import { Dimensions } from 'react-native';
@@ -117,6 +117,8 @@ export default function ActivityDetailScreen() {
   const [matchedWorkout, setMatchedWorkout] = useState<Workout | null>(null);
   const [showLaps, setShowLaps] = useState(false);
   const [descExpanded, setDescExpanded] = useState(false);
+  const deleteActivity = useAppStore(s => s.deleteActivity);
+  const undoDeleteActivity = useAppStore(s => s.undoDeleteActivity);
   const [garminActivity, setGarminActivity] = useState<any>(null);
   const [activeTab, setActiveTab] = useState<'overview' | 'charts' | 'laps'>('overview');
   const [paceScrubIdx, setPaceScrubIdx] = useState<number | null>(null);
@@ -1183,6 +1185,41 @@ export default function ActivityDetailScreen() {
       </YStack>
       )}
 
+      {/* ─── Delete Activity ─────────────────────────────── */}
+      <YStack marginHorizontal={16} marginTop={24} marginBottom={16} alignItems="center">
+        <Pressable
+          onPress={() => {
+            const hasPRs = metric.best_efforts_json ? (() => {
+              try { return JSON.parse(metric.best_efforts_json).some((e: any) => e.prRank === 1); } catch { return false; }
+            })() : false;
+
+            Alert.alert(
+              'Delete this activity?',
+              `This will remove this run from Gati and revert the matched workout to upcoming. The activity will remain on Strava.${hasPRs ? '\n\nThis run contains personal records that will be removed.' : ''}`,
+              [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Delete', style: 'destructive', onPress: () => {
+                  const snapshot = deleteActivity(metric.id);
+                  router.back();
+                  if (snapshot) {
+                    // Show undo toast via global state (simple approach)
+                    useAppStore.setState({ _deleteUndoSnapshot: snapshot } as any);
+                    setTimeout(() => {
+                      const current = (useAppStore.getState() as any)._deleteUndoSnapshot;
+                      if (current === snapshot) {
+                        useAppStore.setState({ _deleteUndoSnapshot: null } as any);
+                      }
+                    }, 15000);
+                  }
+                }},
+              ]
+            );
+          }}
+          style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 10 }}>
+          <MaterialCommunityIcons name="delete-outline" size={16} color={colors.error} />
+          <B color={colors.error} fontSize={13} fontWeight="600">Delete Activity</B>
+        </Pressable>
+      </YStack>
     </ScrollView>
     </View>
   );

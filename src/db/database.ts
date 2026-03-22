@@ -777,6 +777,145 @@ export function sweepPastWorkouts(): { skipped: number; lateMatched: number } {
   return { skipped, lateMatched };
 }
 
+// ─── Delete Activity ──────────────────────────────────────────
+
+export interface DeletedActivitySnapshot {
+  metric: any;
+  detail: any | null;
+  workoutId: string | null;
+  workoutPrevStatus: string | null;
+  workoutPrevQuality: string | null;
+  workoutPrevStravaId: number | null;
+}
+
+export function deleteActivity(metricId: string): DeletedActivitySnapshot | null {
+  const database = getDatabase();
+
+  // 1. Get the metric row (before transaction — need it for snapshot)
+  const metric = database.getFirstSync<any>(
+    'SELECT * FROM performance_metric WHERE id = ?', [metricId]
+  );
+  if (!metric) return null;
+
+  // 2. Snapshot for undo (before any mutations)
+  const detail = metric.strava_activity_id
+    ? database.getFirstSync<any>('SELECT * FROM strava_activity_detail WHERE strava_activity_id = ?', [metric.strava_activity_id])
+    : database.getFirstSync<any>('SELECT * FROM strava_activity_detail WHERE performance_metric_id = ?', [metricId]);
+
+  let workoutPrevStatus: string | null = null;
+  let workoutPrevQuality: string | null = null;
+  let workoutPrevStravaId: number | null = null;
+  if (metric.workout_id) {
+    const workout = database.getFirstSync<any>('SELECT status, execution_quality, strava_activity_id FROM workout WHERE id = ?', [metric.workout_id]);
+    if (workout) {
+      workoutPrevStatus = workout.status;
+      workoutPrevQuality = workout.execution_quality;
+      workoutPrevStravaId = workout.strava_activity_id;
+    }
+  }
+
+  const snapshot: DeletedActivitySnapshot = {
+    metric,
+    detail,
+    workoutId: metric.workout_id,
+    workoutPrevStatus,
+    workoutPrevQuality,
+    workoutPrevStravaId,
+  };
+
+  // 3-9. All mutations in a single transaction — rollback if any step fails
+  database.withTransactionSync(() => {
+    // 3. Add to blocklist (prevent Strava re-import)
+    if (metric.strava_activity_id) {
+      database.runSync(
+        'INSERT OR IGNORE INTO deleted_strava_activities (strava_activity_id) VALUES (?)',
+        [String(metric.strava_activity_id)]
+      );
+    }
+
+    // 4. Delete strava_activity_detail
+    if (metric.strava_activity_id) {
+      database.runSync('DELETE FROM strava_activity_detail WHERE strava_activity_id = ?', [metric.strava_activity_id]);
+    }
+    database.runSync('DELETE FROM strava_activity_detail WHERE performance_metric_id = ?', [metricId]);
+
+    // 5. Revert matched workout
+    if (metric.workout_id) {
+      database.runSync(
+        `UPDATE workout SET status = 'upcoming', strava_activity_id = NULL, execution_quality = NULL, modification_reason = NULL WHERE id = ?`,
+        [metric.workout_id]
+      );
+    }
+
+    // 6. Delete the metric
+    database.runSync('DELETE FROM performance_metric WHERE id = ?', [metricId]);
+
+    // 7. Clear AI caches
+    database.runSync(`DELETE FROM ai_cache WHERE cache_type = 'analysis'`);
+    const today = new Date().toISOString().split('T')[0];
+    database.runSync(`DELETE FROM ai_cache WHERE cache_type = 'rest_briefing' AND cache_key = ?`, [`rest_day_briefing_${today}`]);
+
+    // 8. Invalidate training load cache
+    database.runSync('DELETE FROM training_load_cache');
+  });
+
+  // 9. Recalculate weekly volumes (outside transaction — reads from DB)
+  recalculateWeeklyVolumes();
+
+  console.log(`[DB] Deleted activity ${metricId} (strava: ${metric.strava_activity_id}, workout: ${metric.workout_id})`);
+
+  return snapshot;
+}
+
+export function restoreActivity(snapshot: DeletedActivitySnapshot): void {
+  const database = getDatabase();
+
+  // Re-insert metric
+  const m = snapshot.metric;
+  database.runSync(
+    `INSERT OR REPLACE INTO performance_metric (id, workout_id, strava_activity_id, date, distance_miles, duration_minutes, avg_pace_sec_per_mile, avg_hr, max_hr, splits_json, best_efforts_json, perceived_exertion, gear_name, strava_workout_type, source, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [m.id, m.workout_id, m.strava_activity_id, m.date, m.distance_miles, m.duration_minutes, m.avg_pace_sec_per_mile, m.avg_hr, m.max_hr, m.splits_json, m.best_efforts_json, m.perceived_exertion, m.gear_name, m.strava_workout_type, m.source, m.created_at]
+  );
+
+  // Re-insert detail (if exists)
+  if (snapshot.detail) {
+    const d = snapshot.detail;
+    const cols = Object.keys(d).filter(k => d[k] !== undefined);
+    const vals = cols.map(k => d[k]);
+    const placeholders = cols.map(() => '?').join(',');
+    database.runSync(`INSERT OR REPLACE INTO strava_activity_detail (${cols.join(',')}) VALUES (${placeholders})`, vals);
+  }
+
+  // Restore workout status
+  if (snapshot.workoutId && snapshot.workoutPrevStatus) {
+    database.runSync(
+      'UPDATE workout SET status = ?, execution_quality = ?, strava_activity_id = ? WHERE id = ?',
+      [snapshot.workoutPrevStatus, snapshot.workoutPrevQuality, snapshot.workoutPrevStravaId, snapshot.workoutId]
+    );
+  }
+
+  // Remove from blocklist
+  if (m.strava_activity_id) {
+    database.runSync('DELETE FROM deleted_strava_activities WHERE strava_activity_id = ?', [String(m.strava_activity_id)]);
+  }
+
+  // Recalculate
+  recalculateWeeklyVolumes();
+  try { database.runSync('DELETE FROM training_load_cache'); } catch {}
+
+  console.log(`[DB] Restored activity ${m.id}`);
+}
+
+export function isStravaActivityBlocked(stravaActivityId: number): boolean {
+  const database = getDatabase();
+  const row = database.getFirstSync<any>(
+    'SELECT 1 FROM deleted_strava_activities WHERE strava_activity_id = ?',
+    [String(stravaActivityId)]
+  );
+  return row != null;
+}
+
 export function recalculateWeeklyVolumes(): void {
   const database = getDatabase();
 

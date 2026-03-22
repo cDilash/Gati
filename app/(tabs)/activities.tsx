@@ -4,7 +4,7 @@
  */
 
 import { useEffect, useState, useCallback, useMemo } from 'react';
-import { FlatList, RefreshControl, ScrollView as RNScrollView } from 'react-native';
+import { FlatList, RefreshControl, ScrollView as RNScrollView, Pressable } from 'react-native';
 import { useRouter } from 'expo-router';
 import { YStack, XStack, Text, View, Spinner } from 'tamagui';
 import { useAppStore } from '../../src/store';
@@ -75,6 +75,21 @@ export default function ActivitiesScreen() {
   const [activeFilter, setActiveFilter] = useState<string>('All');
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
+  const undoDeleteActivity = useAppStore(s => s.undoDeleteActivity);
+  const deleteUndoSnapshot = useAppStore((s: any) => s._deleteUndoSnapshot ?? null);
+  const [showUndo, setShowUndo] = useState(false);
+
+  // Show undo toast when snapshot appears
+  useEffect(() => {
+    if (deleteUndoSnapshot) {
+      setShowUndo(true);
+      loadMetrics(); // Refresh list after delete
+      const t = setTimeout(() => setShowUndo(false), 15000);
+      return () => clearTimeout(t);
+    } else {
+      setShowUndo(false);
+    }
+  }, [deleteUndoSnapshot]);
 
   const loadMetrics = useCallback(() => {
     try {
@@ -243,6 +258,27 @@ export default function ActivitiesScreen() {
 
   return (
     <YStack flex={1} backgroundColor="$background">
+      {/* Undo delete toast */}
+      {showUndo && deleteUndoSnapshot && (
+        <XStack position="absolute" bottom={90} left={16} right={16} zIndex={100}
+          backgroundColor={colors.surface} borderRadius={12} padding={14} alignItems="center" justifyContent="space-between"
+          borderWidth={1} borderColor={colors.border}
+          style={{ shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 8 }}>
+          <XStack alignItems="center" gap={8}>
+            <MaterialCommunityIcons name="delete-outline" size={16} color={colors.textSecondary} />
+            <B color={colors.textPrimary} fontSize={13} fontWeight="600">Activity deleted</B>
+          </XStack>
+          <Pressable onPress={() => {
+            undoDeleteActivity(deleteUndoSnapshot);
+            useAppStore.setState({ _deleteUndoSnapshot: null } as any);
+            setShowUndo(false);
+            loadMetrics();
+          }}>
+            <B color={colors.cyan} fontSize={13} fontWeight="800">UNDO</B>
+          </Pressable>
+        </XStack>
+      )}
+
       {/* Hero Stats */}
       <XStack paddingHorizontal={16} paddingVertical={12} gap={8}>
         <HeroStat icon="run-fast" value={String(metrics.length)} label="runs" />

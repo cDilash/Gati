@@ -155,6 +155,8 @@ interface AppState {
   deleteCrossTrainingEntry: (id: string) => void;
   calculateTrainingLoad: () => void;
   syncGarminHealth: () => Promise<void>;
+  deleteActivity: (metricId: string) => import('./db/database').DeletedActivitySnapshot | null;
+  undoDeleteActivity: (snapshot: import('./db/database').DeletedActivitySnapshot) => void;
 }
 
 // ─── Store ──────────────────────────────────────────────────
@@ -1386,5 +1388,58 @@ export const useAppStore = create<AppState>((set, get) => ({
     } catch (e) {
       console.warn('[Garmin] Sync failed:', e);
     }
+  },
+
+  deleteActivity: (metricId) => {
+    const { deleteActivity: dbDelete } = require('./db/database');
+    const snapshot = dbDelete(metricId);
+    if (!snapshot) return null;
+
+    // Refresh all state
+    get().refreshState();
+
+    // Recompute PRs
+    try {
+      const { computeAllTimePRs } = require('./utils/personalRecords');
+      set({ personalRecords: computeAllTimePRs(), newPRNotification: null });
+    } catch {}
+
+    // Recompute VDOT from remaining best efforts
+    try {
+      const { updateProfileFromStrava } = require('./strava/profileUpdater');
+      const profileUpdate = updateProfileFromStrava();
+      if (profileUpdate.vdotChanged) {
+        const { getUserProfile } = require('./db/database');
+        const { calculatePaceZones } = require('./engine/paceZones');
+        const updated = getUserProfile();
+        if (updated) {
+          set({ userProfile: updated, paceZones: calculatePaceZones(updated.vdot_score), vdotNotification: null });
+        }
+      } else {
+        set({ vdotNotification: null });
+      }
+    } catch {}
+
+    // Recompute PMC
+    try { get().calculateTrainingLoad(); } catch {}
+
+    return snapshot;
+  },
+
+  undoDeleteActivity: (snapshot) => {
+    const { restoreActivity } = require('./db/database');
+    restoreActivity(snapshot);
+
+    // Refresh all state
+    get().refreshState();
+
+    // Recompute PRs
+    try {
+      const { computeAllTimePRs } = require('./utils/personalRecords');
+      set({ personalRecords: computeAllTimePRs() });
+    } catch {}
+
+    // Recompute PMC
+    try { get().calculateTrainingLoad(); } catch {}
   },
 }));

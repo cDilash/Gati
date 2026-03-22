@@ -85,7 +85,10 @@ function CollapsibleSection({ title, defaultOpen = false, children }: { title: s
 
 // ─── Recovery Hero ───────────────────────────────────────────
 
-function RecoveryHero({ recovery, snapshot }: { recovery: RecoveryStatus | null; snapshot: HealthSnapshot | null }) {
+function RecoveryHero({ recovery, snapshot, recommendation, scheduledWorkout }: {
+  recovery: RecoveryStatus | null; snapshot: HealthSnapshot | null;
+  recommendation?: string | null; scheduledWorkout?: string | null;
+}) {
   const syncHealth = useAppStore(s => s.syncHealth);
   const [connecting, setConnecting] = useState(false);
 
@@ -162,30 +165,38 @@ function RecoveryHero({ recovery, snapshot }: { recovery: RecoveryStatus | null;
     : colors.error;
   const label = recovery.level.charAt(0).toUpperCase() + recovery.level.slice(1);
 
+  const signalCount = recovery.signals.filter(s => s.score > 0).length;
+
   return (
-    <YStack backgroundColor="$surface" borderRadius="$6" padding="$6" alignItems="center">
-      {/* Score Circle */}
-      <View width={100} height={100} borderRadius={50} borderWidth={4} borderColor={color}
-        backgroundColor={color + '15'} alignItems="center" justifyContent="center">
-        <GradientText text={String(recovery.score)} style={{ fontSize: 36, fontWeight: '800' }} />
-      </View>
-      <H color={color} fontSize={22} letterSpacing={1.5} marginTop="$3" textTransform="uppercase">{label}</H>
-      <B color="$textSecondary" fontSize={13} marginTop="$1">Based on {recovery.signals.filter(s => s.score > 0).length} signal{recovery.signals.filter(s => s.score > 0).length !== 1 ? 's' : ''}</B>
-      {recovery.sleepPending && (
-        <XStack alignItems="center" gap={4} marginTop="$2" backgroundColor={colors.surfaceHover} borderRadius={8} paddingHorizontal={10} paddingVertical={4}>
-          <MaterialCommunityIcons name="clock-outline" size={12} color={colors.textTertiary} />
-          <B color="$textTertiary" fontSize={11}>Waiting for last night's sleep data</B>
-        </XStack>
-      )}
-      {recovery.sleepMissing && !recovery.sleepPending && !recovery.signals.some(s => s.type === 'sleep') && (
-        <XStack alignItems="center" gap={4} marginTop="$2" backgroundColor={colors.surfaceHover} borderRadius={8} paddingHorizontal={10} paddingVertical={4}>
-          <MaterialCommunityIcons name="sleep-off" size={12} color={colors.textTertiary} />
-          <B color="$textTertiary" fontSize={11}>No sleep data last night</B>
-        </XStack>
-      )}
-      {snapshot?.cachedAt && (
-        <B color="$textTertiary" fontSize={11} marginTop="$1">
-          Last synced {formatTimeAgo(snapshot.cachedAt)}
+    <YStack backgroundColor="$surface" borderRadius="$6" padding={16} alignItems="center">
+      {/* Score + label row */}
+      <XStack alignItems="center" gap={14} width="100%">
+        <View width={72} height={72} borderRadius={36} borderWidth={3} borderColor={color}
+          backgroundColor={color + '15'} alignItems="center" justifyContent="center">
+          <GradientText text={String(recovery.score)} style={{ fontSize: 28, fontWeight: '800' }} />
+        </View>
+        <YStack flex={1}>
+          <H color={color} fontSize={18} letterSpacing={1.5} textTransform="uppercase">{label}</H>
+          <B color="$textSecondary" fontSize={11} marginTop={2}>{signalCount} signal{signalCount !== 1 ? 's' : ''}{snapshot?.cachedAt ? ` · ${formatTimeAgo(snapshot.cachedAt)}` : ''}</B>
+          {recovery.sleepPending && (
+            <XStack alignItems="center" gap={3} marginTop={3}>
+              <MaterialCommunityIcons name="clock-outline" size={10} color={colors.textTertiary} />
+              <B color="$textTertiary" fontSize={10}>Sleep data pending</B>
+            </XStack>
+          )}
+          {recovery.sleepMissing && !recovery.sleepPending && !recovery.signals.some(s => s.type === 'sleep') && (
+            <XStack alignItems="center" gap={3} marginTop={3}>
+              <MaterialCommunityIcons name="sleep-off" size={10} color={colors.textTertiary} />
+              <B color="$textTertiary" fontSize={10}>No sleep data</B>
+            </XStack>
+          )}
+        </YStack>
+      </XStack>
+
+      {/* Recommendation — inline */}
+      {recommendation && (
+        <B color={colors.textTertiary} fontSize={12} lineHeight={17} marginTop={10} textAlign="left" width="100%">
+          {recommendation}{scheduledWorkout ? ` · ${scheduledWorkout}` : ''}
         </B>
       )}
     </YStack>
@@ -908,7 +919,12 @@ export default function RecoveryScreen() {
     <ScrollView flex={1} backgroundColor="$background" contentContainerStyle={{ padding: 16 }} showsVerticalScrollIndicator={false}>
 
       {/* SECTION 1: Recovery Score Hero */}
-      <RecoveryHero recovery={recoveryStatus} snapshot={healthSnapshot} />
+      <RecoveryHero recovery={recoveryStatus} snapshot={healthSnapshot}
+        recommendation={recoveryStatus?.recommendation}
+        scheduledWorkout={todaysWorkout && todaysWorkout.workout_type !== 'rest' && todaysWorkout.target_distance_miles
+          ? `Scheduled: ${todaysWorkout.title} — ${u.dist(todaysWorkout.target_distance_miles)}`
+          : null}
+      />
 
       {/* SECTION 2: Scored Recovery Signals */}
       {recoveryStatus && recoveryStatus.level !== 'unknown' && (
@@ -1350,22 +1366,7 @@ export default function RecoveryScreen() {
         </YStack>
       )}
 
-      {/* SECTION 3: Today's Recommendation */}
-      {recoveryStatus && recoveryStatus.level !== 'unknown' && (
-        <GradientBorder side="left" borderWidth={3} borderRadius={14} style={{ marginTop: 16 }}>
-          <YStack padding="$4">
-            <H color="$textSecondary" fontSize={12} textTransform="uppercase" letterSpacing={1.5} marginBottom="$2">
-              Today's Recommendation
-            </H>
-            <B color="$color" fontSize={14} lineHeight={21}>{recoveryStatus.recommendation}</B>
-            {todaysWorkout && todaysWorkout.workout_type !== 'rest' && (
-              <B color="$textTertiary" fontSize={12} marginTop="$2">
-                Scheduled: {todaysWorkout.title} — {todaysWorkout.target_distance_miles ? u.dist(todaysWorkout.target_distance_miles) : ''}
-              </B>
-            )}
-          </YStack>
-        </GradientBorder>
-      )}
+      {/* Today's Recommendation is now merged into RecoveryHero above */}
 
       {/* SECTION 4: Training Load (PMC) */}
       {pmcData && pmcData.totalDays >= 7 && (
@@ -1464,51 +1465,122 @@ export default function RecoveryScreen() {
         </YStack>
       </CollapsibleSection>
 
-      {/* SECTION 7: Personal Records */}
+      {/* SECTION 7: Personal Records — Trophy Case */}
       {(() => {
         const prs = useAppStore.getState().personalRecords;
         if (prs.length === 0) return null;
         const { getDisplayPRs, formatPRTime } = require('../../src/utils/personalRecords');
+        const { LinearGradient: ExpoGrad } = require('expo-linear-gradient');
         const displayPRs = getDisplayPRs(prs);
         const router = require('expo-router').useRouter();
         const latestDate = prs.length > 0 ? prs.reduce((a: any, b: any) => a.date > b.date ? a : b).date : null;
+        const prCount = prs.length;
 
         return (
-          <CollapsibleSection title="Personal Records">
-            <YStack backgroundColor={colors.surface} borderRadius={14} overflow="hidden">
+          <YStack marginTop={16}>
+            {/* Hero header — gradient background strip */}
+            <ExpoGrad
+              colors={[colors.cyan + '15', colors.orange + '08', 'transparent']}
+              start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+              style={{ borderRadius: 14, padding: 16, marginBottom: 12 }}>
+              <XStack alignItems="center" justifyContent="space-between">
+                <XStack alignItems="center" gap={10}>
+                  <View width={36} height={36} borderRadius={18} alignItems="center" justifyContent="center">
+                    <ExpoGrad
+                      colors={[colors.cyan, colors.orange]}
+                      start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+                      style={{ width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' }}>
+                      <MaterialCommunityIcons name="trophy" size={18} color="#fff" />
+                    </ExpoGrad>
+                  </View>
+                  <YStack>
+                    <GradientText text="PERSONAL RECORDS" style={{ fontSize: 14, fontWeight: '800', letterSpacing: 1.5 }} />
+                    <B color={colors.textTertiary} fontSize={10} marginTop={1}>Your fastest times</B>
+                  </YStack>
+                </XStack>
+                <View backgroundColor={colors.surface} paddingHorizontal={10} paddingVertical={4} borderRadius={10} borderWidth={1} borderColor={colors.border}>
+                  <M color={colors.cyan} fontSize={13} fontWeight="800">{prCount}<M color={colors.textTertiary} fontSize={10}>/{displayPRs.length}</M></M>
+                </View>
+              </XStack>
+            </ExpoGrad>
+
+            {/* PR Cards */}
+            <YStack gap={8}>
               {displayPRs.map((pr: any, i: number) => {
                 const hasTime = pr.timeSeconds != null;
                 const isLatest = hasTime && pr.date === latestDate;
+
+                if (!hasTime) {
+                  return (
+                    <YStack key={pr.distance} backgroundColor={colors.surface} borderRadius={12}
+                      paddingVertical={14} paddingHorizontal={16} opacity={0.35}
+                      borderWidth={1} borderColor={colors.border}>
+                      <XStack alignItems="center" justifyContent="space-between">
+                        <XStack alignItems="center" gap={8}>
+                          <MaterialCommunityIcons name="lock-outline" size={14} color={colors.textTertiary} />
+                          <B color={colors.textTertiary} fontSize={14}>{pr.distance}</B>
+                        </XStack>
+                        <B color={colors.textTertiary} fontSize={11} fontStyle="italic">Awaiting your first</B>
+                      </XStack>
+                    </YStack>
+                  );
+                }
+
                 return (
                   <Pressable key={pr.distance}
-                    onPress={hasTime && pr.activityId ? () => router.push(`/activity/${pr.activityId}`) : undefined}>
-                    <XStack alignItems="center" paddingVertical={12} paddingHorizontal={14}
-                      borderBottomWidth={i < displayPRs.length - 1 ? 0.5 : 0} borderBottomColor={colors.border}
-                      borderLeftWidth={isLatest ? 3 : 0} borderLeftColor={isLatest ? colors.cyan : 'transparent'}
-                      opacity={hasTime ? 1 : 0.5}>
-                      <B color={hasTime ? colors.textPrimary : colors.textTertiary} fontSize={14} fontWeight={hasTime ? '600' : '400'} flex={1}>
-                        {pr.distance}
-                      </B>
-                      {hasTime ? (
-                        <>
-                          {isLatest && <View marginRight={8}><PRBadge rank={1} size="sm" /></View>}
-                          <M color={isLatest ? colors.cyan : colors.textPrimary}
-                            fontSize={18} fontWeight="800" marginRight={10}>
-                            {formatPRTime(pr.timeSeconds)}
-                          </M>
-                          <B color={colors.textTertiary} fontSize={11} width={48} textAlign="right">
-                            {new Date(pr.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                          </B>
-                        </>
-                      ) : (
-                        <M color={colors.textTertiary} fontSize={14}>——</M>
-                      )}
-                    </XStack>
+                    onPress={pr.activityId ? () => router.push(`/activity/${pr.activityId}`) : undefined}>
+                    {isLatest ? (
+                      <GradientBorder side="all" borderWidth={1.5} borderRadius={14}>
+                        <ExpoGrad
+                          colors={[colors.cyan + '12', colors.orange + '06', colors.surface]}
+                          start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+                          style={{ borderRadius: 13, paddingVertical: 16, paddingHorizontal: 16, opacity: 1 }}>
+                          <XStack alignItems="center" justifyContent="space-between">
+                            <YStack flex={1}>
+                              <XStack alignItems="center" gap={8}>
+                                <MaterialCommunityIcons name="star-four-points" size={14} color={colors.cyan} />
+                                <B color={colors.textPrimary} fontSize={16} fontWeight="700">{pr.distance}</B>
+                                <PRBadge rank={1} size="sm" />
+                              </XStack>
+                              <B color={colors.textTertiary} fontSize={11} marginTop={3} marginLeft={22}>
+                                {new Date(pr.date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                              </B>
+                            </YStack>
+                            <XStack alignItems="center" gap={8}>
+                              <GradientText text={formatPRTime(pr.timeSeconds)} style={{ fontSize: 26, fontWeight: '800' }} />
+                              <MaterialCommunityIcons name="chevron-right" size={18} color={colors.textTertiary} />
+                            </XStack>
+                          </XStack>
+                        </ExpoGrad>
+                      </GradientBorder>
+                    ) : (
+                      <YStack backgroundColor={colors.surface} borderRadius={12}
+                        paddingVertical={14} paddingHorizontal={16}
+                        borderLeftWidth={2} borderLeftColor={colors.cyanDim}>
+                        <XStack alignItems="center" justifyContent="space-between">
+                          <YStack flex={1}>
+                            <XStack alignItems="center" gap={8}>
+                              <MaterialCommunityIcons name="medal-outline" size={14} color={colors.textTertiary} />
+                              <B color={colors.textSecondary} fontSize={14} fontWeight="600">{pr.distance}</B>
+                            </XStack>
+                            <B color={colors.textTertiary} fontSize={10} marginTop={2} marginLeft={22}>
+                              {new Date(pr.date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                            </B>
+                          </YStack>
+                          <XStack alignItems="center" gap={8}>
+                            <M color={colors.textPrimary} fontSize={22} fontWeight="800">
+                              {formatPRTime(pr.timeSeconds)}
+                            </M>
+                            <MaterialCommunityIcons name="chevron-right" size={16} color={colors.textTertiary} />
+                          </XStack>
+                        </XStack>
+                      </YStack>
+                    )}
                   </Pressable>
                 );
               })}
             </YStack>
-          </CollapsibleSection>
+          </YStack>
         );
       })()}
 
