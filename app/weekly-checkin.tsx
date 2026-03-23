@@ -1,6 +1,6 @@
 /**
  * Weekly Check-in — 5-step questionnaire that feeds the AI week generator.
- * Collects: strength schedule, run availability, body status, weekly focus.
+ * Collects: strength schedule, run availability, body status. AI determines focus.
  */
 
 import { useState, useCallback, useRef } from 'react';
@@ -30,7 +30,7 @@ const DAYS: { key: WeekDay; label: string; short: string }[] = [
   { key: 'sunday', label: 'Sunday', short: 'Sun' },
 ];
 
-const TOTAL_STEPS = 5;
+const TOTAL_STEPS = 4;
 const SAFE_TOP = Platform.OS === 'ios' ? 54 : (StatusBar.currentHeight ?? 24) + 8;
 
 // ─── Day Toggle Grid ────────────────────────────────────────
@@ -107,7 +107,7 @@ export default function WeeklyCheckinScreen() {
 
   // State for all checkin fields
   const [strengthDays, setStrengthDays] = useState<WeekDay[]>(['monday', 'wednesday', 'friday']);
-  const [legDay, setLegDay] = useState<WeekDay | null>('monday');
+  const [legDays, setLegDays] = useState<WeekDay[]>(['monday']);
   const [availableDays, setAvailableDays] = useState<WeekDay[]>(['tuesday', 'thursday', 'saturday', 'sunday']);
   const [preferredLongRunDay, setPreferredLongRunDay] = useState<WeekDay>('saturday');
   const [timeConstraints, setTimeConstraints] = useState('');
@@ -115,7 +115,6 @@ export default function WeeklyCheckinScreen() {
   const [soreness, setSoreness] = useState<SorenessLevel>('none');
   const [injuryStatus, setInjuryStatus] = useState('');
   const [sleepQuality, setSleepQuality] = useState<SleepQualityLevel>('ok');
-  const [focus, setFocus] = useState('Build Endurance');
   const [notes, setNotes] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
 
@@ -140,7 +139,8 @@ export default function WeeklyCheckinScreen() {
         raceWeekNumber: phase.weeksUntilRace,
         createdAt: new Date().toISOString(),
         strengthDays,
-        legDay: strengthDays.length > 0 ? legDay : null,
+        legDay: strengthDays.length > 0 && legDays.length > 0 ? legDays[0] : null,
+        legDays: strengthDays.length > 0 ? legDays : [],
         availableDays,
         preferredLongRunDay,
         timeConstraints: timeConstraints.trim() || null,
@@ -148,7 +148,6 @@ export default function WeeklyCheckinScreen() {
         soreness,
         injuryStatus: injuryStatus.trim() || null,
         sleepQuality,
-        focus,
         notes: notes.trim() || null,
       };
 
@@ -204,28 +203,27 @@ export default function WeeklyCheckinScreen() {
 
       {strengthDays.length > 0 && (
         <YStack gap={8}>
-          <B color={colors.textSecondary} fontSize={13} fontWeight="600">Which day is leg day?</B>
+          <B color={colors.textSecondary} fontSize={13} fontWeight="600">Which days include legs? <B color={colors.textTertiary} fontSize={11}>(select all)</B></B>
           <XStack gap={6} flexWrap="wrap">
-            {strengthDays.map(d => {
-              const dayInfo = DAYS.find(x => x.key === d)!;
-              const active = legDay === d;
+            {DAYS.map(d => {
+              const active = legDays.includes(d.key);
               return (
-                <Pressable key={d} onPress={() => setLegDay(d)}>
+                <Pressable key={d.key} onPress={() => setLegDays(toggleDay(legDays, d.key))}>
                   <YStack paddingHorizontal={14} paddingVertical={8} borderRadius={10}
                     backgroundColor={active ? colors.orange + '22' : colors.surface}
                     borderWidth={1} borderColor={active ? colors.orange : colors.border}>
                     <B color={active ? colors.orange : colors.textSecondary} fontSize={13} fontWeight={active ? '700' : '500'}>
-                      {dayInfo.short}
+                      {d.short}
                     </B>
                   </YStack>
                 </Pressable>
               );
             })}
-            <Pressable onPress={() => setLegDay(null)}>
+            <Pressable onPress={() => setLegDays([])}>
               <YStack paddingHorizontal={14} paddingVertical={8} borderRadius={10}
-                backgroundColor={legDay === null ? colors.surfaceHover : colors.surface}
-                borderWidth={1} borderColor={legDay === null ? colors.textTertiary : colors.border}>
-                <B color={legDay === null ? colors.textPrimary : colors.textTertiary} fontSize={13}>None</B>
+                backgroundColor={legDays.length === 0 ? colors.surfaceHover : colors.surface}
+                borderWidth={1} borderColor={legDays.length === 0 ? colors.textTertiary : colors.border}>
+                <B color={legDays.length === 0 ? colors.textPrimary : colors.textTertiary} fontSize={13}>None</B>
               </YStack>
             </Pressable>
           </XStack>
@@ -257,40 +255,22 @@ export default function WeeklyCheckinScreen() {
       {availableDays.length >= 2 && (
         <YStack gap={8}>
           <B color={colors.textSecondary} fontSize={13} fontWeight="600">Preferred long run day?</B>
-          <XStack gap={6}>
-            {availableDays.filter(d => d === 'saturday' || d === 'sunday').length > 0 ? (
-              availableDays.filter(d => d === 'saturday' || d === 'sunday').map(d => {
-                const active = preferredLongRunDay === d;
-                const dayInfo = DAYS.find(x => x.key === d)!;
-                return (
-                  <Pressable key={d} onPress={() => setPreferredLongRunDay(d)}>
-                    <YStack paddingHorizontal={16} paddingVertical={10} borderRadius={10}
-                      backgroundColor={active ? colors.cyan + '22' : colors.surface}
-                      borderWidth={1} borderColor={active ? colors.cyan : colors.border}>
-                      <B color={active ? colors.cyan : colors.textSecondary} fontSize={14} fontWeight={active ? '700' : '500'}>
-                        {dayInfo.label}
-                      </B>
-                    </YStack>
-                  </Pressable>
-                );
-              })
-            ) : (
-              availableDays.map(d => {
-                const active = preferredLongRunDay === d;
-                const dayInfo = DAYS.find(x => x.key === d)!;
-                return (
-                  <Pressable key={d} onPress={() => setPreferredLongRunDay(d)}>
-                    <YStack paddingHorizontal={14} paddingVertical={8} borderRadius={10}
-                      backgroundColor={active ? colors.cyan + '22' : colors.surface}
-                      borderWidth={1} borderColor={active ? colors.cyan : colors.border}>
-                      <B color={active ? colors.cyan : colors.textSecondary} fontSize={13} fontWeight={active ? '700' : '500'}>
-                        {dayInfo.short}
-                      </B>
-                    </YStack>
-                  </Pressable>
-                );
-              })
-            )}
+          <XStack gap={6} flexWrap="wrap">
+            {availableDays.map(d => {
+              const active = preferredLongRunDay === d;
+              const dayInfo = DAYS.find(x => x.key === d)!;
+              return (
+                <Pressable key={d} onPress={() => setPreferredLongRunDay(d)}>
+                  <YStack paddingHorizontal={14} paddingVertical={8} borderRadius={10}
+                    backgroundColor={active ? colors.cyan + '22' : colors.surface}
+                    borderWidth={1} borderColor={active ? colors.cyan : colors.border}>
+                    <B color={active ? colors.cyan : colors.textSecondary} fontSize={13} fontWeight={active ? '700' : '500'}>
+                      {dayInfo.short}
+                    </B>
+                  </YStack>
+                </Pressable>
+              );
+            })}
           </XStack>
         </YStack>
       )}
@@ -371,49 +351,6 @@ export default function WeeklyCheckinScreen() {
   );
 
   const renderStep4 = () => {
-    const focusOptions = ['Build Endurance', 'Speed Work', 'Recovery', 'Maintain', 'Race Prep'];
-    return (
-      <YStack gap={24}>
-        <YStack alignItems="center" gap={4}>
-          <MaterialCommunityIcons name="target" size={32} color={colors.cyan} />
-          <H color={colors.textPrimary} fontSize={22} letterSpacing={1}>WEEKLY FOCUS</H>
-          <B color={colors.textSecondary} fontSize={14} textAlign="center">What's the priority this week?</B>
-        </YStack>
-
-        <YStack gap={8}>
-          {focusOptions.map(f => {
-            const active = focus === f;
-            return (
-              <Pressable key={f} onPress={() => setFocus(f)}>
-                {active ? (
-                  <GradientBorder side="left" borderWidth={3} borderRadius={12}>
-                    <YStack paddingVertical={14} paddingHorizontal={16}>
-                      <B color={colors.textPrimary} fontSize={15} fontWeight="700">{f}</B>
-                    </YStack>
-                  </GradientBorder>
-                ) : (
-                  <YStack paddingVertical={14} paddingHorizontal={16} borderRadius={12}
-                    backgroundColor={colors.surface} borderWidth={1} borderColor={colors.border}>
-                    <B color={colors.textSecondary} fontSize={15}>{f}</B>
-                  </YStack>
-                )}
-              </Pressable>
-            );
-          })}
-        </YStack>
-
-        <YStack gap={4}>
-          <B color={colors.textSecondary} fontSize={13} fontWeight="600">Anything else? <B color={colors.textTertiary} fontSize={11}>(optional)</B></B>
-          <Input backgroundColor={colors.surface} borderRadius={10} borderWidth={1} borderColor={colors.border}
-            color={colors.textPrimary} fontSize={14} fontFamily="$body" paddingHorizontal={14} paddingVertical={10}
-            placeholder="e.g., traveling Thursday, 5K race Sunday" placeholderTextColor="$textTertiary"
-            value={notes} onChangeText={setNotes} multiline maxHeight={80} />
-        </YStack>
-      </YStack>
-    );
-  };
-
-  const renderStep5 = () => {
     const phase = (() => {
       try {
         const { calculatePhase } = require('../src/engine/weeklyPlanning');
@@ -426,7 +363,7 @@ export default function WeeklyCheckinScreen() {
       <YStack gap={20}>
         <YStack alignItems="center" gap={4}>
           <MaterialCommunityIcons name="clipboard-check-outline" size={32} color={colors.cyan} />
-          <H color={colors.textPrimary} fontSize={22} letterSpacing={1}>REVIEW</H>
+          <H color={colors.textPrimary} fontSize={22} letterSpacing={1}>REVIEW & GENERATE</H>
           <B color={colors.textSecondary} fontSize={14}>Confirm your check-in</B>
         </YStack>
 
@@ -445,7 +382,7 @@ export default function WeeklyCheckinScreen() {
               <MaterialCommunityIcons name="dumbbell" size={14} color={colors.textTertiary} />
               <B color={colors.textSecondary} fontSize={13}>
                 Lifting: {strengthDays.length > 0 ? strengthDays.map(d => DAYS.find(x => x.key === d)!.short).join(', ') : 'None'}
-                {legDay ? ` (Leg: ${DAYS.find(x => x.key === legDay)!.short})` : ''}
+                {legDays.length > 0 ? ` (Legs: ${legDays.map(d => DAYS.find(x => x.key === d)!.short).join(', ')})` : ''}
               </B>
             </XStack>
 
@@ -479,11 +416,6 @@ export default function WeeklyCheckinScreen() {
               </XStack>
             )}
 
-            <XStack alignItems="center" gap={8}>
-              <MaterialCommunityIcons name="target" size={14} color={colors.cyan} />
-              <B color={colors.textSecondary} fontSize={13}>Focus: {focus}</B>
-            </XStack>
-
             {notes.trim() && (
               <XStack alignItems="center" gap={8}>
                 <MaterialCommunityIcons name="note-text-outline" size={14} color={colors.textTertiary} />
@@ -492,6 +424,15 @@ export default function WeeklyCheckinScreen() {
             )}
           </YStack>
         </GradientBorder>
+
+        {/* Notes — moved here from old step 4 */}
+        <YStack gap={4}>
+          <B color={colors.textSecondary} fontSize={13} fontWeight="600">Anything else? <B color={colors.textTertiary} fontSize={11}>(travel, races, events)</B></B>
+          <Input backgroundColor={colors.surface} borderRadius={10} borderWidth={1} borderColor={colors.border}
+            color={colors.textPrimary} fontSize={14} fontFamily="$body" paddingHorizontal={14} paddingVertical={10}
+            placeholder="e.g., traveling Thursday, 5K race Sunday" placeholderTextColor="$textTertiary"
+            value={notes} onChangeText={setNotes} multiline maxHeight={80} />
+        </YStack>
       </YStack>
     );
   };
@@ -528,7 +469,6 @@ export default function WeeklyCheckinScreen() {
         {step === 2 && renderStep2()}
         {step === 3 && renderStep3()}
         {step === 4 && renderStep4()}
-        {step === 5 && renderStep5()}
       </RNScrollView>
 
       {/* Bottom CTA */}
@@ -537,7 +477,7 @@ export default function WeeklyCheckinScreen() {
         backgroundColor={colors.background} borderTopWidth={0.5} borderTopColor={colors.border}>
         {step < TOTAL_STEPS ? (
           <GradientButton
-            label={step === 1 ? 'Next: Availability' : step === 2 ? 'Next: How You Feel' : step === 3 ? 'Next: Weekly Focus' : 'Review'}
+            label={step === 1 ? 'Next: Availability' : step === 2 ? 'Next: How You Feel' : 'Review & Generate'}
             onPress={handleNext}
             disabled={!canNext}
             size="lg"

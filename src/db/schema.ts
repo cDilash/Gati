@@ -278,7 +278,6 @@ CREATE TABLE IF NOT EXISTS weekly_checkin (
   soreness TEXT CHECK(soreness IN ('none','mild','moderate','severe')),
   injury_status TEXT,
   sleep_quality TEXT CHECK(sleep_quality IN ('great','ok','poor','terrible')),
-  focus TEXT,
   notes TEXT
 );`;
 

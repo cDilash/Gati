@@ -1190,9 +1190,26 @@ export function recalculateWeeklyVolumes(): void {
     );
 
     const actualVolume = Math.round((volumeRow?.total ?? 0) * 10) / 10;
+
+    // Also recalculate target_volume from workout target distances (if current target is 0 or missing)
+    const currentTarget = database.getFirstSync<any>(
+      'SELECT target_volume FROM training_week WHERE id = ?', [week.id]
+    );
+    let targetVolume = currentTarget?.target_volume ?? 0;
+    if (targetVolume === 0) {
+      const targetRow = database.getFirstSync<any>(
+        `SELECT COALESCE(SUM(target_distance_miles), 0) as total
+         FROM workout
+         WHERE plan_id IN (SELECT id FROM training_plan WHERE status = 'active')
+         AND week_number = ? AND workout_type != 'rest'`,
+        [week.week_number]
+      );
+      targetVolume = Math.round((targetRow?.total ?? 0) * 10) / 10;
+    }
+
     database.runSync(
-      'UPDATE training_week SET actual_volume = ? WHERE id = ?',
-      [actualVolume, week.id]
+      'UPDATE training_week SET actual_volume = ?, target_volume = CASE WHEN target_volume = 0 THEN ? ELSE target_volume END WHERE id = ?',
+      [actualVolume, targetVolume, week.id]
     );
   }
 }

@@ -926,6 +926,26 @@ export default function CalendarScreen() {
                           <H fontSize={9} color={colors.textTertiary} letterSpacing={1}>CUTBACK</H>
                         </View>
                       )}
+                      {/* Check-in indicator */}
+                      {(() => {
+                        try {
+                          const { getCheckinForWeek } = require('../../src/engine/weeklyPlanning');
+                          const checkin = getCheckinForWeek(week.week_number);
+                          if (!checkin) return null;
+                          return (
+                            <Pressable onPress={() => {
+                              const { Alert } = require('react-native');
+                              const days = (d: string[]) => d.map((x: string) => x.substring(0, 3)).join(', ');
+                              Alert.alert(
+                                `Week ${week.week_number} Check-in`,
+                                `Lifting: ${checkin.strengthDays?.length > 0 ? days(checkin.strengthDays) : 'None'}${checkin.legDays?.length > 0 ? ` (Legs: ${days(checkin.legDays)})` : ''}\nRunning: ${days(checkin.availableDays)}\nLong run: ${checkin.preferredLongRunDay}\nEnergy: ${checkin.energyLevel} · Soreness: ${checkin.soreness} · Sleep: ${checkin.sleepQuality}${checkin.injuryStatus ? `\nInjury: ${checkin.injuryStatus}` : ''}${checkin.notes ? `\nNotes: ${checkin.notes}` : ''}`,
+                              );
+                            }} hitSlop={8}>
+                              <MaterialCommunityIcons name="clipboard-check-outline" size={14} color={colors.cyan} />
+                            </Pressable>
+                          );
+                        } catch { return null; }
+                      })()}
                     </XStack>
                     <XStack alignItems="center" gap={6}>
                       {isPast && completedRuns > 0 && (

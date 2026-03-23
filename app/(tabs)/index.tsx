@@ -445,6 +445,48 @@ export default function TodayScreen() {
         contentContainerStyle={{ padding: 16, paddingBottom: 40 }}
         refreshControl={<RefreshControl refreshing={isSyncing} onRefresh={onRefresh} tintColor={colors.cyan} />}
       >
+      {/* Auto-Generated Week Notice */}
+      {(() => {
+        try {
+          const { getSetting, setSetting: setS } = require('../../src/db/database');
+          if (getSetting('last_week_auto_generated') !== 'true') return null;
+          return (
+            <YStack marginBottom="$4" backgroundColor="$surface" borderRadius={14} padding={16}
+              borderLeftWidth={3} borderLeftColor={colors.orange}>
+              <XStack alignItems="center" justifyContent="space-between" marginBottom={6}>
+                <XStack alignItems="center" gap={6}>
+                  <MaterialCommunityIcons name="robot-outline" size={16} color={colors.orange} />
+                  <H color={colors.orange} fontSize={12} letterSpacing={1.5}>AUTO-PLANNED WEEK</H>
+                </XStack>
+                <B color="$textTertiary" fontSize={14} onPress={() => {
+                  try { setS('last_week_auto_generated', ''); } catch {}
+                  setShowWeeklyPrompt(false);
+                }}>✕</B>
+              </XStack>
+              <B color="$textSecondary" fontSize={13} lineHeight={18} marginBottom={10}>
+                Your week was auto-planned using last week's data and safe defaults since you missed the check-in.
+              </B>
+              <XStack gap={8}>
+                <YStack flex={1} backgroundColor={colors.surfaceHover} borderRadius={10} paddingVertical={10} alignItems="center"
+                  pressStyle={{ opacity: 0.8 }} onPress={() => {
+                    try { setS('last_week_auto_generated', ''); } catch {}
+                  }}>
+                  <B color={colors.cyan} fontSize={13} fontWeight="700">Looks Good</B>
+                </YStack>
+                <YStack flex={1} backgroundColor={colors.cyanGhost} borderRadius={10} paddingVertical={10} alignItems="center"
+                  borderWidth={1} borderColor={colors.cyanDim}
+                  pressStyle={{ opacity: 0.8 }} onPress={() => {
+                    try { setS('last_week_auto_generated', ''); } catch {}
+                    router.push('/weekly-checkin');
+                  }}>
+                  <B color={colors.cyan} fontSize={13} fontWeight="700">Redo with Check-in</B>
+                </YStack>
+              </XStack>
+            </YStack>
+          );
+        } catch { return null; }
+      })()}
+
       {/* Weekly Plan Prompt */}
       {showWeeklyPrompt && (
         <YStack marginBottom="$4">

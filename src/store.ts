@@ -1165,8 +1165,22 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (state.activePlan) {
       try {
         const { deduplicateWorkouts, sweepPastWorkouts } = require('./db/database');
-        deduplicateWorkouts(); // Fix any duplicate workout rows from adaptation
+        deduplicateWorkouts();
         sweepPastWorkouts();
+      } catch {}
+
+      // Auto-generate weekly plan if user missed check-in
+      try {
+        const { shouldAutoGenerate, autoGenerateWeek } = require('./engine/weeklyPlanning');
+        if (shouldAutoGenerate()) {
+          console.log('[SyncAll] Auto-generating weekly plan (missed check-in)');
+          (async () => {
+            try {
+              const success = await autoGenerateWeek();
+              if (success) get().refreshState();
+            } catch (e) { console.warn('[SyncAll] Auto-generate failed:', e); }
+          })();
+        }
       } catch {}
     }
 

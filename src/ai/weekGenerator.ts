@@ -37,8 +37,25 @@ function buildWeekPrompt(
   // Race context
   parts.push(`RACE: ${raceInfo.name}, ${raceInfo.date}, ${raceInfo.distance}`);
   if (raceInfo.targetTime) parts.push(`Target: ${raceInfo.targetTime}`);
-  parts.push(`Phase: ${phase.phase.toUpperCase()} (week ${phase.weekNumber}, ${phase.weeksUntilRace} weeks to race)`);
+  parts.push(`Week ${phase.weekNumber}, ${phase.weeksUntilRace} weeks to race`);
   parts.push(`Target volume this week: ${formatDistance(phase.targetWeeklyMiles, units)}`);
+  parts.push('');
+
+  // MANDATORY phase — Gemini cannot override this
+  const PHASE_DESCRIPTIONS: Record<string, string> = {
+    base: 'Focus on easy aerobic running ONLY. Build weekly mileage gradually. NO threshold, tempo, or interval work. ALL runs at conversational pace (Zone 1-2). This phase builds the aerobic engine. Long runs should be easy effort throughout.',
+    build: 'Introduce ONE quality session per week (tempo or threshold). Continue building volume. Long run gets longer with some progression. One hard day per week, everything else easy.',
+    peak: 'Highest volume and intensity. TWO quality sessions possible (threshold + intervals). Long run at maximum distance. Sharpening for race fitness. This is the hardest phase.',
+    taper: 'REDUCE volume 30-50% from peak. Keep one SHORT quality session for sharpness. Easy runs shorter. REST more. The goal is to arrive at race day fresh and recovered.',
+    race_week: 'Very light running Mon-Wed only. Complete rest Thu-Fri. Race day Saturday/Sunday. No intensity except race itself.',
+  };
+
+  parts.push(`MANDATORY PHASE: ${phase.phase.toUpperCase()}`);
+  parts.push(`You MUST generate a ${phase.phase.toUpperCase()} phase week. Do NOT use a different phase.`);
+  parts.push(`The "phase" field in your JSON response MUST be "${phase.phase}".`);
+  parts.push('');
+  parts.push(`${phase.phase.toUpperCase()} PHASE RULES:`);
+  parts.push(PHASE_DESCRIPTIONS[phase.phase] ?? 'Follow standard training principles.');
   parts.push('');
 
   // Athlete profile
@@ -54,7 +71,8 @@ function buildWeekPrompt(
 
   // Check-in data
   parts.push('ATHLETE CHECK-IN FOR THIS WEEK:');
-  parts.push(`- Lifting: ${checkin.strengthDays.length > 0 ? checkin.strengthDays.join(', ') : 'None'}${checkin.legDay ? ` (Leg day: ${checkin.legDay})` : ''}`);
+  const legDaysList = checkin.legDays?.length > 0 ? checkin.legDays : (checkin.legDay ? [checkin.legDay] : []);
+  parts.push(`- Lifting: ${checkin.strengthDays.length > 0 ? checkin.strengthDays.join(', ') : 'None'}${legDaysList.length > 0 ? ` (Leg days: ${legDaysList.join(', ')})` : ''}`);
   parts.push(`- Available to run: ${checkin.availableDays.join(', ')}`);
   parts.push(`- Long run preference: ${checkin.preferredLongRunDay}`);
   if (checkin.timeConstraints) parts.push(`- Time constraints: ${checkin.timeConstraints}`);
@@ -62,7 +80,6 @@ function buildWeekPrompt(
   parts.push(`- Soreness: ${checkin.soreness}`);
   if (checkin.injuryStatus) parts.push(`- Injury/niggle: ${checkin.injuryStatus}`);
   parts.push(`- Sleep quality: ${checkin.sleepQuality}`);
-  parts.push(`- Focus: ${checkin.focus}`);
   if (checkin.notes) parts.push(`- Notes: "${checkin.notes}"`);
   parts.push('');
 
@@ -97,6 +114,8 @@ function buildWeekPrompt(
   parts.push('');
 
   // Rules
+  parts.push('YOU determine the training focus for this week based on the phase, recovery data, previous week performance, and check-in answers. Do NOT ask the athlete what to focus on.');
+  parts.push('');
   parts.push('KEY RULES:');
   parts.push('1. ONLY schedule runs on available days from the check-in');
   parts.push('2. NEVER schedule a quality run (threshold/intervals/tempo) the day after leg day');
@@ -162,14 +181,25 @@ function validateWeek(week: any, checkin: WeeklyCheckin, mondayDate: string, sun
       }
     }
 
-    // Check no quality session day after leg day
-    if (checkin.legDay && ['threshold', 'interval', 'tempo', 'marathon_pace'].includes(w.type)) {
-      const dayIndex = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].indexOf(w.day);
-      const legDayIndex = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].indexOf(checkin.legDay);
-      if (dayIndex === legDayIndex + 1 || (legDayIndex === 6 && dayIndex === 0)) {
-        errors.push(`Quality session on ${w.day} is the day after leg day (${checkin.legDay})`);
+    // Check no quality session day after ANY leg day
+    const allLegDays = checkin.legDays?.length > 0 ? checkin.legDays : (checkin.legDay ? [checkin.legDay] : []);
+    if (allLegDays.length > 0 && ['threshold', 'interval', 'tempo', 'marathon_pace'].includes(w.type)) {
+      const dayOrder = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+      const dayIndex = dayOrder.indexOf(w.day);
+      for (const ld of allLegDays) {
+        const legDayIndex = dayOrder.indexOf(ld);
+        if (dayIndex === legDayIndex + 1 || (legDayIndex === 6 && dayIndex === 0)) {
+          errors.push(`Quality session on ${w.day} is the day after leg day (${ld})`);
+        }
       }
     }
+  }
+
+  // Check phase-specific rules
+  const qualityTypes = ['threshold', 'interval', 'tempo', 'marathon_pace'];
+  const qualityCount = week.workouts.filter((w: any) => qualityTypes.includes(w.type)).length;
+  if (checkin && week.phase === 'base' && qualityCount > 0) {
+    errors.push(`BASE phase should have NO quality sessions, but AI scheduled ${qualityCount}`);
   }
 
   // Check total distance is reasonable
@@ -244,10 +274,10 @@ export async function generateWeekPlan(
     }
   }
 
-  // Map to GeneratedWeek type
+  // Map to GeneratedWeek type — FORCE the phase from calculatePhase, never trust Gemini's
   const week: GeneratedWeek = {
     weekNumber: parsed.weekNumber ?? phase.weekNumber,
-    phase: parsed.phase ?? phase.phase,
+    phase: phase.phase, // ALWAYS use calculated phase, not AI's
     totalPlannedMiles: parsed.totalPlannedMiles ?? parsed.workouts.reduce((s: number, w: any) => s + (w.distanceMiles ?? 0), 0),
     rationale: parsed.rationale ?? '',
     workouts: (parsed.workouts as any[]).map((w: any) => ({

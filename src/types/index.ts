@@ -383,7 +383,8 @@ export interface WeeklyCheckin {
   raceWeekNumber: number; // countdown to race
   createdAt: string;
   strengthDays: WeekDay[];
-  legDay: WeekDay | null;
+  legDay: WeekDay | null; // primary leg day (first in legDays) — for backward compat
+  legDays: WeekDay[]; // all leg days
   availableDays: WeekDay[];
   preferredLongRunDay: WeekDay;
   timeConstraints: string | null;
@@ -391,7 +392,6 @@ export interface WeeklyCheckin {
   soreness: SorenessLevel;
   injuryStatus: string | null;
   sleepQuality: SleepQualityLevel;
-  focus: string;
   notes: string | null;
 }
 

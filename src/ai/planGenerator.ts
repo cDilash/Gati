@@ -37,7 +37,7 @@ OUTPUT SCHEMA:
       "aiNotes": "Easy start — focus on consistency and building the running habit.",
       "workouts": [
         {
-          "dayOfWeek": 1,
+          "dayOfWeek": 0,
           "type": "easy",
           "title": "Easy Aerobic Run",
           "description": "Run at conversational pace. You should be able to hold a full conversation.",
@@ -65,7 +65,7 @@ RULES YOU MUST FOLLOW:
 8. Quality sessions: threshold/tempo in build phase, add VO2max intervals in peak.
 9. Recovery run or rest the day after long run or hard quality session.
 10. Rest days on days NOT in the athlete's available days list.
-11. Day numbers: 0=Sunday, 1=Monday, 2=Tuesday, 3=Wednesday, 4=Thursday, 5=Friday, 6=Saturday.
+11. Day numbers (Monday-based): 0=Monday, 1=Tuesday, 2=Wednesday, 3=Thursday, 4=Friday, 5=Saturday, 6=Sunday.
 
 WORKOUT TYPES TO USE:
 - easy: conversational pace at E zone
@@ -190,9 +190,11 @@ function buildUserMessage(
 
   // Schedule
   parts.push('SCHEDULE:');
+  // Convert JS day numbers (0=Sun) to Monday-based (0=Mon) for the AI
   const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-  parts.push(`- Available days: ${profile.available_days.map(d => dayNames[d]).join(', ')}`);
-  parts.push(`- Long run day: ${dayNames[profile.long_run_day]}`);
+  const toMondayBased = (jsDow: number) => jsDow === 0 ? 6 : jsDow - 1; // 0=Sun→6, 1=Mon→0, etc.
+  parts.push(`- Available days: ${profile.available_days.map((d: number) => `${dayNames[d]} (day ${toMondayBased(d)})`).join(', ')}`);
+  parts.push(`- Long run day: ${dayNames[profile.long_run_day]} (day ${toMondayBased(profile.long_run_day)})`);
   parts.push('');
 
   // Coaching context

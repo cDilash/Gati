@@ -98,7 +98,6 @@ For next week changes: tell them to update through the weekly check-in on Sunday
     parts.push(`  Running days: ${latestCheckin.availableDays?.join(', ') ?? '?'}`);
     parts.push(`  Energy: ${latestCheckin.energyLevel}, Soreness: ${latestCheckin.soreness}, Sleep: ${latestCheckin.sleepQuality}`);
     if (latestCheckin.injuryStatus) parts.push(`  Injury: ${latestCheckin.injuryStatus}`);
-    parts.push(`  Focus: ${latestCheckin.focus}`);
     if (latestCheckin.notes) parts.push(`  Notes: "${latestCheckin.notes}"`);
     parts.push('');
   }
