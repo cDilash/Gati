@@ -164,8 +164,11 @@ export default function WeeklyCheckinScreen() {
       const recoveryStatus = useAppStore.getState().recoveryStatus;
       const garminHealth = useAppStore.getState().garminHealth;
 
-      // Calculate the target week dates (next Monday–Sunday, or current if mid-week)
-      const monday = getCurrentMonday();
+      // Calculate the target week dates
+      // Sunday = plan NEXT week. Monday-Saturday = plan THIS week.
+      const { getNextMonday, getCurrentMonday: getCurrMon } = require('../src/engine/weeklyPlanning');
+      const dow = new Date().getDay(); // 0=Sun
+      const monday = dow === 0 ? getNextMonday() : getCurrMon();
       const sunday = addDays(monday, 6);
 
       const generatedWeek = await generateWeekPlan(

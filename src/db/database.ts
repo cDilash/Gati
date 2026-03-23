@@ -295,8 +295,10 @@ export function savePlan(
       );
       weekCount++;
 
-      // Calculate the Monday of this week
-      const weekStart = addDaysToDate(today, (week.weekNumber - 1) * 7);
+      // Calculate the Monday of this week — ensure plan always starts on a Monday
+      const planStartDay = new Date(today + 'T00:00:00').getDay(); // 0=Sun, 1=Mon...
+      const mondayOffset = planStartDay === 0 ? 1 : planStartDay === 1 ? 0 : (8 - planStartDay); // days until next Monday
+      const weekStart = addDaysToDate(today, mondayOffset + (week.weekNumber - 1) * 7);
 
       for (const workout of week.workouts) {
         const workoutId = Crypto.randomUUID();

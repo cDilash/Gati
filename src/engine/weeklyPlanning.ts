@@ -232,30 +232,41 @@ export function buildPreviousWeekSummary(weekNumber: number): PreviousWeekSummar
  */
 export function shouldPromptWeeklyPlan(): boolean {
   try {
+    if (!isWeeklyPlanningMode()) return false;
+
     const { getToday, addDays } = require('../utils/dateUtils');
     const today = getToday();
     const d = new Date(today + 'T00:00:00');
     const dow = d.getDay(); // 0=Sun, 1=Mon, ...
 
-    // Only suggest on Sunday (0) or Monday (1)
-    if (dow !== 0 && dow !== 1) return false;
-
-    // Check if next week already has workouts
-    const nextMon = getNextMonday();
-    const nextSun = addDays(nextMon, 6);
-
     const db = getDb();
-    const count = db.getFirstSync(
+
+    // On Sunday: check if NEXT week has workouts
+    if (dow === 0) {
+      const nextMon = getNextMonday();
+      const nextSun = addDays(nextMon, 6);
+      const count = (db.getFirstSync(
+        `SELECT count(*) as cnt FROM workout
+         WHERE plan_id IN (SELECT id FROM training_plan WHERE status = 'active')
+         AND scheduled_date >= ? AND scheduled_date <= ?
+         AND workout_type != 'rest'`,
+        nextMon, nextSun,
+      ) as any)?.cnt ?? 0;
+      return count === 0;
+    }
+
+    // Monday-Saturday: check if THIS week (remaining days) has workouts
+    const monday = getCurrentMonday();
+    const sunday = addDays(monday, 6);
+    const count = (db.getFirstSync(
       `SELECT count(*) as cnt FROM workout
        WHERE plan_id IN (SELECT id FROM training_plan WHERE status = 'active')
        AND scheduled_date >= ? AND scheduled_date <= ?
        AND workout_type != 'rest'`,
-      nextMon, nextSun,
-    ) as { cnt: number } | null;
+      today, sunday,
+    ) as any)?.cnt ?? 0;
 
-    if (count && count.cnt > 0) return false; // Already planned
-
-    return true;
+    return count === 0;
   } catch {
     return false;
   }

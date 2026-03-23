@@ -94,12 +94,15 @@ export default function TodayScreen() {
   const u = useUnits();
 
   // Weekly planning prompt
-  const [showWeeklyPrompt, setShowWeeklyPrompt] = useState(() => {
+  const [showWeeklyPrompt, setShowWeeklyPrompt] = useState(false);
+
+  // Re-evaluate weekly prompt whenever workouts change (e.g., after generating a week)
+  useEffect(() => {
     try {
       const { shouldPromptWeeklyPlan, shouldPromptCurrentWeek } = require('../../src/engine/weeklyPlanning');
-      return shouldPromptWeeklyPlan() || shouldPromptCurrentWeek();
-    } catch { return false; }
-  });
+      setShowWeeklyPrompt(shouldPromptWeeklyPlan() || shouldPromptCurrentWeek());
+    } catch { setShowWeeklyPrompt(false); }
+  }, [workouts.length]);
   const fetchBriefing = useAppStore(s => s.fetchBriefing);
   const fetchPostRunAnalysis = useAppStore(s => s.fetchPostRunAnalysis);
   const fetchRaceStrategy = useAppStore(s => s.fetchRaceStrategy);

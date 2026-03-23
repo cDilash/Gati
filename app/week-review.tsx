@@ -150,7 +150,9 @@ export default function WeekReviewScreen() {
       const garminHealth = useAppStore.getState().garminHealth;
       const phase = calculatePhase(userProfile?.race_date ?? getToday(), getToday());
       const prevWeek = buildPreviousWeekSummary(phase.weekNumber - 1);
-      const monday = getCurrentMonday();
+      const { getNextMonday } = require('../src/engine/weeklyPlanning');
+      const dow = new Date().getDay();
+      const monday = dow === 0 ? getNextMonday() : getCurrentMonday();
       const sunday = addDays(monday, 6);
 
       const newWeek = await generateWeekPlan(
@@ -199,17 +201,40 @@ export default function WeekReviewScreen() {
 
       const planId = plan.id;
 
+      // Determine the correct week_number based on the workout dates
+      // Find the plan's first workout date to calculate relative week number
+      const firstWorkoutDate = db.getFirstSync(
+        'SELECT MIN(scheduled_date) as d FROM workout WHERE plan_id = ?', [planId]
+      ) as { d: string } | null;
+      const targetMonday = week.workouts.length > 0 ? week.workouts[0].date : require('../src/engine/weeklyPlanning').getCurrentMonday();
+      let weekNum = week.weekNumber;
+      if (firstWorkoutDate?.d) {
+        const planStart = new Date(firstWorkoutDate.d + 'T00:00:00');
+        const weekStart = new Date(targetMonday + 'T00:00:00');
+        weekNum = Math.max(1, Math.floor((weekStart.getTime() - planStart.getTime()) / (7 * 86400000)) + 1);
+      }
+
+      // Delete any existing upcoming workouts for the DATE RANGE (not by week_number — more reliable)
+      if (week.workouts.length > 0) {
+        const firstDate = week.workouts[0].date;
+        const lastDate = week.workouts[week.workouts.length - 1].date;
+        // Unlink metrics first (FK safety)
+        db.runSync(
+          `UPDATE performance_metric SET workout_id = NULL
+           WHERE workout_id IN (SELECT id FROM workout WHERE plan_id = ? AND scheduled_date >= ? AND scheduled_date <= ? AND status = 'upcoming')`,
+          [planId, firstDate, lastDate],
+        );
+        db.runSync(
+          `DELETE FROM workout WHERE plan_id = ? AND scheduled_date >= ? AND scheduled_date <= ? AND status = 'upcoming'`,
+          [planId, firstDate, lastDate],
+        );
+      }
+
       // Ensure training_week row exists
       db.runSync(
         `INSERT OR REPLACE INTO training_week (id, plan_id, week_number, phase, target_volume, is_cutback, ai_notes)
          VALUES (?, ?, ?, ?, ?, 0, ?)`,
-        Crypto.randomUUID(), planId, week.weekNumber, week.phase, week.totalPlannedMiles, week.rationale,
-      );
-
-      // Delete any existing upcoming workouts for this week (preserve completed/skipped)
-      db.runSync(
-        `DELETE FROM workout WHERE plan_id = ? AND week_number = ? AND status = 'upcoming'`,
-        [planId, week.weekNumber],
+        Crypto.randomUUID(), planId, weekNum, week.phase, week.totalPlannedMiles, week.rationale,
       );
 
       // Insert new workouts
@@ -219,7 +244,7 @@ export default function WeekReviewScreen() {
            (id, plan_id, week_number, day_of_week, scheduled_date, workout_type, title,
             description, target_distance_miles, target_pace_zone, intervals_json, status)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 'upcoming')`,
-          Crypto.randomUUID(), planId, week.weekNumber,
+          Crypto.randomUUID(), planId, weekNum,
           allDays.indexOf(w.day), w.date, w.type,
           `${w.type.replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase())} — ${u.dist(w.distanceMiles)}`,
           w.description + (w.notes ? `\n${w.notes}` : ''),
@@ -247,7 +272,7 @@ export default function WeekReviewScreen() {
              (id, plan_id, week_number, day_of_week, scheduled_date, workout_type, title,
               description, target_distance_miles, target_pace_zone, intervals_json, status)
              VALUES (?, ?, ?, ?, ?, 'rest', 'Rest Day', 'Recovery day — no running', 0, NULL, NULL, 'upcoming')`,
-            Crypto.randomUUID(), planId, week.weekNumber, dayIdx, restDate,
+            Crypto.randomUUID(), planId, weekNum, dayIdx, restDate,
           );
         }
       }

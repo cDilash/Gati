@@ -929,16 +929,18 @@ export default function CalendarScreen() {
                       {/* Check-in indicator */}
                       {(() => {
                         try {
-                          const { getCheckinForWeek } = require('../../src/engine/weeklyPlanning');
-                          const checkin = getCheckinForWeek(week.week_number);
+                          const { getCheckinForWeek, getLatestCheckin } = require('../../src/engine/weeklyPlanning');
+                          // Try by week number first, then by latest (week numbers may not match)
+                          let checkin = getCheckinForWeek(week.week_number);
+                          if (!checkin && isCurrent) checkin = getLatestCheckin();
                           if (!checkin) return null;
                           return (
                             <Pressable onPress={() => {
                               const { Alert } = require('react-native');
-                              const days = (d: string[]) => d.map((x: string) => x.substring(0, 3)).join(', ');
+                              const days = (d: string[]) => d?.length > 0 ? d.map((x: string) => x.substring(0, 3)).join(', ') : 'None';
                               Alert.alert(
                                 `Week ${week.week_number} Check-in`,
-                                `Lifting: ${checkin.strengthDays?.length > 0 ? days(checkin.strengthDays) : 'None'}${checkin.legDays?.length > 0 ? ` (Legs: ${days(checkin.legDays)})` : ''}\nRunning: ${days(checkin.availableDays)}\nLong run: ${checkin.preferredLongRunDay}\nEnergy: ${checkin.energyLevel} · Soreness: ${checkin.soreness} · Sleep: ${checkin.sleepQuality}${checkin.injuryStatus ? `\nInjury: ${checkin.injuryStatus}` : ''}${checkin.notes ? `\nNotes: ${checkin.notes}` : ''}`,
+                                `🏋️ Lifting: ${days(checkin.strengthDays)}${checkin.legDays?.length > 0 ? ` (Legs: ${days(checkin.legDays)})` : ''}\n🏃 Running: ${days(checkin.availableDays)}\n📍 Long run: ${checkin.preferredLongRunDay}\n⚡ Energy: ${checkin.energyLevel}\n💪 Soreness: ${checkin.soreness}\n😴 Sleep: ${checkin.sleepQuality}${checkin.injuryStatus ? `\n⚠️ Injury: ${checkin.injuryStatus}` : ''}${checkin.notes ? `\n📝 ${checkin.notes}` : ''}`,
                               );
                             }} hitSlop={8}>
                               <MaterialCommunityIcons name="clipboard-check-outline" size={14} color={colors.cyan} />
