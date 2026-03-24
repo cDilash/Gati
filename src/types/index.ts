@@ -695,9 +695,27 @@ export interface GarminHealthData {
   sleepNeedMinutes: number | null;        // baseline sleep need
   sleepDebtMinutes: number | null;        // sleep deficit
   // Tier 2 fields
-  enduranceScore: number | null;          // Garmin endurance score (large scale)
-  enduranceClassification: number | null; // 1-5 classification
+  enduranceScore: number | null;          // Garmin endurance score
+  enduranceClassification: number | null; // classification level
   skinTempDeviationC: number | null;      // °C deviation from baseline (illness indicator)
+  // Tier 3 fields
+  maxHrDaily: number | null;              // daily max heart rate
+  minHrDaily: number | null;              // daily min heart rate
+  rhr7dayAvg: number | null;              // 7-day resting HR average
+  stressQualifier: string | null;         // LOW, MEDIUM, HIGH, STRESSFUL
+  bbAtWake: number | null;                // Body Battery at wake time
+  hrv5minHigh: number | null;             // HRV 5-minute peak overnight
+  hrvFeedback: string | null;             // HRV_BALANCED_5, etc.
+  minSpo2: number | null;                 // lowest SpO2 during sleep
+  sleepAwakeCount: number | null;         // number of awakenings
+  avgSleepStress: number | null;          // stress level during sleep
+  hillScore: number | null;               // terrain readiness
+  hillEndurance: number | null;
+  hillStrength: number | null;
+  lactateThresholdHr: number | null;      // LT heart rate (bpm)
+  lactateThresholdSpeed: number | null;   // LT speed (m/s)
+  vo2maxFitnessAge: number | null;        // fitness age from VO2max
+  floorsClimbed: number | null;           // daily floors
   fetchedAt: string;
 }
 

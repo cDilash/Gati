@@ -1292,6 +1292,91 @@ export default function RecoveryScreen() {
             );
           })()}
 
+          {/* Endurance + Hill Score */}
+          {(garminHealth.enduranceScore != null || garminHealth.hillScore != null) && (
+            <XStack gap={8}>
+              {garminHealth.enduranceScore != null && (
+                <YStack flex={1} backgroundColor={colors.surface} borderRadius={16} padding={14}>
+                  <XStack alignItems="center" gap={4} marginBottom={6}>
+                    <MaterialCommunityIcons name="run" size={14} color={colors.cyan} />
+                    <B color={colors.textSecondary} fontSize={11} fontWeight="600">ENDURANCE</B>
+                  </XStack>
+                  <M color={colors.textPrimary} fontSize={20} fontWeight="800">{garminHealth.enduranceScore}</M>
+                </YStack>
+              )}
+              {garminHealth.hillScore != null && (
+                <YStack flex={1} backgroundColor={colors.surface} borderRadius={16} padding={14}>
+                  <XStack alignItems="center" gap={4} marginBottom={6}>
+                    <MaterialCommunityIcons name="terrain" size={14} color={colors.orange} />
+                    <B color={colors.textSecondary} fontSize={11} fontWeight="600">HILL SCORE</B>
+                  </XStack>
+                  <M color={colors.textPrimary} fontSize={20} fontWeight="800">{garminHealth.hillScore}</M>
+                  {garminHealth.hillEndurance != null && (
+                    <B color={colors.textTertiary} fontSize={9} marginTop={2}>End: {garminHealth.hillEndurance} · Str: {garminHealth.hillStrength}</B>
+                  )}
+                </YStack>
+              )}
+            </XStack>
+          )}
+
+          {/* Sleep Need + Debt + Sub-scores */}
+          {(garminHealth.sleepNeedMinutes != null || garminHealth.sleepSubscores) && (
+            <YStack backgroundColor={colors.surface} borderRadius={16} padding={16}>
+              <XStack alignItems="center" gap={6} marginBottom={8}>
+                <MaterialCommunityIcons name="sleep" size={16} color={colors.cyan} />
+                <B color={colors.textPrimary} fontSize={14} fontWeight="600">Sleep Details</B>
+                <View flex={1} />
+                <GarminIcon size={10} />
+              </XStack>
+              {garminHealth.sleepNeedMinutes != null && (
+                <XStack gap={12} marginBottom={garminHealth.sleepSubscores ? 10 : 0}>
+                  <YStack flex={1} alignItems="center">
+                    <B color={colors.textTertiary} fontSize={9}>NEED</B>
+                    <M color={colors.textPrimary} fontSize={14} fontWeight="700">
+                      {Math.floor(garminHealth.sleepNeedMinutes / 60)}h {garminHealth.sleepNeedMinutes % 60}m
+                    </M>
+                  </YStack>
+                  {garminHealth.sleepDebtMinutes != null && garminHealth.sleepDebtMinutes > 0 && (
+                    <YStack flex={1} alignItems="center">
+                      <B color={colors.textTertiary} fontSize={9}>DEBT</B>
+                      <M color={colors.orange} fontSize={14} fontWeight="700">{garminHealth.sleepDebtMinutes}m</M>
+                    </YStack>
+                  )}
+                  {garminHealth.sleepAwakeCount != null && (
+                    <YStack flex={1} alignItems="center">
+                      <B color={colors.textTertiary} fontSize={9}>AWAKE</B>
+                      <M color={garminHealth.sleepAwakeCount > 3 ? colors.orange : colors.textPrimary} fontSize={14} fontWeight="700">
+                        {garminHealth.sleepAwakeCount}×
+                      </M>
+                    </YStack>
+                  )}
+                </XStack>
+              )}
+              {garminHealth.sleepSubscores && (
+                <XStack gap={6} flexWrap="wrap">
+                  {Object.entries(garminHealth.sleepSubscores).filter(([, v]) => v != null).map(([key, val]) => (
+                    <YStack key={key} backgroundColor={colors.surfaceHover} borderRadius={8} paddingHorizontal={8} paddingVertical={4} alignItems="center">
+                      <B color={colors.textTertiary} fontSize={8}>{key.replace('Percentage', '%').replace(/([A-Z])/g, ' $1').trim().toUpperCase()}</B>
+                      <M color={(val as number) >= 80 ? colors.cyan : (val as number) >= 60 ? colors.textSecondary : colors.orange}
+                        fontSize={13} fontWeight="700">{val}</M>
+                    </YStack>
+                  ))}
+                </XStack>
+              )}
+            </YStack>
+          )}
+
+          {/* Skin Temp Warning */}
+          {garminHealth.skinTempDeviationC != null && Math.abs(garminHealth.skinTempDeviationC) > 0.5 && (
+            <XStack backgroundColor={colors.orangeGhost} borderRadius={12} padding={12} alignItems="center" gap={8}
+              borderWidth={1} borderColor={colors.orangeDim}>
+              <MaterialCommunityIcons name="thermometer-alert" size={16} color={colors.orange} />
+              <B color={colors.orange} fontSize={12} flex={1}>
+                Skin temp {garminHealth.skinTempDeviationC > 0 ? '+' : ''}{garminHealth.skinTempDeviationC}°C from baseline — possible illness or overtraining
+              </B>
+            </XStack>
+          )}
+
           {/* Respiratory Rate (display only) */}
           {hasResp && (() => {
             const respSignal = recoveryStatus?.signals.find(s => s.type === 'respiratory_rate');

@@ -108,6 +108,28 @@ function buildWeekPrompt(
     parts.push('');
   }
 
+  // Garmin advanced metrics (if available from garminData parameter)
+  if (garminData) {
+    const gLines: string[] = [];
+    if (garminData.enduranceScore != null) gLines.push(`Endurance Score: ${garminData.enduranceScore}`);
+    if (garminData.hillScore != null) gLines.push(`Hill Score: ${garminData.hillScore} (endurance: ${garminData.hillEndurance ?? '?'}, strength: ${garminData.hillStrength ?? '?'}) — SF Marathon has hills, add hill work if score is low`);
+    if (garminData.lactateThresholdHr != null) {
+      const ltPace = garminData.lactateThresholdSpeed && garminData.lactateThresholdSpeed > 0 ? Math.round(1609.344 / garminData.lactateThresholdSpeed) : null;
+      gLines.push(`Lactate Threshold: ${garminData.lactateThresholdHr} bpm${ltPace ? ` @ ${Math.floor(ltPace / 60)}:${String(ltPace % 60).padStart(2, '0')}/mi — use for threshold pace instead of VDOT estimate` : ''}`);
+    }
+    if (garminData.predictedMarathonSec != null) {
+      const fmt = (s: number) => `${Math.floor(s / 3600)}:${String(Math.floor((s % 3600) / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+      gLines.push(`Race prediction: Marathon ${fmt(garminData.predictedMarathonSec)} (athlete goal: 3:45:00)`);
+    }
+    if (garminData.bbAtWake != null) gLines.push(`Body Battery at wake: ${garminData.bbAtWake}/100`);
+    if (garminData.vo2maxFitnessAge != null) gLines.push(`Fitness Age: ${garminData.vo2maxFitnessAge}`);
+    if (gLines.length > 0) {
+      parts.push('GARMIN METRICS:');
+      gLines.forEach(l => parts.push(`  ${l}`));
+      parts.push('');
+    }
+  }
+
   // Week dates
   parts.push(`GENERATE WORKOUTS FOR: ${weekDates.monday} (Monday) through ${weekDates.sunday} (Sunday)`);
   parts.push(`Use ${dLabel} for distances.`);

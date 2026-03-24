@@ -528,6 +528,18 @@ For next week changes: tell them to update through the weekly check-in on Sunday
     if (g.skinTempDeviationC != null && Math.abs(g.skinTempDeviationC) > 0.3) {
       lines.push(`⚠ Skin temp deviation: ${g.skinTempDeviationC > 0 ? '+' : ''}${g.skinTempDeviationC}°C from baseline${g.skinTempDeviationC > 0.5 ? ' — possible illness/overtraining' : ''}`);
     }
+    // Tier 3 fields
+    if (g.maxHrDaily != null && g.minHrDaily != null) lines.push(`Daily HR range: ${g.minHrDaily}-${g.maxHrDaily} bpm${g.rhr7dayAvg ? ` (RHR 7d avg: ${g.rhr7dayAvg})` : ''}`);
+    if (g.bbAtWake != null) lines.push(`Body Battery at wake: ${g.bbAtWake}/100`);
+    if (g.hrvFeedback) lines.push(`HRV: ${g.hrvFeedback.replace(/_/g, ' ').toLowerCase()}${g.hrv5minHigh ? `, 5-min peak: ${g.hrv5minHigh}ms` : ''}`);
+    if (g.sleepAwakeCount != null) lines.push(`Sleep: ${g.sleepAwakeCount} awakening${g.sleepAwakeCount !== 1 ? 's' : ''}${g.avgSleepStress != null ? `, avg sleep stress: ${g.avgSleepStress}` : ''}`);
+    if (g.minSpo2 != null && g.minSpo2 < 92) lines.push(`⚠ Min SpO2: ${g.minSpo2}% (below normal)`);
+    if (g.hillScore != null) lines.push(`Hill Score: ${g.hillScore} (endurance: ${g.hillEndurance ?? '?'}, strength: ${g.hillStrength ?? '?'})`);
+    if (g.lactateThresholdHr != null) {
+      const ltPace = g.lactateThresholdSpeed && g.lactateThresholdSpeed > 0 ? Math.round(1609.344 / g.lactateThresholdSpeed) : null;
+      lines.push(`Lactate Threshold: ${g.lactateThresholdHr} bpm${ltPace ? ` @ ${Math.floor(ltPace / 60)}:${String(ltPace % 60).padStart(2, '0')}/mi` : ''}`);
+    }
+    if (g.vo2maxFitnessAge != null) lines.push(`Fitness Age: ${g.vo2maxFitnessAge} (chronological: 26)`);
     if (lines.length > 0) {
       parts.push('GARMIN CONNECT DATA:');
       lines.forEach(l => parts.push(`  ${l}`));
