@@ -964,10 +964,10 @@ export function sweepPastWorkouts(): { skipped: number; lateMatched: number } {
   let skipped = 0;
   let lateMatched = 0;
 
-  // 12-hour buffer: only sweep workouts from at least 12 hours ago
-  // This gives Strava time to process late-night runs
-  const cutoff = new Date(Date.now() - 12 * 60 * 60 * 1000);
-  const cutoffDate = `${cutoff.getFullYear()}-${String(cutoff.getMonth() + 1).padStart(2, '0')}-${String(cutoff.getDate()).padStart(2, '0')}`;
+  // Never sweep today's workouts — only yesterday and older
+  // This prevents auto-skipping a workout the user hasn't had a chance to do yet
+  const { getToday, addDays } = require('../utils/dateUtils');
+  const cutoffDate = addDays(getToday(), -1); // yesterday
 
   // Find all past workouts still marked 'upcoming' (at least 12 hours old)
   const pastUpcoming = database.getAllSync<any>(

@@ -727,7 +727,9 @@ export default function TodayScreen() {
                     <M color="$textTertiary" fontSize={12} fontWeight="600">{u.dist(todaysWorkout.target_distance_miles)}</M>
                     {todaysWorkout.target_pace_zone && paceZones && (
                       <M color="$textTertiary" fontSize={12}>
-                        @ {todaysWorkout.target_pace_zone} ({u.pace(paceZones[todaysWorkout.target_pace_zone as keyof typeof paceZones]?.min ?? 0)}-{u.pace(paceZones[todaysWorkout.target_pace_zone as keyof typeof paceZones]?.max ?? 0)})
+                        @ {paceZones[todaysWorkout.target_pace_zone as keyof typeof paceZones]
+                          ? `${todaysWorkout.target_pace_zone} (${u.pace(paceZones[todaysWorkout.target_pace_zone as keyof typeof paceZones].min)}-${u.pace(paceZones[todaysWorkout.target_pace_zone as keyof typeof paceZones].max)})`
+                          : todaysWorkout.target_pace_zone}
                       </M>
                     )}
                     {Math.abs(todaysMetric.distance_miles - todaysWorkout.target_distance_miles) <= 0.3 ? (
@@ -784,13 +786,22 @@ export default function TodayScreen() {
               {/* Pace Zone */}
               {todaysWorkout.target_pace_zone && paceZones && (
                 <XStack justifyContent="space-between" alignItems="center" backgroundColor="$surfaceLight" borderRadius="$4" padding="$3" marginBottom="$3">
-                  <B color="$textSecondary" fontSize={13} fontWeight="600">Target Zone: {todaysWorkout.target_pace_zone}</B>
-                  <M color="$accent" fontSize={16} fontWeight="700">
-                    {u.pace(paceZones[todaysWorkout.target_pace_zone as keyof typeof paceZones]?.min ?? 0)}
-                    {' - '}
-                    {u.pace(paceZones[todaysWorkout.target_pace_zone as keyof typeof paceZones]?.max ?? 0)}
-                    {' '}{u.paceSuffix}
-                  </M>
+                  {paceZones[todaysWorkout.target_pace_zone as keyof typeof paceZones] ? (
+                    <>
+                      <B color="$textSecondary" fontSize={13} fontWeight="600">Target Zone: {todaysWorkout.target_pace_zone}</B>
+                      <M color="$accent" fontSize={16} fontWeight="700">
+                        {u.pace(paceZones[todaysWorkout.target_pace_zone as keyof typeof paceZones].min)}
+                        {' - '}
+                        {u.pace(paceZones[todaysWorkout.target_pace_zone as keyof typeof paceZones].max)}
+                        {' '}{u.paceSuffix}
+                      </M>
+                    </>
+                  ) : (
+                    <>
+                      <B color="$textSecondary" fontSize={13} fontWeight="600">Target Pace</B>
+                      <M color="$accent" fontSize={14} fontWeight="700">{todaysWorkout.target_pace_zone}</M>
+                    </>
+                  )}
                 </XStack>
               )}
 
