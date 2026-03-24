@@ -145,6 +145,22 @@ def fetch_vo2max(date_str: str) -> dict:
         print(f"  ✗ VO2max: {e}")
         return {}
 
+def fetch_race_predictions() -> dict:
+    """Race predictions — try multiple known endpoints."""
+    endpoints = [
+        "/metrics-service/metrics/racepredictions",
+        "/fitnessstats-service/racePredictions",
+        "/metrics-service/metrics/maxmet/racepredictions",
+    ]
+    for ep in endpoints:
+        try:
+            r = garth.connectapi(ep)
+            if r:
+                return r
+        except:
+            pass
+    return {}
+
 # ─── Parse responses ──────────────────────────────────────────
 
 def parse_garmin_data(date_str: str) -> dict:
@@ -161,6 +177,7 @@ def parse_garmin_data(date_str: str) -> dict:
     resp = fetch_respiration(date_str)
     spo2 = fetch_spo2(date_str)
     vo2 = fetch_vo2max(date_str)
+    race_preds = fetch_race_predictions()
 
     # ─── Parse HRV ───
     hrv_summary = hrv.get("hrvSummary", {}) if isinstance(hrv, dict) else {}
@@ -201,23 +218,25 @@ def parse_garmin_data(date_str: str) -> dict:
                 bb_morning = values[-1] if len(values) <= 3 else max(values[:4])  # highest morning value
 
     # ─── Parse training readiness ───
+    # Response is an ARRAY of readings — use the most recent (first entry)
     tr_score = None
-    tr_sleep_score = None
-    tr_recovery_time = None
-    tr_hrv_status = None
-    tr_acwr = None
-    if isinstance(readiness, dict):
-        tr_score = readiness.get("score") or readiness.get("overallScore")
-        for comp in readiness.get("components", []):
-            key = comp.get("componentType", "")
-            if key == "SLEEP":
-                tr_sleep_score = comp.get("score")
-            elif key == "RECOVERY_TIME":
-                tr_recovery_time = comp.get("score")
-            elif key == "HRV_STATUS":
-                tr_hrv_status = comp.get("score")
-            elif key == "ACWR":
-                tr_acwr = comp.get("score")
+    readiness_feedback_short = None
+    readiness_feedback_long = None
+    recovery_time_hours = None
+    readiness_entry = None
+    if isinstance(readiness, list) and len(readiness) > 0:
+        readiness_entry = readiness[0]  # most recent reading
+    elif isinstance(readiness, dict):
+        readiness_entry = readiness
+
+    if readiness_entry:
+        tr_score = readiness_entry.get("score")
+        readiness_feedback_short = readiness_entry.get("feedbackShort")
+        readiness_feedback_long = readiness_entry.get("feedbackLong")
+        # Recovery time is in MINUTES
+        recovery_min = readiness_entry.get("recoveryTime")
+        if recovery_min is not None and isinstance(recovery_min, (int, float)):
+            recovery_time_hours = round(recovery_min / 60, 1)
 
     # ─── Parse training status ───
     training_status_text = None
@@ -247,9 +266,28 @@ def parse_garmin_data(date_str: str) -> dict:
     spo2_avg = sleep_dto.get("averageSpO2Value")
     sleep_score = None
     sleep_scores = sleep_dto.get("sleepScores", {})
+    sleep_subscores = {}
     if isinstance(sleep_scores, dict):
         overall = sleep_scores.get("overall", {})
         sleep_score = overall.get("value") if isinstance(overall, dict) else None
+        # Parse all 8 sub-scores
+        for key in ["totalDuration", "stress", "awakeCount", "remPercentage", "restlessness", "lightPercentage", "deepPercentage", "quality"]:
+            sub = sleep_scores.get(key, {})
+            if isinstance(sub, dict) and sub.get("value") is not None:
+                sleep_subscores[key] = sub["value"]
+
+    # Sleep need
+    sleep_need_minutes = None
+    sleep_debt_minutes = None
+    sleep_need_obj = sleep_dto.get("sleepNeed", {})
+    if isinstance(sleep_need_obj, dict):
+        baseline = sleep_need_obj.get("baseline")
+        if baseline and isinstance(baseline, (int, float)):
+            sleep_need_minutes = round(baseline / 60000) if baseline > 1000 else round(baseline)  # ms or minutes
+        actual_sleep_min = sleep_dto.get("sleepTimeSeconds")
+        if actual_sleep_min and sleep_need_minutes:
+            actual_min = round(actual_sleep_min / 60) if actual_sleep_min > 1000 else actual_sleep_min
+            sleep_debt_minutes = max(0, sleep_need_minutes - actual_min)
 
     # ─── Parse SpO2 (from dedicated endpoint if sleep didn't have it) ───
     if not spo2_avg and isinstance(spo2, dict):
@@ -258,6 +296,43 @@ def parse_garmin_data(date_str: str) -> dict:
     # ─── Parse respiration (fallback) ───
     if not respiratory_rate and isinstance(resp, dict):
         respiratory_rate = resp.get("avgSleepRespiration") or resp.get("avgWakingRespiration")
+
+    # ─── Parse race predictions ───
+    predicted_5k = None
+    predicted_10k = None
+    predicted_half = None
+    predicted_marathon = None
+    if isinstance(race_preds, (dict, list)):
+        preds = race_preds if isinstance(race_preds, list) else race_preds.get("racePredictions", race_preds.get("predictions", []))
+        if isinstance(preds, list):
+            for pred in preds:
+                dist = pred.get("raceDistance", {}).get("key", "") if isinstance(pred.get("raceDistance"), dict) else str(pred.get("raceDistance", ""))
+                time_sec = pred.get("racePredictionInSeconds") or pred.get("predictedTime")
+                if not time_sec:
+                    continue
+                time_sec = int(time_sec)
+                if "5" in dist and "10" not in dist and "half" not in dist.lower():
+                    predicted_5k = time_sec
+                elif "10" in dist and "half" not in dist.lower():
+                    predicted_10k = time_sec
+                elif "half" in dist.lower() or "21" in dist:
+                    predicted_half = time_sec
+                elif "marathon" in dist.lower() or "42" in dist:
+                    predicted_marathon = time_sec
+
+    # Fallback: estimate race predictions from VO2max using Daniels' tables (lookup)
+    if vo2max_running and not predicted_5k:
+        v = vo2max_running
+        # Daniels VDOT table: VDOT → 5K time in seconds (approximate)
+        vdot_5k = {30: 1860, 32: 1770, 34: 1680, 36: 1605, 38: 1530, 40: 1464,
+                   42: 1404, 44: 1344, 46: 1290, 48: 1242, 50: 1194, 52: 1152,
+                   54: 1110, 56: 1074, 58: 1038, 60: 1008, 65: 930, 70: 864}
+        # Find closest VDOT entry
+        closest = min(vdot_5k.keys(), key=lambda k: abs(k - v))
+        predicted_5k = vdot_5k[closest]
+        predicted_10k = int(predicted_5k * 2.09)
+        predicted_half = int(predicted_10k * 2.22)
+        predicted_marathon = int(predicted_half * 2.11)
 
     # ─── Build row ───
     row = {
@@ -295,6 +370,19 @@ def parse_garmin_data(date_str: str) -> dict:
         "intensity_minutes_vigorous": vigorous_min,
         "intensity_minutes_moderate": moderate_min,
         "floors_climbed": floors_climbed,
+        # NEW: Readiness feedback + recovery
+        "readiness_feedback_short": readiness_feedback_short,
+        "readiness_feedback_long": readiness_feedback_long,
+        "recovery_time_hours": recovery_time_hours,
+        # NEW: Race predictions
+        "predicted_5k_sec": predicted_5k,
+        "predicted_10k_sec": predicted_10k,
+        "predicted_half_sec": predicted_half,
+        "predicted_marathon_sec": predicted_marathon,
+        # NEW: Sleep sub-scores + need
+        "sleep_subscores_json": json.dumps(sleep_subscores) if sleep_subscores else None,
+        "sleep_need_minutes": sleep_need_minutes,
+        "sleep_debt_minutes": sleep_debt_minutes,
         # Meta
         "fetched_at": datetime.now(tz=__import__('datetime').timezone.utc).isoformat(),
     }

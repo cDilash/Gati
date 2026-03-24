@@ -33,6 +33,16 @@ function mapRow(row: any): GarminHealthData {
     intensityMinutesVigorous: row.intensity_minutes_vigorous ?? null,
     intensityMinutesModerate: row.intensity_minutes_moderate ?? null,
     restingHr: row.resting_hr ?? null,
+    readinessFeedbackShort: row.readiness_feedback_short ?? null,
+    readinessFeedbackLong: row.readiness_feedback_long ?? null,
+    recoveryTimeHours: row.recovery_time_hours ?? null,
+    predictedMarathonSec: row.predicted_marathon_sec ?? null,
+    predicted5kSec: row.predicted_5k_sec ?? null,
+    predicted10kSec: row.predicted_10k_sec ?? null,
+    predictedHalfSec: row.predicted_half_sec ?? null,
+    sleepSubscores: row.sleep_subscores_json ? (typeof row.sleep_subscores_json === 'string' ? JSON.parse(row.sleep_subscores_json) : row.sleep_subscores_json) : null,
+    sleepNeedMinutes: row.sleep_need_minutes ?? null,
+    sleepDebtMinutes: row.sleep_debt_minutes ?? null,
     fetchedAt: row.fetched_at ?? '',
   };
 }

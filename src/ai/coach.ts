@@ -502,6 +502,21 @@ For next week changes: tell them to update through the weekly check-in on Sunday
     if (g.restingHr != null) lines.push(`Resting HR (Garmin): ${g.restingHr} bpm`);
     if (g.sleepScore != null) lines.push(`Sleep Score (Garmin): ${g.sleepScore}/100`);
     if (g.trainingReadiness != null) lines.push(`Training Readiness: ${g.trainingReadiness}/100`);
+    // NEW Tier 1 fields
+    if (g.readinessFeedbackShort) lines.push(`Readiness: ${g.readinessFeedbackShort.replace(/_/g, ' ').toLowerCase()}`);
+    if (g.recoveryTimeHours != null) lines.push(`Recovery time: ${g.recoveryTimeHours}h remaining`);
+    if (g.predictedMarathonSec != null) {
+      const fmt = (s: number) => `${Math.floor(s / 3600)}:${String(Math.floor((s % 3600) / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+      lines.push(`Race predictions: 5K ${g.predicted5kSec ? fmt(g.predicted5kSec) : '?'}, 10K ${g.predicted10kSec ? fmt(g.predicted10kSec) : '?'}, Half ${g.predictedHalfSec ? fmt(g.predictedHalfSec) : '?'}, Marathon ${fmt(g.predictedMarathonSec)}`);
+    }
+    if (g.sleepNeedMinutes != null) {
+      const need = `${Math.floor(g.sleepNeedMinutes / 60)}h ${g.sleepNeedMinutes % 60}m`;
+      lines.push(`Sleep need: ${need}${g.sleepDebtMinutes ? `, debt: ${g.sleepDebtMinutes}m` : ''}`);
+    }
+    if (g.sleepSubscores) {
+      const subs = Object.entries(g.sleepSubscores).filter(([, v]) => v != null).map(([k, v]) => `${k}: ${v}`).join(', ');
+      if (subs) lines.push(`Sleep breakdown: ${subs}`);
+    }
     if (lines.length > 0) {
       parts.push('GARMIN CONNECT DATA:');
       lines.forEach(l => parts.push(`  ${l}`));

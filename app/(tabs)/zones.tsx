@@ -1132,7 +1132,20 @@ export default function RecoveryScreen() {
                   <View backgroundColor={trColor + '22'} paddingHorizontal={8} paddingVertical={2} borderRadius={4}>
                     <H color={trColor} fontSize={10} letterSpacing={1}>{trLabel}</H>
                   </View>
+                  {garminHealth.recoveryTimeHours != null && (
+                    <XStack alignItems="center" gap={4} marginLeft={8}>
+                      <MaterialCommunityIcons name="timer-outline" size={12} color={colors.textTertiary} />
+                      <M color={colors.textTertiary} fontSize={11}>
+                        {garminHealth.recoveryTimeHours <= 0 ? 'Recovered' : `${garminHealth.recoveryTimeHours}h to recover`}
+                      </M>
+                    </XStack>
+                  )}
                 </XStack>
+                {garminHealth.readinessFeedbackShort && (
+                  <B color={colors.textTertiary} fontSize={12} marginTop={6}>
+                    {garminHealth.readinessFeedbackShort.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, (c: string) => c.toUpperCase())}
+                  </B>
+                )}
               </YStack>
             );
           })()}
@@ -1231,6 +1244,53 @@ export default function RecoveryScreen() {
               )}
             </YStack>
           )}
+
+          {/* Race Predictions */}
+          {garminHealth.predictedMarathonSec != null && (() => {
+            const fmt = (s: number) => {
+              const h = Math.floor(s / 3600);
+              const m = Math.floor((s % 3600) / 60);
+              const sec = s % 60;
+              return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}` : `${m}:${String(sec).padStart(2, '0')}`;
+            };
+            return (
+              <YStack backgroundColor={colors.surface} borderRadius={16} padding={16}>
+                <XStack alignItems="center" gap={6} marginBottom={10}>
+                  <MaterialCommunityIcons name="flag-checkered" size={16} color={colors.cyan} />
+                  <B color={colors.textPrimary} fontSize={14} fontWeight="600">Race Predictions</B>
+                  <View flex={1} />
+                  <XStack alignItems="center" gap={3}>
+                    <GarminIcon size={10} />
+                    <B color={colors.textTertiary} fontSize={9}>from VO2max</B>
+                  </XStack>
+                </XStack>
+                <XStack justifyContent="space-between">
+                  {[
+                    { label: '5K', sec: garminHealth.predicted5kSec },
+                    { label: '10K', sec: garminHealth.predicted10kSec },
+                    { label: 'Half', sec: garminHealth.predictedHalfSec },
+                    { label: 'Marathon', sec: garminHealth.predictedMarathonSec },
+                  ].map(r => (
+                    <YStack key={r.label} alignItems="center" flex={1}>
+                      <H color={colors.textTertiary} fontSize={9} letterSpacing={1}>{r.label.toUpperCase()}</H>
+                      <M color={r.label === 'Marathon' ? colors.cyan : colors.textPrimary} fontSize={r.label === 'Marathon' ? 14 : 12} fontWeight="700" marginTop={2}>
+                        {r.sec ? fmt(r.sec) : '--'}
+                      </M>
+                    </YStack>
+                  ))}
+                </XStack>
+                {userProfile?.target_finish_time_sec && (
+                  <XStack marginTop={8} paddingTop={8} borderTopWidth={0.5} borderTopColor={colors.border} justifyContent="center" gap={6} alignItems="center">
+                    <B color={colors.textTertiary} fontSize={11}>Your goal:</B>
+                    <M color={colors.orange} fontSize={13} fontWeight="700">{fmt(userProfile.target_finish_time_sec)}</M>
+                    <B color={garminHealth.predictedMarathonSec <= userProfile.target_finish_time_sec ? colors.cyan : colors.orange} fontSize={11}>
+                      {garminHealth.predictedMarathonSec <= userProfile.target_finish_time_sec ? '✓ on track' : `${fmt(garminHealth.predictedMarathonSec - userProfile.target_finish_time_sec)} gap`}
+                    </B>
+                  </XStack>
+                )}
+              </YStack>
+            );
+          })()}
 
           {/* Respiratory Rate (display only) */}
           {hasResp && (() => {

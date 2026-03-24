@@ -683,6 +683,17 @@ export interface GarminHealthData {
   intensityMinutesVigorous: number | null;
   intensityMinutesModerate: number | null;
   restingHr: number | null;          // bpm
+  // NEW: Tier 1 fields
+  readinessFeedbackShort: string | null;  // RESTED_AND_READY, WELL_RECOVERED, etc.
+  readinessFeedbackLong: string | null;
+  recoveryTimeHours: number | null;       // hours until fully recovered
+  predictedMarathonSec: number | null;    // race prediction in seconds
+  predicted5kSec: number | null;
+  predicted10kSec: number | null;
+  predictedHalfSec: number | null;
+  sleepSubscores: { remPercentage?: number; lightPercentage?: number; deepPercentage?: number; [key: string]: number | undefined } | null;
+  sleepNeedMinutes: number | null;        // baseline sleep need
+  sleepDebtMinutes: number | null;        // sleep deficit
   fetchedAt: string;
 }
 
