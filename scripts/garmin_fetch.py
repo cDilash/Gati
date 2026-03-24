@@ -145,6 +145,17 @@ def fetch_vo2max(date_str: str) -> dict:
         print(f"  ✗ VO2max: {e}")
         return {}
 
+def fetch_endurance_score(date_str: str) -> dict:
+    """Endurance score — aerobic fitness trend."""
+    try:
+        return garth.connectapi(f"/metrics-service/metrics/endurancescore/daily/{date_str}") or {}
+    except:
+        try:
+            return garth.connectapi(f"/metrics-service/metrics/endurancescore") or {}
+        except Exception as e:
+            print(f"  ✗ Endurance score: {e}")
+            return {}
+
 def fetch_race_predictions() -> dict:
     """Race predictions — try multiple known endpoints."""
     endpoints = [
@@ -178,6 +189,7 @@ def parse_garmin_data(date_str: str) -> dict:
     spo2 = fetch_spo2(date_str)
     vo2 = fetch_vo2max(date_str)
     race_preds = fetch_race_predictions()
+    endurance = fetch_endurance_score(date_str)
 
     # ─── Parse HRV ───
     hrv_summary = hrv.get("hrvSummary", {}) if isinstance(hrv, dict) else {}
@@ -289,6 +301,21 @@ def parse_garmin_data(date_str: str) -> dict:
             actual_min = round(actual_sleep_min / 60) if actual_sleep_min > 1000 else actual_sleep_min
             sleep_debt_minutes = max(0, sleep_need_minutes - actual_min)
 
+    # ─── Parse skin temp deviation (from sleep data) ───
+    skin_temp_dev = sleep_dto.get("averageSkinTempDeviationC") or sleep_dto.get("avgSkinTempDeviationC")
+    if skin_temp_dev is not None:
+        skin_temp_dev = round(skin_temp_dev, 1)
+
+    # ─── Parse endurance score ───
+    endurance_score = None
+    endurance_classification = None
+    if isinstance(endurance, dict):
+        endurance_score = endurance.get("overallScore") or endurance.get("enduranceScore")
+        endurance_classification = endurance.get("enduranceClassification") or endurance.get("classification")
+    elif isinstance(endurance, list) and len(endurance) > 0:
+        endurance_score = endurance[0].get("overallScore") or endurance[0].get("enduranceScore")
+        endurance_classification = endurance[0].get("enduranceClassification")
+
     # ─── Parse SpO2 (from dedicated endpoint if sleep didn't have it) ───
     if not spo2_avg and isinstance(spo2, dict):
         spo2_avg = spo2.get("averageSPO2") or spo2.get("averageSpO2")
@@ -383,6 +410,10 @@ def parse_garmin_data(date_str: str) -> dict:
         "sleep_subscores_json": json.dumps(sleep_subscores) if sleep_subscores else None,
         "sleep_need_minutes": sleep_need_minutes,
         "sleep_debt_minutes": sleep_debt_minutes,
+        # NEW Tier 2: Endurance score + skin temp
+        "endurance_score": endurance_score,
+        "endurance_classification": endurance_classification,
+        "skin_temp_deviation_c": skin_temp_dev,
         # Meta
         "fetched_at": datetime.now(tz=__import__('datetime').timezone.utc).isoformat(),
     }
@@ -513,6 +544,18 @@ def main():
                 temp_avg = summary.get("averageTemperature")
                 gap_speed = summary.get("avgGradeAdjustedSpeed")
 
+                # Tier 2: Running dynamics
+                gct = summary.get("groundContactTime")              # ms
+                vert_osc = summary.get("verticalOscillation")       # cm
+                stride_len = summary.get("strideLength")             # cm
+                vert_ratio = summary.get("verticalRatio")            # %
+                # Tier 2: Running power
+                avg_power = summary.get("averagePower")              # watts
+                max_power = summary.get("maxPower")
+                norm_power = summary.get("normalizedPower")
+                # Tier 2: Performance condition (not always in summary — check detail)
+                perf_condition = detail.get("performanceCondition") or summary.get("performanceCondition")
+
                 row = {
                     "activity_date": act_date,
                     "garmin_activity_id": str(act_id),
@@ -525,6 +568,17 @@ def main():
                     "activity_training_load": round(act_load, 1) if act_load else None,
                     "temperature_avg_c": round(temp_avg, 1) if temp_avg else None,
                     "grade_adjusted_speed": round(gap_speed, 4) if gap_speed else None,
+                    # Tier 2: Running dynamics
+                    "ground_contact_time_ms": round(gct, 1) if gct else None,
+                    "vertical_oscillation_cm": round(vert_osc, 1) if vert_osc else None,
+                    "stride_length_cm": round(stride_len, 1) if stride_len else None,
+                    "vertical_ratio": round(vert_ratio, 2) if vert_ratio else None,
+                    # Tier 2: Running power
+                    "avg_power_watts": round(avg_power) if avg_power else None,
+                    "max_power_watts": round(max_power) if max_power else None,
+                    "normalized_power_watts": round(norm_power) if norm_power else None,
+                    # Tier 2: Performance condition
+                    "performance_condition": perf_condition,
                     "fetched_at": datetime.now(tz=__import__('datetime').timezone.utc).isoformat(),
                 }
 

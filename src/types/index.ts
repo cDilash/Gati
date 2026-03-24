@@ -694,6 +694,10 @@ export interface GarminHealthData {
   sleepSubscores: { remPercentage?: number; lightPercentage?: number; deepPercentage?: number; [key: string]: number | undefined } | null;
   sleepNeedMinutes: number | null;        // baseline sleep need
   sleepDebtMinutes: number | null;        // sleep deficit
+  // Tier 2 fields
+  enduranceScore: number | null;          // Garmin endurance score (large scale)
+  enduranceClassification: number | null; // 1-5 classification
+  skinTempDeviationC: number | null;      // °C deviation from baseline (illness indicator)
   fetchedAt: string;
 }
 

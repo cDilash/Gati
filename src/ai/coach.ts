@@ -259,6 +259,12 @@ For next week changes: tell them to update through the weekly check-in on Sunday
           const gapSec = Math.round(1609.344 / ga.grade_adjusted_speed);
           teParts.push(`GAP ${formatPaceWithUnit(gapSec, units)}${paceSuffix(units)}`);
         }
+        // Tier 2: Running dynamics + power
+        if (ga.ground_contact_time_ms) teParts.push(`GCT ${Math.round(ga.ground_contact_time_ms)}ms`);
+        if (ga.vertical_oscillation_cm) teParts.push(`VO ${ga.vertical_oscillation_cm}cm`);
+        if (ga.stride_length_cm) teParts.push(`stride ${ga.stride_length_cm}cm`);
+        if (ga.avg_power_watts) teParts.push(`power ${ga.avg_power_watts}W`);
+        if (ga.performance_condition != null) teParts.push(`perf ${ga.performance_condition > 0 ? '+' : ''}${ga.performance_condition}`);
         if (teParts.length > 0) {
           parts.push(`    Garmin: ${teParts.join(', ')}`);
         }
@@ -516,6 +522,11 @@ For next week changes: tell them to update through the weekly check-in on Sunday
     if (g.sleepSubscores) {
       const subs = Object.entries(g.sleepSubscores).filter(([, v]) => v != null).map(([k, v]) => `${k}: ${v}`).join(', ');
       if (subs) lines.push(`Sleep breakdown: ${subs}`);
+    }
+    // Tier 2 fields
+    if (g.enduranceScore != null) lines.push(`Endurance Score: ${g.enduranceScore} (class ${g.enduranceClassification ?? '?'})`);
+    if (g.skinTempDeviationC != null && Math.abs(g.skinTempDeviationC) > 0.3) {
+      lines.push(`⚠ Skin temp deviation: ${g.skinTempDeviationC > 0 ? '+' : ''}${g.skinTempDeviationC}°C from baseline${g.skinTempDeviationC > 0.5 ? ' — possible illness/overtraining' : ''}`);
     }
     if (lines.length > 0) {
       parts.push('GARMIN CONNECT DATA:');

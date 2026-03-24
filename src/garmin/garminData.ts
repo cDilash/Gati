@@ -43,6 +43,9 @@ function mapRow(row: any): GarminHealthData {
     sleepSubscores: row.sleep_subscores_json ? (typeof row.sleep_subscores_json === 'string' ? JSON.parse(row.sleep_subscores_json) : row.sleep_subscores_json) : null,
     sleepNeedMinutes: row.sleep_need_minutes ?? null,
     sleepDebtMinutes: row.sleep_debt_minutes ?? null,
+    enduranceScore: row.endurance_score ?? null,
+    enduranceClassification: row.endurance_classification ?? null,
+    skinTempDeviationC: row.skin_temp_deviation_c ?? null,
     fetchedAt: row.fetched_at ?? '',
   };
 }
