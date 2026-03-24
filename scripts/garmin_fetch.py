@@ -191,20 +191,41 @@ def parse_garmin_data(date_str: str) -> dict:
     race_preds = fetch_race_predictions()
     endurance = fetch_endurance_score(date_str)
 
+    # Tier 3: Hill score
+    hill_score_data = {}
+    try:
+        hill_score_data = garth.connectapi(f"/metrics-service/metrics/hillscore/daily/{date_str}") or {}
+    except:
+        try: hill_score_data = garth.connectapi("/metrics-service/metrics/hillscore") or {}
+        except: pass
+
+    # Tier 3: Lactate threshold
+    lactate_data = {}
+    try:
+        lactate_data = garth.connectapi(f"/metrics-service/metrics/lactatethreshold/latest/{date_str}") or {}
+    except: pass
+
     # ─── Parse HRV ───
     hrv_summary = hrv.get("hrvSummary", {}) if isinstance(hrv, dict) else {}
     hrv_last_night = hrv_summary.get("lastNightAvg")
+    hrv_last_night_5min_high = hrv_summary.get("lastNight5MinHigh")
     hrv_weekly = hrv_summary.get("weeklyAvg")
     baseline = hrv_summary.get("baseline", {}) if isinstance(hrv_summary.get("baseline"), dict) else {}
     hrv_baseline_low = baseline.get("balancedLow") or baseline.get("lowUpper")
     hrv_baseline_high = baseline.get("balancedUpper")
     hrv_status = hrv_summary.get("status")
+    hrv_feedback = hrv_summary.get("feedbackPhrase")
 
     # ─── Parse daily summary ───
     resting_hr = daily.get("restingHeartRate") if isinstance(daily, dict) else None
+    max_hr_daily = daily.get("maxHeartRate") if isinstance(daily, dict) else None
+    min_hr_daily = daily.get("minHeartRate") if isinstance(daily, dict) else None
+    rhr_7day_avg = daily.get("lastSevenDaysAvgRestingHeartRate") if isinstance(daily, dict) else None
     stress_avg = daily.get("averageStressLevel") if isinstance(daily, dict) else None
     stress_high = daily.get("maxStressLevel") if isinstance(daily, dict) else None
+    stress_qualifier = daily.get("stressQualifier") if isinstance(daily, dict) else None
     vigorous_min = daily.get("vigorousIntensityMinutes") if isinstance(daily, dict) else None
+    bb_at_wake = daily.get("bodyBatteryAtWakeTime") if isinstance(daily, dict) else None
     moderate_min = daily.get("moderateIntensityMinutes") if isinstance(daily, dict) else None
     floors_climbed = daily.get("floorsAscended") if isinstance(daily, dict) else None
     if isinstance(floors_climbed, float):
@@ -316,6 +337,36 @@ def parse_garmin_data(date_str: str) -> dict:
         endurance_score = endurance[0].get("overallScore") or endurance[0].get("enduranceScore")
         endurance_classification = endurance[0].get("enduranceClassification")
 
+    # ─── Parse min SpO2 (from sleep) ───
+    min_spo2 = sleep_dto.get("lowestSpO2Value") or sleep_dto.get("lowestSpo2")
+
+    # ─── Parse sleep awake count + avg sleep stress ───
+    sleep_awake_count = sleep_dto.get("awakeCount")
+    avg_sleep_stress = sleep_dto.get("avgSleepStress")
+
+    # ─── Parse hill score ───
+    hill_score = None
+    hill_endurance = None
+    hill_strength = None
+    if isinstance(hill_score_data, dict):
+        hill_score = hill_score_data.get("overallScore") or hill_score_data.get("hillScore")
+        hill_endurance = hill_score_data.get("enduranceScore")
+        hill_strength = hill_score_data.get("strengthScore")
+    elif isinstance(hill_score_data, list) and len(hill_score_data) > 0:
+        hill_score = hill_score_data[0].get("overallScore")
+        hill_endurance = hill_score_data[0].get("enduranceScore")
+        hill_strength = hill_score_data[0].get("strengthScore")
+
+    # ─── Parse lactate threshold ───
+    lactate_threshold_hr = None
+    lactate_threshold_speed = None
+    if isinstance(lactate_data, dict):
+        lactate_threshold_hr = lactate_data.get("lactateThresholdHeartRate") or lactate_data.get("ltHR")
+        lactate_threshold_speed = lactate_data.get("lactateThresholdSpeed") or lactate_data.get("ltSpeed")
+
+    # ─── Parse VO2max fitness age ───
+    vo2max_fitness_age = generic.get("fitnessAge") if isinstance(generic, dict) else None
+
     # ─── Parse SpO2 (from dedicated endpoint if sleep didn't have it) ───
     if not spo2_avg and isinstance(spo2, dict):
         spo2_avg = spo2.get("averageSPO2") or spo2.get("averageSpO2")
@@ -414,6 +465,23 @@ def parse_garmin_data(date_str: str) -> dict:
         "endurance_score": endurance_score,
         "endurance_classification": endurance_classification,
         "skin_temp_deviation_c": skin_temp_dev,
+        # Tier 3
+        "max_hr_daily": max_hr_daily,
+        "min_hr_daily": min_hr_daily,
+        "rhr_7day_avg": rhr_7day_avg,
+        "stress_qualifier": stress_qualifier,
+        "bb_at_wake": bb_at_wake,
+        "hrv_5min_high": hrv_last_night_5min_high,
+        "hrv_feedback": hrv_feedback,
+        "min_spo2": min_spo2,
+        "sleep_awake_count": sleep_awake_count,
+        "avg_sleep_stress": avg_sleep_stress,
+        "hill_score": hill_score,
+        "hill_endurance": hill_endurance,
+        "hill_strength": hill_strength,
+        "lactate_threshold_hr": lactate_threshold_hr,
+        "lactate_threshold_speed": round(lactate_threshold_speed, 4) if lactate_threshold_speed else None,
+        "vo2max_fitness_age": vo2max_fitness_age,
         # Meta
         "fetched_at": datetime.now(tz=__import__('datetime').timezone.utc).isoformat(),
     }
@@ -568,6 +636,8 @@ def main():
                     "activity_training_load": round(act_load, 1) if act_load else None,
                     "temperature_avg_c": round(temp_avg, 1) if temp_avg else None,
                     "grade_adjusted_speed": round(gap_speed, 4) if gap_speed else None,
+                    # Tier 3: Anaerobic TE message
+                    "anaerobic_te_message": anaero_msg,
                     # Tier 2: Running dynamics
                     "ground_contact_time_ms": round(gct, 1) if gct else None,
                     "vertical_oscillation_cm": round(vert_osc, 1) if vert_osc else None,
