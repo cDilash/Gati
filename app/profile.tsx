@@ -20,7 +20,7 @@ import { GradientText } from '../src/theme/GradientText';
 import { GradientButton } from '../src/theme/GradientButton';
 import { UserAvatar } from '../src/components/UserAvatar';
 import { StravaIcon } from '../src/components/icons/StravaIcon';
-import { HealthIcon } from '../src/components/icons/HealthIcon';
+import { GarminIcon } from '../src/components/icons/GarminIcon';
 import { formatRelativeTime, isStale } from '../src/utils/formatTime';
 
 const H = (props: any) => <Text fontFamily="$heading" {...props} />;
@@ -194,7 +194,7 @@ export default function ProfileScreen() {
             <SectionTitle title="Body" />
             <XStack gap={8} marginBottom={16}>
               {heightDisplay && <MiniStat value={heightDisplay.split(' ')[0]} label={heightDisplay.split(' ')[1] ?? ''} />}
-              {weightDisplay && <MiniStat value={weightDisplay.split(' ')[0]} label={weightDisplay.split(' ')[1] ?? ''} source={userProfile.weight_source === 'healthkit' ? 'HealthKit' : userProfile.weight_source === 'strava' ? 'Strava' : undefined} updatedAt={userProfile.weight_updated_at} />}
+              {weightDisplay && <MiniStat value={weightDisplay.split(' ')[0]} label={weightDisplay.split(' ')[1] ?? ''} source={userProfile.weight_source === 'strava' ? 'Strava' : userProfile.weight_source === 'garmin' ? 'Garmin' : undefined} updatedAt={userProfile.weight_updated_at} />}
               {heightDisplay && weightDisplay && userProfile.height_cm && userProfile.weight_kg && (
                 <MiniStat value={String((userProfile.weight_kg / ((userProfile.height_cm / 100) ** 2)).toFixed(1))} label="BMI" />
               )}
@@ -240,9 +240,9 @@ export default function ProfileScreen() {
               <M color={colors.orange} fontSize={16} fontWeight="700">{userProfile.rest_hr}</M>
               <H color={colors.textTertiary} fontSize={8} letterSpacing={1} marginTop={2}>REST HR</H>
               <XStack alignItems="center" gap={3} marginTop={2}>
-                <HealthIcon size={10} />
+                <GarminIcon size={10} />
                 <B color={(userProfile as any).rest_hr_updated_at && isStale((userProfile as any).rest_hr_updated_at, 3) ? colors.orange : colors.textTertiary} fontSize={7}>
-                  {(userProfile as any).rest_hr_updated_at ? formatRelativeTime((userProfile as any).rest_hr_updated_at) : 'HealthKit'}
+                  {(userProfile as any).rest_hr_updated_at ? formatRelativeTime((userProfile as any).rest_hr_updated_at) : 'Garmin'}
                 </B>
               </XStack>
             </YStack>
@@ -533,7 +533,7 @@ export default function ProfileScreen() {
                   </View>
                   <YStack flex={1}>
                     <B color={colors.textSecondary} fontSize={12}>Resting HR</B>
-                    <B color={colors.textTertiary} fontSize={10}>from Apple Health</B>
+                    <B color={colors.textTertiary} fontSize={10}>from Garmin</B>
                   </YStack>
                   <M color={colors.orange} fontSize={15} fontWeight="700">{userProfile.rest_hr} bpm</M>
                 </XStack>
@@ -633,7 +633,7 @@ function MiniStat({ value, label, source, updatedAt }: { value: string; label: s
       <H color={colors.textTertiary} fontSize={8} letterSpacing={1} marginTop={2}>{label.toUpperCase()}</H>
       {source && (
         <XStack alignItems="center" gap={3} marginTop={1}>
-          {source === 'HealthKit' && <HealthIcon size={9} />}
+          {source === 'Garmin' && <MaterialCommunityIcons name="watch" size={9} color={colors.textTertiary} />}
           {source === 'Strava' && <StravaIcon size={8} />}
           <B color={stale ? colors.orange : colors.textTertiary} fontSize={7}>
             {updatedAt ? formatRelativeTime(updatedAt) : source}
@@ -657,7 +657,7 @@ function IconRow({ icon, iconColor, label, value, source, updatedAt }: { icon: s
         {source && (
           <XStack alignItems="center" gap={4} marginTop={1}>
             {source === 'Strava' && <StravaIcon size={10} />}
-            {source === 'HealthKit' && <HealthIcon size={11} />}
+            {source === 'Garmin' && <MaterialCommunityIcons name="watch" size={11} color={colors.textTertiary} />}
             <B color={stale ? colors.orange : colors.textTertiary} fontSize={9}>
               {hasTime ? `${source} · ${formatRelativeTime(updatedAt!)}` : `auto · ${source}`}
             </B>

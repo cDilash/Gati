@@ -10,7 +10,7 @@
  *
  * Tables NOT backed up (regenerate on demand):
  * - ai_cache (regenerates from Gemini)
- * - health_snapshot (regenerates from HealthKit)
+ * - health_snapshot (regenerates from Garmin via Supabase)
  */
 
 import * as Device from 'expo-device';
@@ -48,7 +48,7 @@ export function serializeDatabase(): BackupData {
   let appSettings: any[] = [];
   try { appSettings = db.getAllSync<any>('SELECT * FROM app_settings'); } catch {}
 
-  // Health snapshot — latest recovery data for devices without HealthKit
+  // Health snapshot — cached recovery data for fast app launch
   let healthSnapshots: any[] = [];
   try { healthSnapshots = db.getAllSync<any>('SELECT * FROM health_snapshot ORDER BY date DESC LIMIT 1'); } catch {}
 
@@ -421,7 +421,7 @@ export async function restoreDatabase(
         } catch {}
       }
 
-      // ── Restore health snapshots (recovery data for devices without HealthKit)
+      // ── Restore health snapshots (cached recovery data)
       for (const h of data.healthSnapshots ?? []) {
         try {
           db.runSync(

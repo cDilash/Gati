@@ -110,6 +110,55 @@ export function calculateVDOTFromHalf(seconds: number): number {
   return Math.round(reverseInterpolate(seconds, 'halfMarathon') * 10) / 10;
 }
 
+/** Calculate VDOT from a marathon time in seconds. */
+export function calculateVDOTFromMarathon(seconds: number): number {
+  return Math.round(reverseInterpolate(seconds, 'marathon') * 10) / 10;
+}
+
+/**
+ * Estimate VDOT from Garmin VO2max.
+ * VO2max and VDOT are related but NOT identical — VDOT factors in running economy.
+ * For recreational runners, the gap is typically 30-40% (VO2max 52 → effective VDOT ~34).
+ * We apply a conservative 0.65 factor. This is a LAST RESORT — Garmin race predictions
+ * or actual race times are far more accurate.
+ */
+export function estimateVDOTFromVO2max(vo2max: number): number {
+  // Very conservative: 0.65 factor accounts for running economy gap
+  // VO2max 52.3 → VDOT ~34 (matches Garmin's own 4:18 marathon prediction)
+  return Math.round(vo2max * 0.65 * 10) / 10;
+}
+
+/**
+ * Get the best VDOT estimate from Garmin data.
+ * Priority: race predictions (most accurate) > VO2max estimate (conservative)
+ */
+export function vdotFromGarmin(garmin: {
+  predictedMarathonSec?: number | null;
+  predictedHalfSec?: number | null;
+  predicted10kSec?: number | null;
+  predicted5kSec?: number | null;
+  vo2max?: number | null;
+}): { vdot: number; source: string } | null {
+  // Best: reverse-lookup from Garmin race predictions
+  if (garmin.predictedMarathonSec && garmin.predictedMarathonSec > 0) {
+    return { vdot: calculateVDOTFromMarathon(garmin.predictedMarathonSec), source: 'garmin_race_prediction' };
+  }
+  if (garmin.predictedHalfSec && garmin.predictedHalfSec > 0) {
+    return { vdot: calculateVDOTFromHalf(garmin.predictedHalfSec), source: 'garmin_race_prediction' };
+  }
+  if (garmin.predicted10kSec && garmin.predicted10kSec > 0) {
+    return { vdot: calculateVDOTFrom10K(garmin.predicted10kSec), source: 'garmin_race_prediction' };
+  }
+  if (garmin.predicted5kSec && garmin.predicted5kSec > 0) {
+    return { vdot: calculateVDOTFrom5K(garmin.predicted5kSec), source: 'garmin_race_prediction' };
+  }
+  // Fallback: estimate from VO2max (conservative)
+  if (garmin.vo2max && garmin.vo2max > 0) {
+    return { vdot: estimateVDOTFromVO2max(garmin.vo2max), source: 'garmin_vo2max' };
+  }
+  return null;
+}
+
 /** Predict marathon finish time in seconds for a given VDOT. */
 export function predictMarathonTime(vdot: number): number {
   return Math.round(interpolate(vdot, 'marathon'));

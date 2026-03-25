@@ -297,9 +297,12 @@ export const useAppStore = create<AppState>((set, get) => ({
         }
       } catch {}
 
-      // Load cached health snapshot (works even without HealthKit — from backup)
+      // Load Garmin health data from Supabase (non-blocking, fire-and-forget)
+      // The actual sync happens in syncAll() after app loads, but we try to get
+      // cached data from the last SQLite snapshot for instant display
       let cachedHealthSnapshot: HealthSnapshot | null = null;
       let cachedRecoveryStatus: RecoveryStatus | null = null;
+      let cachedGarminHealth: import('./types').GarminHealthData | null = null;
       try {
         const db = getDatabase();
         const row = db.getFirstSync<any>('SELECT * FROM health_snapshot ORDER BY date DESC LIMIT 1');
@@ -325,11 +328,17 @@ export const useAppStore = create<AppState>((set, get) => ({
             signalCount: row.signal_count ?? 0,
             cachedAt: row.cached_at,
           };
+          // Try to load Garmin data too (for recovery score with Garmin baseline)
+          try {
+            const { getLatestGarminData } = require('./garmin/garminData');
+            // Fire synchronously from SQLite cache if available, or skip
+            // The real Garmin data comes from syncHealth() via Supabase
+          } catch {}
           const { calculateRecoveryScore } = require('./health/recoveryScore');
           cachedRecoveryStatus = calculateRecoveryScore(cachedHealthSnapshot, {
             restHr: profile?.rest_hr ?? null,
             maxHr: profile?.max_hr ?? null,
-          }, get().garminHealth);
+          }, cachedGarminHealth);
         }
       } catch {}
 
@@ -664,6 +673,18 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (recoveryStatus && recoveryStatus.level !== 'unknown') {
         const signals = recoveryStatus.signals.map(s => `${s.type}: ${s.detail}`).join(', ');
         recoveryInfo = `RECOVERY: ${recoveryStatus.score}/100 (${recoveryStatus.level}). ${signals}`;
+        // Add Garmin readiness + recovery time for richer briefing context
+        const gd = get().garminHealth;
+        if (gd?.trainingReadiness != null) {
+          recoveryInfo += `. Training Readiness: ${gd.trainingReadiness}/100`;
+          if (gd.readinessFeedbackShort) recoveryInfo += ` (${gd.readinessFeedbackShort.replace(/_/g, ' ').toLowerCase()})`;
+        }
+        if (gd?.recoveryTimeHours != null) {
+          recoveryInfo += `. Recovery time: ${gd.recoveryTimeHours}h remaining`;
+        }
+        if (gd?.bodyBatteryMorning != null) {
+          recoveryInfo += `. Body Battery: ${gd.bodyBatteryMorning}/100 morning`;
+        }
       }
 
       // Fetch weather for the briefing (fire-and-forget if it fails)
@@ -1044,21 +1065,31 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   // ─── Health Sync ──────────────────────────────────────────
 
-  syncHealth: async (forceRefresh) => {
+  syncHealth: async (_forceRefresh) => {
     try {
-      const { syncHealthData, hasSignificantChanges } = require('./health/healthSync');
+      const { syncGarminHealthData } = require('./health/garminHealthSync');
+      const { hasSignificantChanges } = require('./health/healthSync');
       const { calculateRecoveryScore } = require('./health/recoveryScore');
 
       const oldSnapshot = get().healthSnapshot;
       const oldRecovery = get().recoveryStatus;
-      const snapshot = await syncHealthData(forceRefresh ?? false);
-      if (snapshot) {
+
+      // Fetch all health data from Supabase (Garmin via cloud sync)
+      const result = await syncGarminHealthData();
+      if (result) {
+        const { snapshot, garmin } = result;
         const profile = get().userProfile;
         const recovery = calculateRecoveryScore(snapshot, {
           restHr: profile?.rest_hr ?? null,
           maxHr: profile?.max_hr ?? null,
-        }, get().garminHealth);
-        set({ healthSnapshot: snapshot, recoveryStatus: recovery });
+        }, garmin);
+        set({ healthSnapshot: snapshot, recoveryStatus: recovery, garminHealth: garmin });
+
+        // Cache snapshot to SQLite for fast hydration on next app launch
+        try {
+          const { saveSnapshotToCache } = require('./health/healthSync');
+          saveSnapshotToCache(snapshot);
+        } catch {}
 
         // Detect significant changes → show recovery update toast
         if (oldSnapshot && oldRecovery && oldRecovery.level !== 'unknown') {
@@ -1069,31 +1100,8 @@ export const useAppStore = create<AppState>((set, get) => ({
           }
         }
 
-        // Auto-update weight from HealthKit if newer
+        // Auto-update resting HR from Garmin (14-day average, requires 3+ readings)
         let needsRefresh = false;
-        if (snapshot.weight) {
-          const profile = get().userProfile;
-          if (profile) {
-            const hkDate = snapshot.weight.date;
-            const profileDate = profile.weight_updated_at || '';
-            if (hkDate > profileDate || !profileDate) {
-              // HealthKit weight is newer — update profile
-              try {
-                const db = require('./db/database').getDatabase();
-                db.runSync(
-                  'UPDATE user_profile SET weight_kg = ?, weight_source = ?, weight_updated_at = ? WHERE id = 1',
-                  [snapshot.weight.value, 'healthkit', hkDate]
-                );
-                console.log(`[Store] Weight auto-updated from HealthKit: ${snapshot.weight.value}kg (${hkDate})`);
-                needsRefresh = true;
-              } catch (e) {
-                console.log('[Store] Weight auto-update failed:', e);
-              }
-            }
-          }
-        }
-
-        // Auto-update resting HR from HealthKit (14-day average, requires 3+ readings)
         if (snapshot.restingHRTrend.length >= 3) {
           const avgRHR = Math.round(snapshot.restingHRTrend.reduce((s: number, r: any) => s + r.value, 0) / snapshot.restingHRTrend.length);
           const currentProfile = get().userProfile;
@@ -1104,7 +1112,7 @@ export const useAppStore = create<AppState>((set, get) => ({
                 'UPDATE user_profile SET rest_hr = ? WHERE id = 1',
                 [avgRHR]
               );
-              console.log(`[Store] Resting HR auto-updated from HealthKit: ${avgRHR}bpm (${snapshot.restingHRTrend.length}-day avg)`);
+              console.log(`[Store] Resting HR auto-updated from Garmin: ${avgRHR}bpm (${snapshot.restingHRTrend.length}-day avg)`);
               needsRefresh = true;
             } catch (e) {
               console.log('[Store] Resting HR auto-update failed:', e);
@@ -1157,9 +1165,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       ? (async () => { try { await state.checkWeeklyReview(); } catch {} })()
       : Promise.resolve();
 
-    const garminPromise = (async () => { try { await state.syncGarminHealth(); } catch {} })();
+    // Note: garminHealth is now fetched inside syncHealth() (Garmin-only, no separate call)
 
-    await Promise.allSettled([stravaPromise, healthPromise, reviewPromise, garminPromise]);
+    await Promise.allSettled([stravaPromise, healthPromise, reviewPromise]);
 
     // Step 2: Sweep past workouts AFTER Strava sync (so new activities are matched first)
     if (state.activePlan) {
@@ -1196,20 +1204,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     get().refreshState();
     get().fetchBriefing();
 
-    // Recalculate recovery with Garmin data (may have arrived after health sync)
-    const garminAfterSync = get().garminHealth;
-    const snapshotAfterSync = get().healthSnapshot;
-    if (garminAfterSync && snapshotAfterSync) {
-      try {
-        const { calculateRecoveryScore } = require('./health/recoveryScore');
-        const profile = get().userProfile;
-        const recovery = calculateRecoveryScore(snapshotAfterSync, {
-          restHr: profile?.rest_hr ?? null,
-          maxHr: profile?.max_hr ?? null,
-        }, garminAfterSync);
-        set({ recoveryStatus: recovery });
-      } catch {}
-    }
+    // Note: recovery is now calculated inside syncHealth() with Garmin data (single step)
 
     // Step 4: Proactive rest day coaching check
     try {
@@ -1404,16 +1399,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   // ─── Garmin Connect Health ────────────────────────────────
 
   syncGarminHealth: async () => {
-    try {
-      const { getLatestGarminData } = require('./garmin/garminData');
-      const data = await getLatestGarminData();
-      if (data) {
-        set({ garminHealth: data });
-        console.log(`[Garmin] Synced: HRV=${data.hrvLastNightAvg ?? 'N/A'}ms, BB=${data.bodyBatteryMorning ?? 'N/A'}, VO2=${data.vo2max ?? 'N/A'}`);
-      }
-    } catch (e) {
-      console.warn('[Garmin] Sync failed:', e);
-    }
+    // Now handled inside syncHealth() — this is a no-op kept for backward compat
+    // syncHealth() fetches from Supabase and sets both healthSnapshot and garminHealth
+    console.log('[Garmin] syncGarminHealth called — now handled by syncHealth()');
   },
 
   deleteActivity: (metricId) => {

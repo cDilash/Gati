@@ -229,12 +229,12 @@ export default function TodayScreen() {
       const { getSetting } = require('../../src/db/database');
       const today = getToday();
 
-      // Skip popup if HealthKit is keeping weight current
+      // Skip popup if auto-sync is keeping weight current (Garmin scale or Strava)
       const weightSource = userProfile?.weight_source;
       const weightUpdated = userProfile?.weight_updated_at;
-      if (weightSource === 'healthkit' && weightUpdated) {
-        const daysSinceHK = Math.floor((new Date(today + 'T00:00:00').getTime() - new Date(weightUpdated + 'T00:00:00').getTime()) / 86400000);
-        if (daysSinceHK < 7) return; // HealthKit keeping it current
+      if ((weightSource === 'garmin' || weightSource === 'strava') && weightUpdated) {
+        const daysSinceSync = Math.floor((new Date(today + 'T00:00:00').getTime() - new Date(weightUpdated + 'T00:00:00').getTime()) / 86400000);
+        if (daysSinceSync < 7) return; // Auto-sync keeping it current
       }
 
       const lastCheckin = getSetting('last_weight_checkin_date');
@@ -1013,6 +1013,14 @@ export default function TodayScreen() {
               <B color="$textTertiary" fontSize={11}>
                 · {recoveryStatus.signalCount} signal{recoveryStatus.signalCount !== 1 ? 's' : ''}
                 {recoveryStatus.sleepPending ? ' · sleep pending' : ''}
+                {(() => {
+                  const g = useAppStore.getState().garminHealth;
+                  if (!g?.fetchedAt) return '';
+                  const min = Math.round((Date.now() - new Date(g.fetchedAt).getTime()) / 60000);
+                  const isStale = min > 120;
+                  const label = min < 1 ? 'now' : min < 60 ? `${min}m` : `${Math.floor(min / 60)}h`;
+                  return isStale ? ` · ⚠ ${label}` : '';
+                })()}
               </B>
               {recoveryStatus.sleepPending && (
                 <MaterialCommunityIcons name="clock-outline" size={12} color={colors.textTertiary} />

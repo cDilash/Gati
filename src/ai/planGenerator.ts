@@ -246,7 +246,7 @@ function buildUserMessage(
     parts.push('');
   }
 
-  // Recovery baseline (if HealthKit data available)
+  // Recovery baseline (if health data available from Garmin)
   try {
     const { useAppStore } = require('../store');
     const snap = useAppStore.getState().healthSnapshot;

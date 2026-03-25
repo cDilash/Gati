@@ -17,7 +17,7 @@ A personal-use React Native marathon training app. AI-first architecture — Gem
 - **Maps**: react-native-maps (route display)
 - **SVG**: react-native-svg (polyline thumbnails, interactive line graphs)
 - **Gradients**: expo-linear-gradient + @react-native-masked-view/masked-view (gradient text)
-- **HealthKit**: react-native-health (lazy-loaded, recovery signals)
+- **Health Data**: Garmin Connect → Supabase Edge Function (every 15 min) → `garmin_health` table → app reads via Supabase client
 - **UUID**: `expo-crypto` randomUUID() — NEVER use the `uuid` npm package
 
 ## Typography System
@@ -154,8 +154,14 @@ Strava:        #FC4C02           (Strava brand — keep their color)
 ┌──────────────────────▼──────────────────────────┐
 │              DATA LAYER                           │
 │  SQLite (local)  │  Strava API  │  Supabase      │
-│  Primary store   │  Run data    │  Backup only    │
+│  Primary store   │  Run data    │  Backup + Garmin│
 └─────────────────────────────────────────────────┘
+
+Garmin Health Data Flow:
+  Garmin Watch → Garmin Connect → Supabase Edge Function (every 15 min)
+    → garmin_health table → App reads via Supabase client
+  Token refresh: OAuth1 exchange in Edge Function (auto, ~1 year lifespan)
+  Monitoring: garmin_sync_log table (success/failure, field count, duration)
 ```
 
 ### Core Principle
@@ -206,18 +212,12 @@ src/
 │   ├── bestEfforts.ts        # Best effort analysis
 │   └── historicalSync.ts     # First-time 8-week backfill
 ├── health/
-│   ├── availability.ts       # Lazy-load guard (require inside try-catch, NEVER top-level import)
-│   ├── permissions.ts        # 8 read permissions, 0 write (double-nested structure)
-│   ├── healthSync.ts         # Composite fetcher — 8 signals in parallel, SQLite cache (2hr TTL)
-│   ├── recoveryScore.ts      # Pure function — 0-100 score from health signals
-│   ├── restingHR.ts          # Resting heart rate samples
-│   ├── hrv.ts                # Heart rate variability (RMSSD)
-│   ├── sleep.ts              # Sleep with stage breakdown + interval merging
-│   ├── weight.ts             # Weight from HealthKit
-│   ├── vo2max.ts             # VO2max from Garmin via HealthKit
-│   ├── respiratory.ts        # Respiratory rate
-│   ├── spo2.ts               # Blood oxygen
-│   └── steps.ts              # Daily step count
+│   ├── garminHealthSync.ts   # Fetches all health data from Supabase garmin_health table
+│   ├── healthSync.ts         # Utilities: saveSnapshotToCache(), hasSignificantChanges()
+│   ├── recoveryScore.ts      # Pure function — 0-100 score from Garmin signals (RHR, HRV, sleep)
+│   └── injuryRisk.ts         # Injury risk assessment from training load + recovery
+├── garmin/
+│   └── garminData.ts         # Query garmin_health + garmin_activity_data from Supabase
 ├── backup/
 │   ├── supabase.ts           # Supabase client
 │   ├── auth.ts               # Sign in/up/out, session management
@@ -295,10 +295,15 @@ src/
 ### SQLite (Primary — local)
 All data lives in SQLite. The app works fully offline.
 
-Key tables: `user_profile` (single row), `training_plan` (plan_json JSONB), `workout` (individual workouts + execution_quality), `training_week` (actual_volume from real data), `performance_metric` (run data), `coach_message`, `strava_activity_detail` (rich Strava data), `shoes`, `ai_cache`, `strava_tokens`, `health_snapshot` (HealthKit cache), `cross_training`, `app_settings`
+Key tables: `user_profile` (single row), `training_plan` (plan_json JSONB), `workout` (individual workouts + execution_quality), `training_week` (actual_volume from real data), `performance_metric` (run data), `coach_message`, `strava_activity_detail` (rich Strava data), `shoes`, `ai_cache`, `strava_tokens`, `health_snapshot` (Garmin data cache for fast app launch), `cross_training`, `app_settings`
 
-### Supabase (Backup only — cloud)
-One `backups` table with one row per user. Contains full SQLite snapshot as JSONB. Auto-backup fires after profile save and plan generation. Auto-restore on fresh install if user is logged in.
+### Supabase (Backup + Garmin health — cloud)
+- `backups` — full SQLite snapshot as JSONB (one row per user)
+- `garmin_health` — daily health metrics (48 fields: HRV, sleep, body battery, readiness, VO2max, race predictions, etc.)
+- `garmin_activity_data` — per-activity metrics (training effect, stamina, running dynamics, power)
+- `garmin_auth` — OAuth1 + OAuth2 tokens for Garmin Connect API (read/refreshed by Edge Function)
+- `garmin_sync_log` — sync monitoring (success/failure, field count, duration)
+- Edge Function `garmin-sync` runs every 15 minutes via pg_cron, fetches from Garmin Connect API
 
 ### Strava API (Run data source)
 Fetches: activities, detail (splits, laps, best efforts, segments), streams (HR, pace, elevation, cadence, time, distance), athlete profile, gear detail. All stored in `performance_metric` + `strava_activity_detail`.
@@ -357,8 +362,8 @@ Fetches: activities, detail (splits, laps, best efforts, segments), streams (HR,
 
 1. **AI generates, math validates** — Gemini creates plans, safety validator clamps numbers
 2. **Local-first** — SQLite is primary, Supabase is backup only, app works offline
-3. **Dual data sources** — Strava for run data, HealthKit for recovery signals (lazy-loaded, optional)
-4. **Fail gracefully everywhere** — if Gemini is down, show fallback. If Strava/HealthKit unavailable, works without.
+3. **Garmin = health data** — All recovery/health data from Garmin via Supabase Edge Function (every 15 min). No HealthKit.
+4. **Fail gracefully everywhere** — if Gemini is down, show fallback. If Strava/Garmin unavailable, works without.
 5. **Cache AI content aggressively** — same inputs = don't call Gemini again
 6. **expo-crypto for UUIDs** — NEVER `uuid` package
 7. **Auto-backup after significant events** — profile save, plan generation, adaptation, VDOT update, weekly review
@@ -369,7 +374,7 @@ Fetches: activities, detail (splits, laps, best efforts, segments), streams (HR,
 12. **All colors from `src/theme/colors.ts`** — NEVER hardcode hex values in components
 13. **Cyan = calm, Orange = intensity** — this color meaning is NEVER broken
 14. **Gradients always cyan→orange** — left→right or top→bottom, never reversed
-15. **HealthKit is lazy-loaded** — `react-native-health` only via `require()` in availability.ts, never top-level import
+15. **Health data from Supabase** — `garminHealthSync.ts` queries `garmin_health` table with 5s timeout. No native modules needed.
 16. **Workout swaps are 1-2 row changes** — never full plan regeneration for a single workout swap
 17. **Past workouts auto-skipped** — `sweepPastWorkouts()` runs on every app open
 18. **Volume from real data** — `recalculateWeeklyVolumes()` uses actual performance_metric, not target distances
@@ -391,7 +396,7 @@ Examples: "add a new stats screen", "redesign the workout card", "make the coach
 Examples: "the app crashes on launch", "NaN showing in pace", "Strava sync fails", "screen is blank"
 
 ### `/expo-react-native`
-**Trigger**: Expo/RN-specific tasks — setting up new native modules, configuring app.config.ts, EAS Build issues, expo-router navigation, native module gotchas, HealthKit/permissions setup.
+**Trigger**: Expo/RN-specific tasks — setting up new native modules, configuring app.config.ts, EAS Build issues, expo-router navigation, native module gotchas.
 Examples: "add push notifications", "configure EAS Build", "fix expo-sqlite issue"
 
 ### `/gemini-integration`
@@ -422,9 +427,9 @@ Examples: "add social features", "redesign the app architecture", "what should w
 5. **Tamagui babel plugin**: Must be in `babel.config.js`. Clear Metro cache after config changes (`--clear`).
 6. **Foreign keys in restore**: Disable `PRAGMA foreign_keys` during cloud restore — v1 backup data has different FK relationships.
 7. **Hot reload limitations**: Changes to `database.ts`, `store.ts`, and module-level code require full Metro restart.
-8. **HealthKit on simulator**: `isHealthKitAvailable()` returns false — always test on real device for HealthKit features.
-9. **react-native-health TurboModule**: The JS wrapper's `default` export is broken under RN 0.83. Access via `NativeModules.AppleHealthKit` directly (see `availability.ts`).
-10. **Sleep double-counting**: Garmin sends overlapping ASLEEP samples. Always merge intervals before summing (see `sleep.ts`).
+8. **Garmin token refresh**: OAuth2 tokens expire hourly. Edge Function auto-refreshes via OAuth1 exchange. If 429 rate-limited, next 15-min cron retry succeeds. If tokens expire (~1 year), run `garmin_auth_v2.py` + `upload_garmin_tokens.py`.
+9. **Garmin sync monitoring**: Check `garmin_sync_log` table for failures. Edge Function logs errors gracefully — individual endpoint failures don't stop the sync.
+10. **Health data works on simulator**: All health data comes from Supabase (no native modules). Recovery screen, scores, and AI prompts work identically on simulator and device.
 11. **Suggestions lost on restart**: `vdotNotification` and `proactiveSuggestion` are persisted to `app_settings` — clear them when dismissed.
 12. **Backup schema v3**: Always use `??` fallbacks in `restoreDatabase()` for backward compat with old backups.
 13. **Gemini model fallback**: Heavy model (Pro) falls back to fast (Flash) on failure — never crash the app on AI errors.

@@ -108,8 +108,11 @@ For next week changes: tell them to update through the weekly check-in on Sunday
   const vdotAge = profile.vdot_updated_at ? Math.floor((Date.now() - new Date(profile.vdot_updated_at + 'T00:00:00').getTime()) / 86400000) : null;
   const vdotStale = vdotAge !== null && vdotAge > 56; // 8 weeks
   const vdotConf = vdotStale ? 'low' : (profile.vdot_confidence ?? 'moderate');
-  const vdotSourceLabel = profile.vdot_source === 'strava_race' ? 'from Strava race'
-    : profile.vdot_source === 'strava_best_effort' ? 'from Strava best effort'
+  const vdotSourceLabel = profile.vdot_source === 'garmin_personal_record' ? 'from Garmin personal record (high confidence)'
+    : profile.vdot_source === 'garmin_race_prediction' ? 'from Garmin race prediction'
+    : profile.vdot_source === 'garmin_vo2max' ? 'from Garmin VO2max (conservative estimate)'
+    : profile.vdot_source === 'strava_race' ? 'from Strava race'
+    : profile.vdot_source === 'strava_best_effort' ? 'from Strava training run — NOT race effort, treat as conservative'
     : 'manual entry';
   const vdotAgeLabel = vdotAge !== null ? `${vdotAge} days ago` : 'unknown date';
   parts.push(`- Age: ${profile.age}, Gender: ${profile.gender}`);
@@ -431,23 +434,138 @@ For next week changes: tell them to update through the weekly check-in on Sunday
     }
   } catch {}
 
-  // Recovery status
+  // ── UNIFIED HEALTH DATA (all from Garmin via Supabase) ──
+  // Single section: recovery score + all Garmin health fields (non-null only)
+  const g = garminHealth;
+
   if (recoveryStatus && recoveryStatus.level !== 'unknown') {
-    parts.push('RECOVERY STATUS:');
+    parts.push('HEALTH DATA (Garmin):');
+
+    // Recovery score summary
     const scoredSignals = recoveryStatus.signals.filter(s => s.score > 0);
-    parts.push(`Score: ${recoveryStatus.score}/100 (${recoveryStatus.level}) — ${scoredSignals.length} scored signals`);
+    parts.push(`Recovery Score: ${recoveryStatus.score}/100 (${recoveryStatus.level}) — ${scoredSignals.length} scored signals`);
     for (const s of scoredSignals) {
       const icon = s.status === 'good' ? '✓' : s.status === 'fair' ? '~' : '✗';
       parts.push(`  ${icon} ${s.type}: ${s.detail} (${s.score}/33)`);
     }
-    // Include resting HR 14-day trend for context
-    if (healthSnapshot?.restingHRTrend && healthSnapshot.restingHRTrend.length >= 3) {
-      parts.push(`  Resting HR trend (14d): ${healthSnapshot.restingHRTrend.map(r => r.value).join(', ')}`);
-    }
     parts.push(`Recommendation: ${recoveryStatus.recommendation}`);
+
+    // Training readiness (Garmin's own composite score)
+    if (g?.trainingReadiness != null) {
+      parts.push(`Training Readiness: ${g.trainingReadiness}/100${g.readinessFeedbackShort ? ` (${g.readinessFeedbackShort.replace(/_/g, ' ').toLowerCase()})` : ''}`);
+    }
+    if (g?.recoveryTimeHours != null) parts.push(`Recovery time remaining: ${g.recoveryTimeHours}h`);
+
+    // Resting HR trend
+    if (healthSnapshot?.restingHRTrend && healthSnapshot.restingHRTrend.length >= 3) {
+      parts.push(`Resting HR trend (14d): ${healthSnapshot.restingHRTrend.map(r => r.value).join(', ')}`);
+    }
+
+    // Body Battery
+    if (g?.bodyBatteryMorning != null) {
+      parts.push(`Body Battery: ${g.bodyBatteryMorning}/100 morning${g.bbAtWake != null ? ` (${g.bbAtWake} at wake)` : ''}${g.bodyBatteryCharged != null ? `, charged ${g.bodyBatteryCharged}, drained ${g.bodyBatteryDrained ?? '?'}` : ''}`);
+    }
+
+    // Sleep (all from Garmin)
+    if (g?.sleepScore != null || g?.sleepDurationSec != null) {
+      const fmtDur = (sec: number) => { const h = Math.floor(sec / 3600); const m = Math.round((sec % 3600) / 60); return h > 0 ? `${h}h ${m}m` : `${m}m`; };
+      let sleepLine = '';
+      if (g.sleepDurationSec != null) {
+        sleepLine = `Sleep: ${fmtDur(g.sleepDurationSec)}`;
+        if (g.sleepScore != null) sleepLine += ` (score: ${g.sleepScore}/100)`;
+      } else if (g.sleepScore != null) {
+        sleepLine = `Sleep Score: ${g.sleepScore}/100`;
+      }
+      if (g.sleepNeedMinutes != null) {
+        const need = `${Math.floor(g.sleepNeedMinutes / 60)}h${g.sleepNeedMinutes % 60 ? ` ${g.sleepNeedMinutes % 60}m` : ''}`;
+        sleepLine += `, need: ${need}`;
+      }
+      if (g.sleepDebtMinutes) sleepLine += `, debt: ${g.sleepDebtMinutes}m`;
+      if (g.sleepAwakeCount != null) sleepLine += `, ${g.sleepAwakeCount} awakening${g.sleepAwakeCount !== 1 ? 's' : ''}`;
+      parts.push(sleepLine);
+      // Stage breakdown (actual durations)
+      if (g.sleepDeepSec != null || g.sleepLightSec != null || g.sleepRemSec != null) {
+        const stages = [
+          g.sleepDeepSec != null ? `Deep ${fmtDur(g.sleepDeepSec)}` : null,
+          g.sleepLightSec != null ? `Light ${fmtDur(g.sleepLightSec)}` : null,
+          g.sleepRemSec != null ? `REM ${fmtDur(g.sleepRemSec)}` : null,
+          g.sleepAwakeSec != null ? `Awake ${fmtDur(g.sleepAwakeSec)}` : null,
+        ].filter(Boolean).join(', ');
+        parts.push(`  Stages: ${stages}`);
+      }
+      // Bed/wake times (Garmin returns epoch ms as string)
+      if (g.sleepStart && g.sleepEnd) {
+        const fmtTime = (ts: string) => { try { const n = Number(ts); const d = !isNaN(n) && n > 1e12 ? new Date(n) : new Date(ts); return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }); } catch { return '?'; } };
+        parts.push(`  Bed: ${fmtTime(g.sleepStart)} → ${fmtTime(g.sleepEnd)}`);
+      }
+    }
+
+    // HRV details
+    if (g?.hrvLastNightAvg != null) {
+      let hrvLine = `HRV: ${g.hrvLastNightAvg}ms overnight avg`;
+      if (g.hrvWeeklyAvg != null) hrvLine += `, weekly avg: ${g.hrvWeeklyAvg}ms`;
+      if (g.hrvStatus) hrvLine += ` (${g.hrvStatus.toLowerCase()})`;
+      if (g.hrvFeedback) hrvLine += ` — ${g.hrvFeedback.replace(/_/g, ' ').toLowerCase()}`;
+      parts.push(hrvLine);
+    }
+
+    // Stress
+    if (g?.stressAvg != null) {
+      parts.push(`Stress: avg ${g.stressAvg}/100${g.stressHigh != null ? `, peak ${g.stressHigh}` : ''}${g.stressQualifier ? ` (${g.stressQualifier.toLowerCase()})` : ''}`);
+    }
+
+    // Training load & status
+    if (g?.trainingStatus) {
+      let loadLine = `Training Status: ${g.trainingStatus}`;
+      if (g.trainingLoad7day != null) loadLine += `, 7d load: ${g.trainingLoad7day}`;
+      if (g.acwr != null) loadLine += `, ACWR: ${g.acwr}${g.acwrStatus ? ` (${g.acwrStatus})` : ''}`;
+      parts.push(loadLine);
+    }
+
+    // Vitals
+    if (g?.restingHr != null) {
+      let vitalsLine = `Resting HR: ${g.restingHr} bpm`;
+      if (g.rhr7dayAvg) vitalsLine += ` (7d avg: ${g.rhr7dayAvg})`;
+      if (g.maxHrDaily != null && g.minHrDaily != null) vitalsLine += `, daily range: ${g.minHrDaily}-${g.maxHrDaily}`;
+      parts.push(vitalsLine);
+    }
+    if (g?.respiratoryRate != null) parts.push(`Respiratory rate: ${g.respiratoryRate} br/min`);
+    if (g?.spo2Avg != null) {
+      let spo2Line = `SpO2: ${g.spo2Avg}%`;
+      if (g.minSpo2 != null && g.minSpo2 < 92) spo2Line += ` ⚠ min: ${g.minSpo2}% (below normal)`;
+      parts.push(spo2Line);
+    }
+
+    // Fitness metrics
+    if (g?.vo2max != null) parts.push(`VO2max: ${g.vo2max} ml/kg/min${g.vo2maxFitnessAge != null ? ` (fitness age: ${g.vo2maxFitnessAge})` : ''}`);
+    if (g?.enduranceScore != null) parts.push(`Endurance Score: ${g.enduranceScore}${g.enduranceClassification ? ` (${g.enduranceClassification})` : ''}`);
+    if (g?.hillScore != null) parts.push(`Hill Score: ${g.hillScore} (endurance: ${g.hillEndurance ?? '?'}, strength: ${g.hillStrength ?? '?'})`);
+    if (g?.lactateThresholdHr != null) {
+      const ltPace = g.lactateThresholdSpeed && g.lactateThresholdSpeed > 0 ? Math.round(1609.344 / g.lactateThresholdSpeed) : null;
+      parts.push(`Lactate Threshold: ${g.lactateThresholdHr} bpm${ltPace ? ` @ ${Math.floor(ltPace / 60)}:${String(ltPace % 60).padStart(2, '0')}/mi` : ''}`);
+    }
+
+    // Race predictions
+    if (g?.predictedMarathonSec != null) {
+      const fmt = (s: number) => `${Math.floor(s / 3600)}:${String(Math.floor((s % 3600) / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+      parts.push(`Race predictions: 5K ${g.predicted5kSec ? fmt(g.predicted5kSec) : '?'}, 10K ${g.predicted10kSec ? fmt(g.predicted10kSec) : '?'}, Half ${g.predictedHalfSec ? fmt(g.predictedHalfSec) : '?'}, Marathon ${fmt(g.predictedMarathonSec)}`);
+    }
+
+    // Warnings
+    if (g?.skinTempDeviationC != null && Math.abs(g.skinTempDeviationC) > 0.3) {
+      parts.push(`⚠ Skin temp deviation: ${g.skinTempDeviationC > 0 ? '+' : ''}${g.skinTempDeviationC}°C from baseline${g.skinTempDeviationC > 0.5 ? ' — possible illness/overtraining' : ''}`);
+    }
+
+    // Data freshness
+    if (g?.fetchedAt) {
+      const ageMin = Math.round((Date.now() - new Date(g.fetchedAt).getTime()) / 60000);
+      if (ageMin > 120) {
+        parts.push(`Note: Health data is ${Math.round(ageMin / 60)}h old. Recovery signals may not reflect current state.`);
+      }
+    }
     parts.push('');
   } else {
-    parts.push('Recovery data: not available (HealthKit not connected)');
+    parts.push('HEALTH DATA: not available (Garmin data not synced yet)');
     parts.push('');
   }
 
@@ -468,84 +586,6 @@ For next week changes: tell them to update through the weekly check-in on Sunday
       parts.push('');
     }
   } catch {}
-
-  // Additional health signals
-  if (healthSnapshot) {
-    const extras: string[] = [];
-    if (healthSnapshot.weight) {
-      extras.push(`Weight: ${healthSnapshot.weight.value} kg (from Apple Health, ${healthSnapshot.weight.date})`);
-    }
-    if (healthSnapshot.vo2max) {
-      extras.push(`Garmin VO2max: ${healthSnapshot.vo2max.value} mL/kg/min (${healthSnapshot.vo2max.date})`);
-    }
-    // Respiratory rate already in RECOVERY STATUS signals — don't duplicate
-    if (healthSnapshot.spo2 !== null) {
-      const spo2Warning = healthSnapshot.spo2 < 94 ? ' ⚠️ LOW' : '';
-      extras.push(`SpO2: ${healthSnapshot.spo2}%${spo2Warning}`);
-    }
-    if (healthSnapshot.steps !== null) {
-      extras.push(`Steps today: ${healthSnapshot.steps.toLocaleString()}`);
-    }
-    if (extras.length > 0) {
-      parts.push('ADDITIONAL HEALTH DATA:');
-      extras.forEach(e => parts.push(`  ${e}`));
-      parts.push('');
-    }
-  }
-
-  // Garmin Connect data
-  if (garminHealth) {
-    const g = garminHealth;
-    // Only include Garmin-exclusive data here (HRV + respiratory already in RECOVERY STATUS)
-    const lines: string[] = [];
-    if (g.vo2max != null) lines.push(`VO2max: ${g.vo2max} ml/kg/min`);
-    if (g.bodyBatteryMorning != null) {
-      lines.push(`Body Battery: ${g.bodyBatteryMorning} morning${g.bodyBatteryCharged != null ? ` (charged ${g.bodyBatteryCharged}, drained ${g.bodyBatteryDrained ?? '?'})` : ''}`);
-    }
-    if (g.stressAvg != null) lines.push(`Stress: avg ${g.stressAvg}/100${g.stressHigh != null ? `, peak ${g.stressHigh}/100` : ''}`);
-    if (g.trainingStatus) lines.push(`Training Status: ${g.trainingStatus}`);
-    if (g.trainingLoad7day != null) lines.push(`Training Load (7-day): ${g.trainingLoad7day} (ACWR: ${g.acwr ?? '?'}, status: ${g.acwrStatus ?? '?'})`);
-    if (g.restingHr != null) lines.push(`Resting HR (Garmin): ${g.restingHr} bpm`);
-    if (g.sleepScore != null) lines.push(`Sleep Score (Garmin): ${g.sleepScore}/100`);
-    if (g.trainingReadiness != null) lines.push(`Training Readiness: ${g.trainingReadiness}/100`);
-    // NEW Tier 1 fields
-    if (g.readinessFeedbackShort) lines.push(`Readiness: ${g.readinessFeedbackShort.replace(/_/g, ' ').toLowerCase()}`);
-    if (g.recoveryTimeHours != null) lines.push(`Recovery time: ${g.recoveryTimeHours}h remaining`);
-    if (g.predictedMarathonSec != null) {
-      const fmt = (s: number) => `${Math.floor(s / 3600)}:${String(Math.floor((s % 3600) / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
-      lines.push(`Race predictions: 5K ${g.predicted5kSec ? fmt(g.predicted5kSec) : '?'}, 10K ${g.predicted10kSec ? fmt(g.predicted10kSec) : '?'}, Half ${g.predictedHalfSec ? fmt(g.predictedHalfSec) : '?'}, Marathon ${fmt(g.predictedMarathonSec)}`);
-    }
-    if (g.sleepNeedMinutes != null) {
-      const need = `${Math.floor(g.sleepNeedMinutes / 60)}h ${g.sleepNeedMinutes % 60}m`;
-      lines.push(`Sleep need: ${need}${g.sleepDebtMinutes ? `, debt: ${g.sleepDebtMinutes}m` : ''}`);
-    }
-    if (g.sleepSubscores) {
-      const subs = Object.entries(g.sleepSubscores).filter(([, v]) => v != null).map(([k, v]) => `${k}: ${v}`).join(', ');
-      if (subs) lines.push(`Sleep breakdown: ${subs}`);
-    }
-    // Tier 2 fields
-    if (g.enduranceScore != null) lines.push(`Endurance Score: ${g.enduranceScore} (class ${g.enduranceClassification ?? '?'})`);
-    if (g.skinTempDeviationC != null && Math.abs(g.skinTempDeviationC) > 0.3) {
-      lines.push(`⚠ Skin temp deviation: ${g.skinTempDeviationC > 0 ? '+' : ''}${g.skinTempDeviationC}°C from baseline${g.skinTempDeviationC > 0.5 ? ' — possible illness/overtraining' : ''}`);
-    }
-    // Tier 3 fields
-    if (g.maxHrDaily != null && g.minHrDaily != null) lines.push(`Daily HR range: ${g.minHrDaily}-${g.maxHrDaily} bpm${g.rhr7dayAvg ? ` (RHR 7d avg: ${g.rhr7dayAvg})` : ''}`);
-    if (g.bbAtWake != null) lines.push(`Body Battery at wake: ${g.bbAtWake}/100`);
-    if (g.hrvFeedback) lines.push(`HRV: ${g.hrvFeedback.replace(/_/g, ' ').toLowerCase()}${g.hrv5minHigh ? `, 5-min peak: ${g.hrv5minHigh}ms` : ''}`);
-    if (g.sleepAwakeCount != null) lines.push(`Sleep: ${g.sleepAwakeCount} awakening${g.sleepAwakeCount !== 1 ? 's' : ''}${g.avgSleepStress != null ? `, avg sleep stress: ${g.avgSleepStress}` : ''}`);
-    if (g.minSpo2 != null && g.minSpo2 < 92) lines.push(`⚠ Min SpO2: ${g.minSpo2}% (below normal)`);
-    if (g.hillScore != null) lines.push(`Hill Score: ${g.hillScore} (endurance: ${g.hillEndurance ?? '?'}, strength: ${g.hillStrength ?? '?'})`);
-    if (g.lactateThresholdHr != null) {
-      const ltPace = g.lactateThresholdSpeed && g.lactateThresholdSpeed > 0 ? Math.round(1609.344 / g.lactateThresholdSpeed) : null;
-      lines.push(`Lactate Threshold: ${g.lactateThresholdHr} bpm${ltPace ? ` @ ${Math.floor(ltPace / 60)}:${String(ltPace % 60).padStart(2, '0')}/mi` : ''}`);
-    }
-    if (g.vo2maxFitnessAge != null) lines.push(`Fitness Age: ${g.vo2maxFitnessAge} (chronological: 26)`);
-    if (lines.length > 0) {
-      parts.push('GARMIN CONNECT DATA:');
-      lines.forEach(l => parts.push(`  ${l}`));
-      parts.push('');
-    }
-  }
 
   // Race week mode
   if (isRaceWeek) {

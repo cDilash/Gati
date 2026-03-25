@@ -3,7 +3,7 @@
  *
  * Factors:
  * 1. Volume spike (ACWR — acute:chronic workload ratio)
- * 2. Recovery status (from HealthKit)
+ * 2. Recovery status (from Garmin health data)
  * 3. Sleep trends (declining = risk)
  * 4. Missed workouts (missed recovery = compensatory overload)
  * 5. Execution quality (consistently missing pace = fatigue)

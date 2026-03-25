@@ -19,7 +19,6 @@ import { GradientBorder } from '../../src/theme/GradientBorder';
 import { formatSleepDuration, formatSleepHours } from '../../src/utils/formatTime';
 import { PRBadge } from '../../src/components/PRBadge';
 import { GarminIcon } from '../../src/components/icons/GarminIcon';
-import { HealthIcon } from '../../src/components/icons/HealthIcon';
 import { PMCChart } from '../../src/components/PMCChart';
 import { PMCSummary, generatePMCInsight } from '../../src/components/PMCSummary';
 
@@ -90,70 +89,29 @@ function RecoveryHero({ recovery, snapshot, recommendation, scheduledWorkout }: 
   recommendation?: string | null; scheduledWorkout?: string | null;
 }) {
   const syncHealth = useAppStore(s => s.syncHealth);
-  const [connecting, setConnecting] = useState(false);
-
-  // Check if HealthKit is available on this device
-  let hkAvailable = false;
-  try {
-    const { isHealthKitAvailable } = require('../../src/health/availability');
-    hkAvailable = isHealthKitAvailable();
-  } catch {}
-
-  // Determine if HealthKit has been connected before (snapshot exists from a previous sync)
-  const hasBeenConnected = !!snapshot || (hkAvailable && recovery != null);
+  const [refreshing, setRefreshing] = useState(false);
 
   if (!recovery || recovery.level === 'unknown') {
-    const handleConnect = async () => {
-      setConnecting(true);
+    const handleRefresh = async () => {
+      setRefreshing(true);
       try {
-        if (!hkAvailable) {
-          Alert.alert('Not Available', 'Apple Health is not available on this device.');
-          setConnecting(false);
-          return;
-        }
-        const { requestHealthKitPermissions } = require('../../src/health/permissions');
-        const granted = await requestHealthKitPermissions();
-        if (granted) {
-          await syncHealth(true); // force refresh — bypass 2-hour cache
-        } else {
-          Alert.alert('Denied', 'Enable in Settings → Privacy → Health.');
-        }
-      } catch (e: any) {
-        Alert.alert('Error', e.message ?? 'Failed');
-      }
-      setConnecting(false);
+        await syncHealth(true);
+      } catch {}
+      setRefreshing(false);
     };
 
-    if (hasBeenConnected) {
-      // HealthKit is connected but we don't have enough signals for a score
-      return (
-        <YStack backgroundColor="$surface" borderRadius="$6" padding="$6" alignItems="center">
-          <MaterialCommunityIcons name="heart-pulse" size={40} color={colors.textTertiary} />
-          <H color="$color" fontSize={20} letterSpacing={1} marginTop="$3">Recovery Data</H>
-          <B color="$textSecondary" fontSize={14} textAlign="center" lineHeight={20} marginTop="$2" marginBottom="$4">
-            {recovery?.signalCount === 1
-              ? 'Only 1 recovery signal available. Need at least 2 of 3 (resting HR, HRV, sleep) for a score. Wear your watch overnight.'
-              : 'Waiting for recovery data. Wear your Apple Watch overnight to collect resting HR, HRV, and sleep.'}
-          </B>
-          <YStack backgroundColor={colors.surfaceHover} borderRadius="$5" paddingHorizontal="$8" paddingVertical="$3"
-            pressStyle={{ opacity: 0.8 }} onPress={handleConnect}>
-            {connecting ? <Spinner size="small" color="white" /> : <B color={colors.cyan} fontSize={14} fontWeight="700">Refresh Health Data</B>}
-          </YStack>
-        </YStack>
-      );
-    }
-
-    // Never connected — show connect prompt
     return (
       <YStack backgroundColor="$surface" borderRadius="$6" padding="$6" alignItems="center">
         <MaterialCommunityIcons name="heart-pulse" size={40} color={colors.textTertiary} />
-        <H color="$color" fontSize={20} letterSpacing={1} marginTop="$3">Recovery Tracking</H>
+        <H color="$color" fontSize={20} letterSpacing={1} marginTop="$3">Recovery Data</H>
         <B color="$textSecondary" fontSize={14} textAlign="center" lineHeight={20} marginTop="$2" marginBottom="$4">
-          Connect Apple Health to track resting heart rate, HRV, and sleep for daily recovery scoring.
+          {recovery?.signalCount === 1
+            ? 'Only 1 recovery signal available. Need at least 2 of 3 (resting HR, HRV, sleep) for a score. Wear your Garmin watch overnight.'
+            : 'Waiting for Garmin health data. Wear your watch overnight and data will sync automatically.'}
         </B>
-        <YStack backgroundColor={colors.cyan} borderRadius="$5" paddingHorizontal="$8" paddingVertical="$3"
-          pressStyle={{ opacity: 0.8 }} onPress={handleConnect}>
-          {connecting ? <Spinner size="small" color="white" /> : <B color="white" fontSize={16} fontWeight="700">Connect Apple Health</B>}
+        <YStack backgroundColor={colors.surfaceHover} borderRadius="$5" paddingHorizontal="$8" paddingVertical="$3"
+          pressStyle={{ opacity: 0.8 }} onPress={handleRefresh}>
+          {refreshing ? <Spinner size="small" color="white" /> : <B color={colors.cyan} fontSize={14} fontWeight="700">Refresh Health Data</B>}
         </YStack>
       </YStack>
     );
@@ -177,7 +135,24 @@ function RecoveryHero({ recovery, snapshot, recommendation, scheduledWorkout }: 
         </View>
         <YStack flex={1}>
           <H color={color} fontSize={18} letterSpacing={1.5} textTransform="uppercase">{label}</H>
-          <B color="$textSecondary" fontSize={11} marginTop={2}>{signalCount} signal{signalCount !== 1 ? 's' : ''}{snapshot?.cachedAt ? ` · ${formatTimeAgo(snapshot.cachedAt)}` : ''}</B>
+          {(() => {
+            const garmin = useAppStore.getState().garminHealth;
+            const garminAge = garmin?.fetchedAt ? Math.round((Date.now() - new Date(garmin.fetchedAt).getTime()) / 60000) : null;
+            const isStale = garminAge != null && garminAge > 120; // >2 hours
+            const freshLabel = garmin?.fetchedAt ? formatTimeAgo(garmin.fetchedAt) : null;
+            return (
+              <XStack alignItems="center" gap={4} marginTop={2}>
+                <B color="$textSecondary" fontSize={11}>{signalCount} signal{signalCount !== 1 ? 's' : ''}</B>
+                {freshLabel && (
+                  <>
+                    <B color="$textTertiary" fontSize={11}>·</B>
+                    <MaterialCommunityIcons name="watch" size={10} color={isStale ? colors.orange : colors.textTertiary} />
+                    <B color={isStale ? colors.orange : '$textTertiary'} fontSize={11}>{freshLabel}</B>
+                  </>
+                )}
+              </XStack>
+            );
+          })()}
           {recovery.sleepPending && (
             <XStack alignItems="center" gap={3} marginTop={3}>
               <MaterialCommunityIcons name="clock-outline" size={10} color={colors.textTertiary} />
@@ -433,7 +408,7 @@ function RestingHRCard({ signal, trendData, garminRhr }: {
       <XStack marginTop={8} alignItems="center" justifyContent="space-between">
         <XStack alignItems="center" gap={4}>
           <B color={colors.textTertiary} fontSize={10}>by</B>
-          <HealthIcon size={11} />
+          <GarminIcon size={11} />
         </XStack>
         {garminRhr != null && (
           <B color={colors.textTertiary} fontSize={10}>
@@ -516,9 +491,13 @@ function SignalNotAvailable({ type }: { type: string }) {
 
 // ─── Sleep Card (dedicated, rich layout) ─────────────────────
 
-function formatTime12h(isoTimestamp: string): string {
+function formatTime12h(timestamp: string): string {
   try {
-    const d = new Date(isoTimestamp);
+    if (!timestamp) return '';
+    // Handle epoch milliseconds (Garmin returns "1774304665000") or ISO strings
+    const num = Number(timestamp);
+    const d = !isNaN(num) && num > 1e12 ? new Date(num) : new Date(timestamp);
+    if (isNaN(d.getTime())) return '';
     const h = d.getHours();
     const m = d.getMinutes();
     const ampm = h >= 12 ? 'PM' : 'AM';
@@ -643,6 +622,39 @@ function SleepCard({ signal, sleepTrend, garmin }: {
                 width={`${Math.min((latest.totalMinutes / garmin.sleepNeedMinutes) * 100, 100)}%` as any} />
             </View>
           )}
+
+          {/* Stacked stage bar — single horizontal bar with colored segments */}
+          {(garmin.sleepDeepSec != null || garmin.sleepLightSec != null || garmin.sleepRemSec != null) && (() => {
+            const stages = [
+              { label: 'Deep', sec: garmin.sleepDeepSec ?? 0, color: '#6366F1' },
+              { label: 'Light', sec: garmin.sleepLightSec ?? 0, color: '#818CF8' },
+              { label: 'REM', sec: garmin.sleepRemSec ?? 0, color: colors.cyan },
+              { label: 'Awake', sec: garmin.sleepAwakeSec ?? 0, color: colors.orange },
+            ];
+            const totalSec = stages.reduce((s, st) => s + st.sec, 0) || 1;
+            const fmtDur = (sec: number) => { const h = Math.floor(sec / 3600); const m = Math.round((sec % 3600) / 60); return h > 0 ? `${h}h${m > 0 ? ` ${m}m` : ''}` : `${m}m`; };
+            return (
+              <YStack marginBottom={garmin.sleepSubscores ? 8 : 0}>
+                {/* Stacked bar */}
+                <XStack height={10} borderRadius={5} overflow="hidden">
+                  {stages.filter(s => s.sec > 0).map(stage => (
+                    <View key={stage.label} height={10} backgroundColor={stage.color}
+                      width={`${Math.max((stage.sec / totalSec) * 100, 1)}%` as any} />
+                  ))}
+                </XStack>
+                {/* Legend row below */}
+                <XStack justifyContent="space-between" marginTop={6}>
+                  {stages.filter(s => s.sec > 0).map(stage => (
+                    <XStack key={stage.label} alignItems="center" gap={4}>
+                      <View width={6} height={6} borderRadius={3} backgroundColor={stage.color} />
+                      <B color={colors.textTertiary} fontSize={9}>{stage.label}</B>
+                      <M color={colors.textSecondary} fontSize={9} fontWeight="700">{fmtDur(stage.sec)}</M>
+                    </XStack>
+                  ))}
+                </XStack>
+              </YStack>
+            );
+          })()}
 
           {/* Sub-scores grid — no % sign, they're 0-100 scores */}
           {garmin.sleepSubscores && (
@@ -841,7 +853,7 @@ function SleepCard({ signal, sleepTrend, garmin }: {
       {/* Source */}
       <XStack marginTop={8} alignItems="center" gap={4}>
         <B color={colors.textTertiary} fontSize={10}>by</B>
-        <HealthIcon size={11} />
+        <GarminIcon size={11} />
       </XStack>
     </YStack>
   );
@@ -1095,7 +1107,7 @@ export default function RecoveryScreen() {
                   {weeklyAvg != null && <B color={colors.textTertiary} fontSize={11}>Weekly avg: {weeklyAvg} ms</B>}
                   <XStack alignItems="center" gap={4}>
                     <B color={colors.textTertiary} fontSize={10}>by</B>
-                    {isGarmin ? <GarminIcon size={11} /> : <HealthIcon size={11} />}
+                    <GarminIcon size={11} />
                   </XStack>
                 </XStack>
               </YStack>
@@ -1301,18 +1313,39 @@ export default function RecoveryScreen() {
             </YStack>
           )}
 
-          {/* Race Predictions — Marathon hero */}
-          {garminHealth.predictedMarathonSec != null && (() => {
+          {/* Race Predictions — Garmin or VDOT fallback */}
+          {(() => {
             const fmt = (s: number) => {
               const h = Math.floor(s / 3600);
               const m = Math.floor((s % 3600) / 60);
               const sec = s % 60;
               return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}` : `${m}:${String(sec).padStart(2, '0')}`;
             };
+
+            // Try Garmin predictions first, fall back to VDOT
+            let pred5k = garminHealth.predicted5kSec;
+            let pred10k = garminHealth.predicted10kSec;
+            let predHalf = garminHealth.predictedHalfSec;
+            let predMarathon = garminHealth.predictedMarathonSec;
+            let predSource: 'garmin' | 'vdot' = 'garmin';
+
+            if (!predMarathon && userProfile?.vdot_score) {
+              // VDOT fallback
+              try {
+                const { predict5KTime, predict10KTime, predictHalfMarathonTime, predictMarathonTime } = require('../../src/engine/vdot');
+                pred5k = Math.round(predict5KTime(userProfile.vdot_score));
+                pred10k = Math.round(predict10KTime(userProfile.vdot_score));
+                predHalf = Math.round(predictHalfMarathonTime(userProfile.vdot_score));
+                predMarathon = Math.round(predictMarathonTime(userProfile.vdot_score));
+                predSource = 'vdot';
+              } catch {}
+            }
+
+            if (!predMarathon) return null;
+
             const goalSec = userProfile?.target_finish_time_sec ?? 0;
-            const predSec = garminHealth.predictedMarathonSec;
-            const isAhead = goalSec > 0 && predSec <= goalSec;
-            const gapSec = Math.abs(predSec - goalSec);
+            const isAhead = goalSec > 0 && predMarathon <= goalSec;
+            const gapSec = Math.abs(predMarathon - goalSec);
 
             return (
               <YStack backgroundColor={colors.surface} borderRadius={16} padding={16}>
@@ -1320,13 +1353,15 @@ export default function RecoveryScreen() {
                   <MaterialCommunityIcons name="flag-checkered" size={16} color={colors.cyan} />
                   <B color={colors.textPrimary} fontSize={14} fontWeight="600">Race Predictions</B>
                   <View flex={1} />
-                  <GarminIcon size={10} />
+                  {predSource === 'garmin' ? <GarminIcon size={10} /> : (
+                    <B color={colors.textTertiary} fontSize={9}>VDOT {userProfile?.vdot_score}</B>
+                  )}
                 </XStack>
 
                 {/* Marathon hero */}
                 <YStack alignItems="center" marginBottom={12}>
                   <H color={colors.textTertiary} fontSize={10} letterSpacing={1.5} marginBottom={4}>MARATHON</H>
-                  <GradientText text={fmt(predSec)} style={{ fontSize: 32, fontWeight: '800' }} />
+                  <GradientText text={fmt(predMarathon)} style={{ fontSize: 32, fontWeight: '800' }} />
                   {goalSec > 0 && (
                     <YStack alignItems="center" marginTop={8} width="100%">
                       <XStack justifyContent="space-between" width="100%" marginBottom={4}>
@@ -1335,9 +1370,8 @@ export default function RecoveryScreen() {
                       </XStack>
                       <View height={6} borderRadius={3} backgroundColor={colors.surfaceHover} width="100%" overflow="hidden">
                         {(() => {
-                          // Bar: shorter time = better = more fill from left
-                          const maxTime = Math.max(predSec, goalSec) * 1.1;
-                          const predPct = Math.max(5, 100 - (predSec / maxTime) * 100);
+                          const maxTime = Math.max(predMarathon, goalSec) * 1.1;
+                          const predPct = Math.max(5, 100 - (predMarathon / maxTime) * 100);
                           const goalPct = Math.max(5, 100 - (goalSec / maxTime) * 100);
                           return (
                             <>
@@ -1361,9 +1395,9 @@ export default function RecoveryScreen() {
                 {/* Other distances — compact row */}
                 <XStack justifyContent="space-around" paddingTop={10} borderTopWidth={0.5} borderTopColor={colors.border}>
                   {[
-                    { label: '5K', sec: garminHealth.predicted5kSec },
-                    { label: '10K', sec: garminHealth.predicted10kSec },
-                    { label: 'HALF', sec: garminHealth.predictedHalfSec },
+                    { label: '5K', sec: pred5k },
+                    { label: '10K', sec: pred10k },
+                    { label: 'HALF', sec: predHalf },
                   ].map(r => (
                     <YStack key={r.label} alignItems="center">
                       <H color={colors.textTertiary} fontSize={8} letterSpacing={1}>{r.label}</H>
@@ -1371,6 +1405,13 @@ export default function RecoveryScreen() {
                     </YStack>
                   ))}
                 </XStack>
+
+                {/* Source label for VDOT fallback */}
+                {predSource === 'vdot' && (
+                  <B color={colors.textTertiary} fontSize={10} textAlign="center" marginTop={8}>
+                    Based on VDOT {userProfile?.vdot_score} (best effort). Run more to get Garmin predictions.
+                  </B>
+                )}
               </YStack>
             );
           })()}

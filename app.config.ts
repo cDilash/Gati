@@ -13,17 +13,10 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   ios: {
     supportsTablet: false,
     bundleIdentifier: 'com.personal.marathoncoach',
-    entitlements: {
-      'com.apple.developer.healthkit': true,
-      'com.apple.developer.healthkit.access': [],
-    },
     infoPlist: {
-      NSHealthShareUsageDescription: 'Marathon Coach reads your resting heart rate, heart rate variability, and sleep data from Apple Health to calculate your recovery score and personalize your training plan.',
-      NSHealthUpdateUsageDescription: 'Marathon Coach does not write any data to Apple Health.',
       NSLocationWhenInUseUsageDescription: 'Marathon Coach uses your location to fetch local weather for workout briefings.',
       NSPhotoLibraryUsageDescription: 'Marathon Coach uses your photo library to set your profile picture.',
       NSCameraUsageDescription: 'Marathon Coach uses the camera to take a profile photo.',
-      UIBackgroundModes: ['health-sharing'],
     },
   },
   plugins: [
@@ -33,7 +26,6 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     'react-native-maps',
     'expo-font',
     'expo-image-picker',
-    'react-native-health',
     [
       'expo-build-properties',
       {

@@ -92,7 +92,7 @@ function buildWeekPrompt(
       parts.push(`  ${run.date}: ${run.type} ${formatDistance(run.distanceMiles, units)} @ ${pace}${run.avgHR ? ` HR:${run.avgHR}` : ''} — ${run.status}`);
     }
     if (prevWeek.recoveryScoreAvg) parts.push(`Recovery avg: ${prevWeek.recoveryScoreAvg}/100`);
-    if (prevWeek.garminVO2max) parts.push(`Garmin: VO2max ${prevWeek.garminVO2max}, Status ${prevWeek.garminTrainingStatus ?? '?'}, ACWR ${prevWeek.garminACWR ?? '?'}`);
+    if (prevWeek.garminVO2max) parts.push(`VO2max ${prevWeek.garminVO2max}, Training Status ${prevWeek.garminTrainingStatus ?? '?'}, ACWR ${prevWeek.garminACWR ?? '?'}`);
     parts.push('');
   } else {
     parts.push('PREVIOUS WEEK: No data (first week of training)');
@@ -108,9 +108,15 @@ function buildWeekPrompt(
     parts.push('');
   }
 
-  // Garmin advanced metrics (if available from garminData parameter)
+  // Garmin fitness & readiness metrics
   if (garminData) {
     const gLines: string[] = [];
+    if (garminData.trainingReadiness != null) {
+      gLines.push(`Training Readiness: ${garminData.trainingReadiness}/100${garminData.readinessFeedbackShort ? ` (${garminData.readinessFeedbackShort.replace(/_/g, ' ').toLowerCase()})` : ''}`);
+    }
+    if (garminData.recoveryTimeHours != null) gLines.push(`Recovery time: ${garminData.recoveryTimeHours}h remaining`);
+    if (garminData.bodyBatteryMorning != null) gLines.push(`Body Battery: ${garminData.bodyBatteryMorning}/100 morning`);
+    if (garminData.trainingStatus) gLines.push(`Training Status: ${garminData.trainingStatus}${garminData.trainingLoad7day != null ? `, 7d load: ${garminData.trainingLoad7day}` : ''}${garminData.acwr != null ? `, ACWR: ${garminData.acwr}` : ''}`);
     if (garminData.enduranceScore != null) gLines.push(`Endurance Score: ${garminData.enduranceScore}`);
     if (garminData.hillScore != null) gLines.push(`Hill Score: ${garminData.hillScore} (endurance: ${garminData.hillEndurance ?? '?'}, strength: ${garminData.hillStrength ?? '?'}) — SF Marathon has hills, add hill work if score is low`);
     if (garminData.lactateThresholdHr != null) {
@@ -121,10 +127,9 @@ function buildWeekPrompt(
       const fmt = (s: number) => `${Math.floor(s / 3600)}:${String(Math.floor((s % 3600) / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
       gLines.push(`Race prediction: Marathon ${fmt(garminData.predictedMarathonSec)} (athlete goal: 3:45:00)`);
     }
-    if (garminData.bbAtWake != null) gLines.push(`Body Battery at wake: ${garminData.bbAtWake}/100`);
-    if (garminData.vo2maxFitnessAge != null) gLines.push(`Fitness Age: ${garminData.vo2maxFitnessAge}`);
+    if (garminData.vo2max != null) gLines.push(`VO2max: ${garminData.vo2max}${garminData.vo2maxFitnessAge != null ? ` (fitness age: ${garminData.vo2maxFitnessAge})` : ''}`);
     if (gLines.length > 0) {
-      parts.push('GARMIN METRICS:');
+      parts.push('FITNESS METRICS (Garmin):');
       gLines.forEach(l => parts.push(`  ${l}`));
       parts.push('');
     }

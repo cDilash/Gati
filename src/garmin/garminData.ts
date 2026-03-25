@@ -63,6 +63,13 @@ function mapRow(row: any): GarminHealthData {
     lactateThresholdSpeed: row.lactate_threshold_speed ?? null,
     vo2maxFitnessAge: row.vo2max_fitness_age ?? null,
     floorsClimbed: row.floors_climbed ?? null,
+    sleepDurationSec: row.sleep_duration_sec ?? null,
+    sleepDeepSec: row.sleep_deep_sec ?? null,
+    sleepLightSec: row.sleep_light_sec ?? null,
+    sleepRemSec: row.sleep_rem_sec ?? null,
+    sleepAwakeSec: row.sleep_awake_sec ?? null,
+    sleepStart: row.sleep_start ?? null,
+    sleepEnd: row.sleep_end ?? null,
     fetchedAt: row.fetched_at ?? '',
   };
 }

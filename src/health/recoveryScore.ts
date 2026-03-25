@@ -2,12 +2,14 @@ import { HealthSnapshot, RecoveryStatus, RecoverySignal, GarminHealthData } from
 
 /**
  * Pure function: computes a 0-100 recovery score from health data.
- * No HealthKit calls, no SQLite, no side effects.
+ * No API calls, no SQLite, no side effects.
+ *
+ * All data comes from Garmin via Supabase (single source of truth).
  *
  * 3 scored signals × 33 pts each:
- * - Resting HR (HealthKit): 33 pts
- * - Sleep (HealthKit): 33 pts
- * - HRV (Garmin preferred, HealthKit fallback): 33 pts
+ * - Resting HR (Garmin): 33 pts
+ * - HRV (Garmin, with personal baseline): 33 pts
+ * - Sleep (Garmin): 33 pts
  *
  * Body Battery and Respiratory Rate are returned as display-only signals
  * (not scored) for the Recovery screen to show as informational cards.
@@ -51,11 +53,11 @@ export function calculateRecoveryScore(
       detail = `${snapshot.restingHR} bpm (${diff.toFixed(0)} above baseline ${baseline.toFixed(0)} — elevated)`;
     }
 
-    signals.push({ type: 'resting_hr', value: snapshot.restingHR, baseline: Math.round(baseline), status, score, detail, source: 'healthkit' });
+    signals.push({ type: 'resting_hr', value: snapshot.restingHR, baseline: Math.round(baseline), status, score, detail, source: 'garmin' });
   }
 
   // ── HRV (33 pts max) ──
-  // Prefer Garmin HRV (has personal baseline from watch), fall back to HealthKit
+  // Use Garmin HRV with personal baseline from watch
   if (garmin?.hrvLastNightAvg != null && garmin.hrvBaselineLow != null && garmin.hrvBaselineHigh != null) {
     const value = garmin.hrvLastNightAvg;
     const low = garmin.hrvBaselineLow;
@@ -89,7 +91,7 @@ export function calculateRecoveryScore(
 
     signals.push({ type: 'garmin_hrv', value, baseline: Math.round(mid), status, score, detail, source: 'garmin' });
   } else if (snapshot.hrvRMSSD !== null && snapshot.hrvTrend.length >= 3) {
-    // HealthKit HRV fallback
+    // Garmin HRV fallback (when baseline range not available, use trend average)
     const baseline = average(snapshot.hrvTrend.slice(0, 7).map(r => r.value));
     const pctBelow = ((baseline - snapshot.hrvRMSSD) / baseline) * 100;
 
@@ -111,7 +113,7 @@ export function calculateRecoveryScore(
       detail = `${snapshot.hrvRMSSD} ms (${pctBelow.toFixed(0)}% below baseline — suppressed)`;
     }
 
-    signals.push({ type: 'hrv', value: snapshot.hrvRMSSD, baseline: Math.round(baseline), status, score, detail, source: 'healthkit' });
+    signals.push({ type: 'hrv', value: snapshot.hrvRMSSD, baseline: Math.round(baseline), status, score, detail, source: 'garmin' });
   }
 
   // ── Sleep (33 pts max) ──
@@ -142,7 +144,7 @@ export function calculateRecoveryScore(
       detail += ` · Garmin: ${garmin.sleepScore}/100`;
     }
 
-    signals.push({ type: 'sleep', value: snapshot.sleepHours, baseline: null, status, score, detail, source: 'healthkit' });
+    signals.push({ type: 'sleep', value: snapshot.sleepHours, baseline: null, status, score, detail, source: 'garmin' });
   }
 
   // ── Display-only signals (score = 0, not counted in total) ──
@@ -158,7 +160,7 @@ export function calculateRecoveryScore(
 
   // Respiratory Rate (display only)
   const respRate = garmin?.respiratoryRate ?? snapshot.respiratoryRate;
-  const respSource: 'garmin' | 'healthkit' = garmin?.respiratoryRate != null ? 'garmin' : 'healthkit';
+  const respSource: RecoverySignal['source'] = 'garmin';
   if (respRate !== null && snapshot.respiratoryRateTrend.length >= 3) {
     const baseline = average(snapshot.respiratoryRateTrend.map(r => r.value));
     const diff = respRate - baseline;
@@ -243,7 +245,7 @@ function detectSleepStatus(
 
   // No sleep for last night
   if (currentHour < 10) {
-    // Morning window: sleep data likely still syncing from Garmin → Apple Health
+    // Morning window: Garmin may not have synced last night's data yet
     return { sleepPending: true, sleepMissing: false };
   } else {
     // After 10am: data should have synced by now — likely didn't wear watch

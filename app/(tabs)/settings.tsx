@@ -14,7 +14,6 @@ import { colors } from '../../src/theme/colors';
 import { GradientText } from '../../src/theme/GradientText';
 import { UserAvatar } from '../../src/components/UserAvatar';
 import { StravaIcon } from '../../src/components/icons/StravaIcon';
-import { HealthIcon } from '../../src/components/icons/HealthIcon';
 
 const H = (props: any) => <Text fontFamily="$heading" {...props} />;
 const B = (props: any) => <Text fontFamily="$body" {...props} />;
@@ -198,10 +197,6 @@ export default function SettingsScreen() {
     ]);
   }, [userProfile, generatePlan]);
 
-  // ─── HealthKit availability ────────────────────────────
-  let hkAvailable = false;
-  try { const { isHealthKitAvailable } = require('../../src/health/availability'); hkAvailable = isHealthKitAvailable(); } catch {}
-
   return (
     <ScrollView flex={1} backgroundColor={colors.background} contentContainerStyle={{ padding: 16, paddingBottom: 60 }} showsVerticalScrollIndicator={false}>
 
@@ -258,51 +253,14 @@ export default function SettingsScreen() {
         )}
       </YStack>
 
-      {/* ─── Apple Health ────────────────────────────────── */}
-      {(hkAvailable || healthSnapshot) && (
-        <>
-          <XStack alignItems="center" gap={6} marginTop={24} marginBottom={10} marginLeft={4}>
-            <HealthIcon size={14} />
-            <H color={colors.textSecondary} fontSize={12} textTransform="uppercase" letterSpacing={1.5}>Apple Health</H>
-          </XStack>
-          <YStack backgroundColor={colors.surface} borderRadius={14} overflow="hidden">
-            <SettingsRow icon="heart-pulse" iconColor={colors.cyan} label="Status"
-              rightElement={<StatusDot on={!!healthSnapshot} />} />
-            {healthSnapshot && (
-              <>
-                <SettingsRow icon="pulse" iconColor={colors.cyan} label="Active Signals"
-                  subtitle={[
-                    healthSnapshot.restingHR != null ? 'RHR' : null,
-                    healthSnapshot.hrvRMSSD != null ? 'HRV' : null,
-                    healthSnapshot.sleepHours != null ? 'Sleep' : null,
-                    healthSnapshot.steps != null ? 'Steps' : null,
-                  ].filter(Boolean).join(' · ') || 'None'} />
-                <SettingsRow icon="sync" iconColor={colors.cyan} label="Last Sync"
-                  subtitle={healthSnapshot.cachedAt ? formatLastSync(healthSnapshot.cachedAt) : 'Not synced yet'}
-                  rightElement={<SmallButton label="Sync" onPress={handleSyncHealth} />} loading={isHealthSyncing} />
-              </>
-            )}
-            {!healthSnapshot && (
-              <SettingsRow icon="heart-plus" iconColor={colors.cyan} label="Connect Apple Health"
-                subtitle="Sync resting HR, HRV, and sleep" onPress={async () => {
-                  try {
-                    const { requestHealthKitPermissions } = require('../../src/health/permissions');
-                    const granted = await requestHealthKitPermissions();
-                    if (granted) { await syncHealth(true); Alert.alert('Connected', 'Apple Health synced.'); }
-                    else Alert.alert('Denied', 'Enable in Settings → Privacy → Health.');
-                  } catch (e: any) { Alert.alert('Error', e.message ?? 'Failed.'); }
-                }} />
-            )}
-          </YStack>
-        </>
-      )}
-
-      {/* ─── Garmin Connect ──────────────────────────────── */}
+      {/* ─── Garmin Connect (health data source) ─────────── */}
       {(() => {
         const garmin = useAppStore.getState().garminHealth;
-        if (!garmin) return null;
-        const ageHrs = Math.round((Date.now() - new Date(garmin.fetchedAt).getTime()) / 3600000);
-        const isStale = ageHrs > 24;
+        const ageMin = garmin?.fetchedAt ? Math.round((Date.now() - new Date(garmin.fetchedAt).getTime()) / 60000) : null;
+        const isStale = ageMin != null && ageMin > 120; // >2 hours
+        const freshLabel = ageMin != null
+          ? (ageMin < 1 ? 'just now' : ageMin < 60 ? `${ageMin}m ago` : ageMin < 1440 ? `${Math.floor(ageMin / 60)}h ago` : `${Math.floor(ageMin / 1440)}d ago`)
+          : null;
         return (
           <>
             <SectionHeader title="Garmin Connect" />
@@ -310,13 +268,33 @@ export default function SettingsScreen() {
               <SettingsRow icon="watch" iconColor={colors.cyan} label="Garmin Epix Pro"
                 rightElement={
                   <XStack alignItems="center" gap={4}>
-                    <View width={6} height={6} borderRadius={3} backgroundColor={isStale ? colors.orange : colors.success} />
-                    <B color={colors.textTertiary} fontSize={11}>{isStale ? 'Stale' : 'Connected'}</B>
+                    <View width={6} height={6} borderRadius={3} backgroundColor={garmin ? (isStale ? colors.orange : colors.success) : colors.textTertiary} />
+                    <B color={isStale ? colors.orange : colors.textTertiary} fontSize={11}>
+                      {garmin ? (isStale ? `Stale · ${freshLabel}` : `Synced ${freshLabel}`) : 'No data'}
+                    </B>
                   </XStack>
                 } />
-              <SettingsRow icon="sync" iconColor={colors.textSecondary}
-                label={`Last data: ${garmin.date}`}
-                subtitle={`${ageHrs}h ago · Auto-syncs every 6h from Mac`} />
+              {garmin && (
+                <>
+                  <SettingsRow icon="pulse" iconColor={colors.cyan} label="Active Signals"
+                    subtitle={[
+                      garmin.restingHr != null ? 'RHR' : null,
+                      garmin.hrvLastNightAvg != null ? 'HRV' : null,
+                      garmin.sleepScore != null ? 'Sleep' : null,
+                      garmin.bodyBatteryMorning != null ? 'Body Battery' : null,
+                      garmin.trainingReadiness != null ? 'Readiness' : null,
+                    ].filter(Boolean).join(' · ') || 'None'} />
+                  <SettingsRow icon="sync" iconColor={isStale ? colors.orange : colors.cyan}
+                    label={isStale ? 'Data may be outdated' : `Last data: ${garmin.date}`}
+                    subtitle={`Syncs every 15 min via cloud`}
+                    rightElement={<SmallButton label="Sync Now" onPress={handleSyncHealth} />} loading={isHealthSyncing} />
+                </>
+              )}
+              {!garmin && (
+                <SettingsRow icon="sync" iconColor={colors.cyan} label="Sync Health Data"
+                  subtitle="Fetches from Garmin via Supabase"
+                  rightElement={<SmallButton label="Sync Now" onPress={handleSyncHealth} />} loading={isHealthSyncing} />
+              )}
             </YStack>
           </>
         );

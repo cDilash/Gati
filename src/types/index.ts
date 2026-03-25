@@ -30,10 +30,10 @@ export interface UserProfile {
   scheduling_notes: string | null;
   available_days: number[];       // parsed from JSON
   long_run_day: number;
-  weight_source: 'manual' | 'healthkit' | 'strava' | null;
+  weight_source: 'manual' | 'garmin' | 'strava' | null;
   weight_updated_at: string | null;
   vdot_updated_at: string | null;
-  vdot_source: 'manual' | 'strava_race' | 'strava_best_effort' | 'ai_adaptation' | null;
+  vdot_source: 'manual' | 'strava_race' | 'strava_best_effort' | 'ai_adaptation' | 'garmin_personal_record' | 'garmin_race_prediction' | 'garmin_vo2max' | null;
   vdot_confidence: 'high' | 'moderate' | 'low' | null;
   avatar_base64: string | null;
   updated_at: string;
@@ -530,7 +530,7 @@ export interface RecoverySignal {
   status: 'good' | 'fair' | 'poor';
   score: number;
   detail: string;
-  source?: 'healthkit' | 'garmin';
+  source?: 'garmin';
 }
 
 export interface RecoveryStatus {
@@ -716,6 +716,13 @@ export interface GarminHealthData {
   lactateThresholdSpeed: number | null;   // LT speed (m/s)
   vo2maxFitnessAge: number | null;        // fitness age from VO2max
   floorsClimbed: number | null;           // daily floors
+  sleepDurationSec: number | null;       // actual sleep time in seconds
+  sleepDeepSec: number | null;           // deep sleep seconds
+  sleepLightSec: number | null;          // light sleep seconds
+  sleepRemSec: number | null;            // REM sleep seconds
+  sleepAwakeSec: number | null;          // awake time seconds
+  sleepStart: string | null;             // bed start time (local ISO)
+  sleepEnd: string | null;               // wake time (local ISO)
   fetchedAt: string;
 }
 

@@ -7,7 +7,7 @@
 
 import { getRecentMetrics, getUserProfile, getDatabase } from '../db/database';
 import { getToday } from '../utils/dateUtils';
-import { calculateVDOTFrom5K, calculateVDOTFrom10K, calculateVDOTFromHalf } from '../engine/vdot';
+import { calculateVDOTFrom5K, calculateVDOTFrom10K, calculateVDOTFromHalf, vdotFromGarmin } from '../engine/vdot';
 
 export interface ProfileUpdateResult {
   weeklyMileageChanged: boolean;
@@ -91,8 +91,67 @@ export function updateProfileFromStrava(): ProfileUpdateResult {
     }
   }
 
-  // ── 3. Check for VDOT changes from best efforts + races ──
+  // ── 3. Check for VDOT changes — Priority: Garmin PRs > Garmin VO2max > Strava ──
+
+  // Priority 1: Garmin personal records (cached in app_settings from last Edge Function sync)
   try {
+    const prJson = db.getFirstSync<any>(
+      "SELECT value FROM app_settings WHERE key = 'garmin_personal_records'"
+    );
+    if (prJson?.value) {
+      const prs = JSON.parse(prJson.value);
+      let bestPrVdot = 0;
+      let bestPrLabel = '';
+      for (const pr of prs) {
+        let v = 0;
+        if (pr.distance_label === '5K' && pr.time_seconds > 0) {
+          v = calculateVDOTFrom5K(pr.time_seconds);
+        } else if (pr.distance_label === '10K' && pr.time_seconds > 0) {
+          v = calculateVDOTFrom10K(pr.time_seconds);
+        } else if (pr.distance_label === 'Half Marathon' && pr.time_seconds > 0) {
+          v = calculateVDOTFromHalf(pr.time_seconds);
+        } else if (pr.distance_label === 'Marathon' && pr.time_seconds > 0) {
+          v = require('../engine/vdot').calculateVDOTFromMarathon(pr.time_seconds);
+        }
+        if (v > bestPrVdot) {
+          bestPrVdot = v;
+          bestPrLabel = pr.distance_label;
+        }
+      }
+      if (bestPrVdot > 0 && Math.abs(bestPrVdot - profile.vdot_score) >= 1) {
+        result.vdotChanged = true;
+        result.newVDOT = bestPrVdot;
+        changes.push(`VDOT: ${profile.vdot_score} → ${bestPrVdot} (Garmin PR: ${bestPrLabel})`);
+        (result as any)._vdotSource = 'garmin_personal_record';
+        (result as any)._vdotConfidence = 'high';
+        console.log(`[ProfileUpdater] VDOT from Garmin PR: ${bestPrVdot} (${bestPrLabel})`);
+      }
+    }
+  } catch (e) {
+    console.log('[ProfileUpdater] Garmin PR check failed:', e);
+  }
+
+  // Priority 2: Garmin health data (race predictions or VO2max estimate)
+  if (!result.vdotChanged) try {
+    const { useAppStore } = require('../store');
+    const garminHealth = useAppStore.getState().garminHealth;
+    if (garminHealth) {
+      const garminVdot = vdotFromGarmin(garminHealth);
+      if (garminVdot && garminVdot.vdot > 0 && Math.abs(garminVdot.vdot - profile.vdot_score) >= 1) {
+        result.vdotChanged = true;
+        result.newVDOT = garminVdot.vdot;
+        const source = garminVdot.source === 'garmin_race_prediction' ? 'garmin_race_prediction' : 'garmin_vo2max';
+        const confidence = garminVdot.source === 'garmin_race_prediction' ? 'high' : 'low';
+        changes.push(`VDOT: ${profile.vdot_score} → ${garminVdot.vdot} (${source})`);
+        (result as any)._vdotSource = source;
+        (result as any)._vdotConfidence = confidence;
+        console.log(`[ProfileUpdater] VDOT from Garmin: ${garminVdot.vdot} (${garminVdot.source})`);
+      }
+    }
+  } catch {}
+
+  // Priority 2: Strava best efforts (only if Garmin didn't provide a VDOT)
+  if (!result.vdotChanged) try {
     const detailRows = db.getAllSync<any>(
       `SELECT d.best_efforts_json, d.strava_workout_type, p.date
        FROM strava_activity_detail d
