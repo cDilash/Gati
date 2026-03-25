@@ -965,11 +965,52 @@ export function sweepPastWorkouts(): { skipped: number; lateMatched: number } {
   let lateMatched = 0;
 
   // Never sweep today's workouts — only yesterday and older
-  // This prevents auto-skipping a workout the user hasn't had a chance to do yet
   const { getToday, addDays } = require('../utils/dateUtils');
   const cutoffDate = addDays(getToday(), -1); // yesterday
 
-  // Find all past workouts still marked 'upcoming' (at least 12 hours old)
+  // Helper: find an unmatched metric for a workout date (±1 day for timezone tolerance)
+  function findMetricForDate(scheduledDate: string): any {
+    // Exact date match first
+    const exact = database.getFirstSync<any>(
+      `SELECT id FROM performance_metric WHERE date = ? AND workout_id IS NULL`,
+      [scheduledDate]
+    );
+    if (exact) return exact;
+
+    // ±1 day tolerance (Strava UTC vs local date mismatch)
+    const { addDays: ad } = require('../utils/dateUtils');
+    const dayBefore = ad(scheduledDate, -1);
+    const dayAfter = ad(scheduledDate, 1);
+    return database.getFirstSync<any>(
+      `SELECT id FROM performance_metric WHERE date IN (?, ?) AND workout_id IS NULL`,
+      [dayBefore, dayAfter]
+    );
+  }
+
+  // Step 1: Re-check SKIPPED workouts — Strava may have synced late
+  const pastSkipped = database.getAllSync<any>(
+    `SELECT w.id, w.scheduled_date, w.workout_type
+     FROM workout w
+     JOIN training_plan tp ON w.plan_id = tp.id
+     WHERE tp.status = 'active'
+     AND w.status = 'skipped'
+     AND w.scheduled_date <= ?
+     AND w.workout_type != 'rest'`,
+    [cutoffDate]
+  );
+
+  for (const workout of pastSkipped) {
+    const metric = findMetricForDate(workout.scheduled_date);
+    if (metric) {
+      // Un-skip! Strava synced after the sweep — link and mark completed
+      database.runSync('UPDATE performance_metric SET workout_id = ? WHERE id = ?', [workout.id, metric.id]);
+      database.runSync("UPDATE workout SET status = 'completed' WHERE id = ?", [workout.id]);
+      lateMatched++;
+      console.log(`[Sweep] Un-skipped workout ${workout.scheduled_date} (${workout.workout_type}) — late match found`);
+    }
+  }
+
+  // Step 2: Sweep upcoming workouts that are past due
   const pastUpcoming = database.getAllSync<any>(
     `SELECT w.id, w.scheduled_date, w.workout_type
      FROM workout w
@@ -982,12 +1023,7 @@ export function sweepPastWorkouts(): { skipped: number; lateMatched: number } {
   );
 
   for (const workout of pastUpcoming) {
-    // Check if a metric exists for that date (maybe Strava synced late)
-    const metric = database.getFirstSync<any>(
-      `SELECT id FROM performance_metric WHERE date = ? AND workout_id IS NULL`,
-      [workout.scheduled_date]
-    );
-
+    const metric = findMetricForDate(workout.scheduled_date);
     if (metric) {
       // Late match — link the metric and mark completed
       database.runSync('UPDATE performance_metric SET workout_id = ? WHERE id = ?', [workout.id, metric.id]);
@@ -1000,7 +1036,7 @@ export function sweepPastWorkouts(): { skipped: number; lateMatched: number } {
     }
   }
 
-  // Also auto-skip rest days that are past (keep plan view clean)
+  // Also auto-complete rest days that are past (keep plan view clean)
   database.runSync(
     `UPDATE workout SET status = 'completed'
      WHERE status = 'upcoming' AND workout_type = 'rest' AND scheduled_date <= ?

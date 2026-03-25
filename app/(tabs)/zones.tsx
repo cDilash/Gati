@@ -174,6 +174,31 @@ function RecoveryHero({ recovery, snapshot, recommendation, scheduledWorkout }: 
           {recommendation}{scheduledWorkout ? ` · ${scheduledWorkout}` : ''}
         </B>
       )}
+
+      {/* VDOT + VO2max pills */}
+      {(() => {
+        const profile = useAppStore.getState().userProfile;
+        const garmin = useAppStore.getState().garminHealth;
+        const vdotVal = profile?.vdot_score;
+        const vo2Val = garmin?.vo2max ?? snapshot?.vo2max?.value;
+        if (!vdotVal && !vo2Val) return null;
+        return (
+          <XStack gap={8} marginTop={10} width="100%">
+            {vdotVal != null && (
+              <XStack flex={1} backgroundColor={colors.surfaceHover} borderRadius={8} paddingVertical={6} paddingHorizontal={10} alignItems="center" justifyContent="center" gap={6}>
+                <H color={colors.textTertiary} fontSize={9} letterSpacing={1}>VDOT</H>
+                <M color={colors.cyan} fontSize={16} fontWeight="800">{vdotVal.toFixed(1)}</M>
+              </XStack>
+            )}
+            {vo2Val != null && (
+              <XStack flex={1} backgroundColor={colors.surfaceHover} borderRadius={8} paddingVertical={6} paddingHorizontal={10} alignItems="center" justifyContent="center" gap={6}>
+                <H color={colors.textTertiary} fontSize={9} letterSpacing={1}>VO2</H>
+                <M color={colors.orange} fontSize={16} fontWeight="800">{vo2Val}</M>
+              </XStack>
+            )}
+          </XStack>
+        );
+      })()}
     </YStack>
   );
 }
@@ -185,6 +210,9 @@ function useGraphScrubber(pointXs: number[]) {
   const activeRef = useRef<number | null>(null);
   const pointsRef = useRef<number[]>(pointXs);
   const dismissTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const startXRef = useRef(0);
+  const startYRef = useRef(0);
+  const isScrubbingRef = useRef(false);
 
   // Keep ref in sync with latest point positions
   pointsRef.current = pointXs;
@@ -192,10 +220,16 @@ function useGraphScrubber(pointXs: number[]) {
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => pointsRef.current.length > 0,
-      onMoveShouldSetPanResponder: () => true,
-      onPanResponderTerminationRequest: () => false,
+      onMoveShouldSetPanResponder: (_e, gestureState) => {
+        // Only capture if horizontal drag > vertical (user is scrubbing, not scrolling)
+        return Math.abs(gestureState.dx) > Math.abs(gestureState.dy) && Math.abs(gestureState.dx) > 5;
+      },
+      onPanResponderTerminationRequest: () => !isScrubbingRef.current,
       onPanResponderGrant: (e) => {
         if (dismissTimer.current) clearTimeout(dismissTimer.current);
+        startXRef.current = e.nativeEvent.locationX;
+        startYRef.current = e.nativeEvent.locationY;
+        isScrubbingRef.current = true;
         const idx = findNearestIdx(e.nativeEvent.locationX, pointsRef.current);
         activeRef.current = idx;
         setActiveIdx(idx);
@@ -208,6 +242,7 @@ function useGraphScrubber(pointXs: number[]) {
         }
       },
       onPanResponderRelease: () => {
+        isScrubbingRef.current = false;
         dismissTimer.current = setTimeout(() => {
           activeRef.current = null;
           setActiveIdx(null);
@@ -272,15 +307,17 @@ function RestingHRCard({ signal, trendData, garminRhr }: {
   const graphH = 130;
   const padT = 10;
   const padB = 4;
+  const padL = 12; // left padding so first point is touchable
+  const padR = 12; // right padding so last point is touchable
   const chartH = graphH - padT - padB;
-  const chartW = width;
+  const chartW = Math.max(0, width - padL - padR);
 
   const yMin = Math.min(...values, baseline) - 3;
   const yMax = Math.max(...values, baseline + 5) + 3;
   const yRange = yMax - yMin || 1;
 
   const toY = (v: number) => padT + chartH - ((v - yMin) / yRange) * chartH;
-  const toX = (i: number) => data.length > 1 ? (i / (data.length - 1)) * chartW : chartW / 2;
+  const toX = (i: number) => padL + (data.length > 1 ? (i / (data.length - 1)) * chartW : chartW / 2);
 
   const points = data.map((d, i) => ({ x: toX(i), y: toY(d.value) }));
   const baselineY = toY(baseline);
@@ -538,8 +575,10 @@ function SleepCard({ signal, sleepTrend, garmin }: {
   const sGraphH = 120;
   const sPadT = 28; // room for tooltip
   const sPadB = 4;
+  const sPadL = 12;
+  const sPadR = 12;
   const sChartH = sGraphH - sPadT - sPadB;
-  const sChartW = sleepGraphW;
+  const sChartW = Math.max(0, sleepGraphW - sPadL - sPadR);
 
   const sleepHours = recentNights.map(n => n.totalMinutes / 60);
   const sYMin = Math.min(...sleepHours, 5) - 0.5;
@@ -548,7 +587,7 @@ function SleepCard({ signal, sleepTrend, garmin }: {
   const goodThreshold = 7;
 
   const sToY = (v: number) => sPadT + sChartH - ((v - sYMin) / sYRange) * sChartH;
-  const sToX = (i: number) => recentNights.length > 1 ? (i / (recentNights.length - 1)) * sChartW : sChartW / 2;
+  const sToX = (i: number) => sPadL + (recentNights.length > 1 ? (i / (recentNights.length - 1)) * sChartW : sChartW / 2);
 
   const sleepPoints = sleepHours.map((h, i) => ({ x: sToX(i), y: sToY(h) }));
   const goodLineY = sToY(goodThreshold);
@@ -735,8 +774,11 @@ function SleepCard({ signal, sleepTrend, garmin }: {
         const barChartH = barGraphH - barPadT - barPadB;
         const maxHrs = Math.max(...sleepHours, 8) + 0.5;
         const barGap = 12;
-        const barW = sleepGraphW > 0 ? (sleepGraphW - (recentNights.length - 1) * barGap) / recentNights.length : 28;
-        const barStartX = 0;
+        const barPadL = 12;
+        const barPadR = 12;
+        const usableW = Math.max(0, sleepGraphW - barPadL - barPadR);
+        const barW = usableW > 0 ? (usableW - (recentNights.length - 1) * barGap) / recentNights.length : 28;
+        const barStartX = barPadL;
 
         // Build bar x positions for scrubber
         const barCenters = recentNights.map((_, i) => barStartX + i * (barW + barGap) + barW / 2);
@@ -1657,71 +1699,7 @@ export default function RecoveryScreen() {
         </CollapsibleSection>
       )}
 
-      {/* SECTION 6: Fitness Profile (collapsible) */}
-      <CollapsibleSection title="Fitness Profile">
-        <YStack backgroundColor="$surface" borderRadius="$6" overflow="hidden">
-          <XStack justifyContent="center" alignItems="center" paddingVertical="$4" borderBottomWidth={0.5} borderBottomColor="$border" gap="$8">
-            <YStack alignItems="center">
-              <H color="$textSecondary" fontSize={12} textTransform="uppercase" letterSpacing={1}>VDOT</H>
-              <GradientText text={vdot.toFixed(1)} style={{ fontSize: 42, fontWeight: '800', lineHeight: 48 }} />
-            </YStack>
-            {healthSnapshot?.vo2max && (
-              <YStack alignItems="center">
-                <H color="$textSecondary" fontSize={12} textTransform="uppercase" letterSpacing={1}>VO2max</H>
-                <GradientText text={String(healthSnapshot.vo2max.value)} style={{ fontSize: 42, fontWeight: '800', lineHeight: 48 }} />
-                <B color="$textTertiary" fontSize={10}>{healthSnapshot.vo2max.date}</B>
-              </YStack>
-            )}
-          </XStack>
-          {[
-            { label: '5K', time: formatTime(predict5KTime(vdot)) },
-            { label: '10K', time: formatTime(predict10KTime(vdot)) },
-            { label: 'Half Marathon', time: formatTime(predictHalfMarathonTime(vdot)) },
-            { label: 'Marathon', time: formatTime(predictMarathonTime(vdot)) },
-          ].map(p => (
-            <XStack key={p.label} justifyContent="space-between" alignItems="center" paddingVertical="$3" paddingHorizontal="$3" borderBottomWidth={0.5} borderBottomColor="$border">
-              <B color="$color" fontSize={15} fontWeight="600">{p.label}</B>
-              <M color={colors.cyan} fontSize={17} fontWeight="800">{p.time}</M>
-            </XStack>
-          ))}
-
-          {/* Race predictor trend — show improvement since plan generation */}
-          {(() => {
-            const activePlan = useAppStore.getState().activePlan;
-            if (!activePlan) return null;
-            const startVdot = activePlan.vdot_at_generation;
-            const currentVdot = vdot;
-            const diff = currentVdot - startVdot;
-            const startMarathon = predictMarathonTime(startVdot);
-            const currentMarathon = predictMarathonTime(currentVdot);
-            const timeDiff = startMarathon - currentMarathon; // positive = faster
-
-            if (Math.abs(diff) < 0.3) return null; // No meaningful change
-
-            return (
-              <YStack paddingHorizontal="$3" paddingVertical="$3" borderTopWidth={0.5} borderTopColor="$border">
-                <H color="$textSecondary" fontSize={11} letterSpacing={1} textTransform="uppercase" marginBottom="$2">Training Progress</H>
-                <XStack justifyContent="space-between" alignItems="center">
-                  <YStack>
-                    <B color="$textSecondary" fontSize={12}>VDOT at plan start</B>
-                    <M color="$textTertiary" fontSize={14} fontWeight="600">{startVdot.toFixed(1)}</M>
-                  </YStack>
-                  <MaterialCommunityIcons name={diff > 0 ? 'arrow-right' : 'arrow-left'} size={16} color={diff > 0 ? colors.cyan : colors.orange} />
-                  <YStack alignItems="flex-end">
-                    <B color="$textSecondary" fontSize={12}>Current</B>
-                    <M color={diff > 0 ? colors.cyan : colors.orange} fontSize={14} fontWeight="700">{currentVdot.toFixed(1)}</M>
-                  </YStack>
-                </XStack>
-                <B color={diff > 0 ? colors.cyan : colors.orange} fontSize={12} marginTop="$2">
-                  {diff > 0
-                    ? `Marathon prediction improved by ${formatTime(Math.abs(timeDiff))} since training started`
-                    : `Marathon prediction ${formatTime(Math.abs(timeDiff))} slower than plan start — may need VDOT reassessment`}
-                </B>
-              </YStack>
-            );
-          })()}
-        </YStack>
-      </CollapsibleSection>
+      {/* Fitness Profile removed — VDOT + VO2max shown in RecoveryHero, race predictions in dedicated card */}
 
       {/* SECTION 7: Personal Records — Trophy Case */}
       {(() => {
@@ -1756,9 +1734,7 @@ export default function RecoveryScreen() {
                     <B color={colors.textTertiary} fontSize={10} marginTop={1}>Your fastest times</B>
                   </YStack>
                 </XStack>
-                <View backgroundColor={colors.surface} paddingHorizontal={10} paddingVertical={4} borderRadius={10} borderWidth={1} borderColor={colors.border}>
-                  <M color={colors.cyan} fontSize={13} fontWeight="800">{prCount}<M color={colors.textTertiary} fontSize={10}>/{displayPRs.length}</M></M>
-                </View>
+                <View />
               </XStack>
             </ExpoGrad>
 

@@ -324,7 +324,7 @@ function matchToScheduledWorkout(
   // Find workouts on the same date that aren't rest days and aren't already completed
   const sameDayAll = scheduledWorkouts.filter(w => w.scheduled_date === activityDate);
   const sameDayWorkouts = sameDayAll.filter(
-    w => w.workout_type !== 'rest' && (w.status === 'upcoming' || w.status === 'modified')
+    w => w.workout_type !== 'rest' && (w.status === 'upcoming' || w.status === 'modified' || w.status === 'skipped')
   );
 
   console.log(`[Strava Sync]   Match: date=${activityDate}, ${sameDayAll.length} workouts on this date, ${sameDayWorkouts.length} eligible (upcoming, non-rest)`);

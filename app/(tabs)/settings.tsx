@@ -286,7 +286,7 @@ export default function SettingsScreen() {
                     ].filter(Boolean).join(' · ') || 'None'} />
                   <SettingsRow icon="sync" iconColor={isStale ? colors.orange : colors.cyan}
                     label={isStale ? 'Data may be outdated' : `Last data: ${garmin.date}`}
-                    subtitle={`Syncs every 15 min via cloud`}
+                    subtitle={`Syncs every 5 min via cloud`}
                     rightElement={<SmallButton label="Sync Now" onPress={handleSyncHealth} />} loading={isHealthSyncing} />
                 </>
               )}

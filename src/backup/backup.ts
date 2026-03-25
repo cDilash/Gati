@@ -105,6 +105,26 @@ export async function uploadBackup(
 
   const backup = data ?? serializeDatabase();
 
+  // Safety check: don't overwrite a richer backup with a smaller one
+  // (prevents simulator or fresh install from clobbering real data)
+  if (!Device.isDevice) {
+    try {
+      const { data: existing } = await supabase
+        .from('backups')
+        .select('backup_data')
+        .eq('user_id', userId)
+        .single();
+      if (existing?.backup_data) {
+        const existingMetrics = Array.isArray(existing.backup_data.performanceMetrics) ? existing.backup_data.performanceMetrics.length : 0;
+        const newMetrics = Array.isArray(backup.performanceMetrics) ? backup.performanceMetrics.length : 0;
+        if (existingMetrics > newMetrics + 2) {
+          console.warn(`[Backup] BLOCKED: existing backup has ${existingMetrics} metrics, new has ${newMetrics}. Refusing to overwrite from ${backup.deviceName}.`);
+          return { success: false, error: `Existing backup has more data (${existingMetrics} vs ${newMetrics} metrics). Backup from your phone instead.` };
+        }
+      }
+    } catch {}
+  }
+
   const { error } = await supabase.from('backups').upsert(
     {
       user_id: userId,
@@ -127,9 +147,15 @@ export async function uploadBackup(
 
 /**
  * Silent auto-backup — fire-and-forget, never throws.
+ * NEVER auto-backs up from simulator to prevent overwriting real phone data.
  */
 export async function autoBackup(): Promise<void> {
   try {
+    // Block simulator from auto-backing up — it would overwrite real phone data
+    if (!Device.isDevice) {
+      console.log('[Backup] Skipping auto-backup — running on simulator');
+      return;
+    }
     const userId = await getCurrentUserId();
     if (!userId) return; // Not logged in, skip silently
     await uploadBackup();

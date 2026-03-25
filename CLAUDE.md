@@ -17,7 +17,7 @@ A personal-use React Native marathon training app. AI-first architecture — Gem
 - **Maps**: react-native-maps (route display)
 - **SVG**: react-native-svg (polyline thumbnails, interactive line graphs)
 - **Gradients**: expo-linear-gradient + @react-native-masked-view/masked-view (gradient text)
-- **Health Data**: Garmin Connect → Supabase Edge Function (every 15 min) → `garmin_health` table → app reads via Supabase client
+- **Health Data**: Garmin Connect → Supabase Edge Function (every 5 min) → `garmin_health` table → app reads via Supabase client
 - **UUID**: `expo-crypto` randomUUID() — NEVER use the `uuid` npm package
 
 ## Typography System
@@ -158,7 +158,7 @@ Strava:        #FC4C02           (Strava brand — keep their color)
 └─────────────────────────────────────────────────┘
 
 Garmin Health Data Flow:
-  Garmin Watch → Garmin Connect → Supabase Edge Function (every 15 min)
+  Garmin Watch → Garmin Connect → Supabase Edge Function (every 5 min)
     → garmin_health table → App reads via Supabase client
   Token refresh: OAuth1 exchange in Edge Function (auto, ~1 year lifespan)
   Monitoring: garmin_sync_log table (success/failure, field count, duration)
@@ -303,7 +303,7 @@ Key tables: `user_profile` (single row), `training_plan` (plan_json JSONB), `wor
 - `garmin_activity_data` — per-activity metrics (training effect, stamina, running dynamics, power)
 - `garmin_auth` — OAuth1 + OAuth2 tokens for Garmin Connect API (read/refreshed by Edge Function)
 - `garmin_sync_log` — sync monitoring (success/failure, field count, duration)
-- Edge Function `garmin-sync` runs every 15 minutes via pg_cron, fetches from Garmin Connect API
+- Edge Function `garmin-sync` runs every 5 minutes via pg_cron, fetches from Garmin Connect API
 
 ### Strava API (Run data source)
 Fetches: activities, detail (splits, laps, best efforts, segments), streams (HR, pace, elevation, cadence, time, distance), athlete profile, gear detail. All stored in `performance_metric` + `strava_activity_detail`.
@@ -362,7 +362,7 @@ Fetches: activities, detail (splits, laps, best efforts, segments), streams (HR,
 
 1. **AI generates, math validates** — Gemini creates plans, safety validator clamps numbers
 2. **Local-first** — SQLite is primary, Supabase is backup only, app works offline
-3. **Garmin = health data** — All recovery/health data from Garmin via Supabase Edge Function (every 15 min). No HealthKit.
+3. **Garmin = health data** — All recovery/health data from Garmin via Supabase Edge Function (every 5 min). No HealthKit.
 4. **Fail gracefully everywhere** — if Gemini is down, show fallback. If Strava/Garmin unavailable, works without.
 5. **Cache AI content aggressively** — same inputs = don't call Gemini again
 6. **expo-crypto for UUIDs** — NEVER `uuid` package

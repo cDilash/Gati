@@ -150,8 +150,10 @@ export function updateProfileFromStrava(): ProfileUpdateResult {
     }
   } catch {}
 
-  // Priority 2: Strava best efforts (only if Garmin didn't provide a VDOT)
-  if (!result.vdotChanged) try {
+  // Priority 3: Strava best efforts (only if Garmin didn't provide AND current source isn't Garmin)
+  const garminSources = ['garmin_personal_record', 'garmin_race_prediction', 'garmin_vo2max'];
+  const currentSourceIsGarmin = garminSources.includes(profile.vdot_source ?? '');
+  if (!result.vdotChanged && !currentSourceIsGarmin) try {
     const detailRows = db.getAllSync<any>(
       `SELECT d.best_efforts_json, d.strava_workout_type, p.date
        FROM strava_activity_detail d

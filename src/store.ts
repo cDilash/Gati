@@ -868,7 +868,11 @@ export const useAppStore = create<AppState>((set, get) => ({
             const updated = getUserProfile();
             if (updated) {
               const newZones = calculatePaceZones(updated.vdot_score);
-              const src = updated.vdot_source === 'strava_race' ? 'race' : 'Strava best effort';
+              const src = updated.vdot_source === 'garmin_personal_record' ? 'Garmin personal record'
+                : updated.vdot_source === 'garmin_race_prediction' ? 'Garmin race prediction'
+                : updated.vdot_source === 'garmin_vo2max' ? 'Garmin VO2max'
+                : updated.vdot_source === 'strava_race' ? 'race'
+                : 'Strava best effort';
               set({
                 userProfile: updated,
                 paceZones: newZones,
@@ -1205,6 +1209,27 @@ export const useAppStore = create<AppState>((set, get) => ({
     get().fetchBriefing();
 
     // Note: recovery is now calculated inside syncHealth() with Garmin data (single step)
+
+    // Re-check VDOT from Garmin PRs (PRs cached to SQLite during syncHealth, profileUpdater may have missed them)
+    try {
+      const { updateProfileFromStrava } = require('./strava/profileUpdater');
+      const recheck = updateProfileFromStrava();
+      if (recheck.vdotChanged) {
+        const updated = getUserProfile();
+        if (updated) {
+          const newZones = calculatePaceZones(updated.vdot_score);
+          const src = updated.vdot_source === 'garmin_personal_record' ? 'Garmin personal record'
+            : updated.vdot_source === 'garmin_vo2max' ? 'Garmin VO2max'
+            : updated.vdot_source === 'strava_race' ? 'race' : 'best effort';
+          set({
+            userProfile: updated,
+            paceZones: newZones,
+            vdotNotification: { oldVDOT: recheck.oldVDOT, newVDOT: recheck.newVDOT, source: src },
+          });
+          console.log(`[SyncAll] VDOT updated from Garmin PRs: ${recheck.oldVDOT} → ${recheck.newVDOT}`);
+        }
+      }
+    } catch {}
 
     // Step 4: Proactive rest day coaching check
     try {

@@ -350,16 +350,22 @@ export default function CoachScreen() {
   // Auto-scroll: only when user is near the bottom (don't yank during history browsing)
   const isNearBottom = useRef(true);
   const didInitialScroll = useRef(false);
+  const scrollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const scrollToBottom = useCallback((animated = true) => {
-    setTimeout(() => flatListRef.current?.scrollToEnd({ animated }), 250);
+    // Debounce: cancel any pending scroll, schedule one 150ms from now
+    if (scrollTimer.current) clearTimeout(scrollTimer.current);
+    scrollTimer.current = setTimeout(() => {
+      flatListRef.current?.scrollToEnd({ animated });
+      scrollTimer.current = null;
+    }, 150);
   }, []);
 
-  // Initial mount: snap to bottom
+  // Initial mount: snap to bottom (once)
   useEffect(() => {
     if (coachMessages.length > 0 && !didInitialScroll.current) {
       didInitialScroll.current = true;
-      scrollToBottom(false);
+      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 100);
     }
   }, [coachMessages.length]);
 
@@ -459,7 +465,8 @@ export default function CoachScreen() {
           }}
           scrollEventThrottle={100}
           onContentSizeChange={() => {
-            if (isNearBottom.current) scrollToBottom(true);
+            // Only auto-scroll on content size change if we just sent/received a message
+            // (not on every re-render or text wrap change)
           }}
         />
       )}
