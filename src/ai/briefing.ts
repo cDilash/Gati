@@ -60,21 +60,64 @@ export async function generateBriefing(
     const dist = workout.target_distance_miles ?? 0;
     const isLongRun = workout.workout_type === 'long' || workout.workout_type === 'long_run' || dist >= 10;
 
-    // Build fueling plan for long runs
-    let fuelingSection = '';
-    if (isLongRun && dist >= 10) {
+    // Build nutrition guidance based on workout type, distance, and context
+    const estMinutes = dist > 0 && profile.vdot_score > 0
+      ? Math.round((dist / (profile.vdot_score * 0.15)) * 60) // rough estimate
+      : Math.round(dist * 10); // fallback ~10 min/mile
+    const isQuality = ['threshold', 'tempo', 'interval', 'marathon_pace'].includes(workout.workout_type);
+    const phase = currentWeek?.phase ?? '';
+    const isRaceWeek = (phase as string) === 'race_week' || (daysUntilRace >= 0 && daysUntilRace <= 7);
+    const isTaper = phase === 'taper' as string;
+    const weightKg = profile.weight_kg ?? 70;
+
+    let nutritionSection = '';
+    if (isRaceWeek) {
+      nutritionSection = `
+NUTRITION (RACE WEEK):
+- This is race week. Familiar foods only — nothing new.
+- Carb loading: 70% of calories from carbs today (pasta, rice, bread, potatoes).
+- Race morning: proven pre-run meal 3 hours before start. No experiments.
+- During race: follow the fueling plan practiced in long runs (gel every 45 min starting at mile 6).
+Include race-week nutrition in your briefing — this is critical for performance.`;
+    } else if (isLongRun && dist >= 10) {
       const gelMiles: number[] = [];
       for (let m = 5; m < dist; m += 4) gelMiles.push(m);
-      fuelingSection = `
-FUELING PLAN (long run ${dist}mi):
-- Pre-run: light carbs 2 hours before (banana, toast, oatmeal)
-- During: take a gel or chew at mile ${gelMiles.join(' and mile ')}
-- Hydration: drink every 15-20 minutes (4-6 oz per stop)
-- Post-run: protein + carbs within 30 minutes
-Include specific fueling advice in your briefing — runners forget to fuel and bonk.`;
+      nutritionSection = `
+NUTRITION (long run ${dist}mi, est. ${estMinutes} min):
+- PRE-RUN: Carb-rich meal 2-3 hours before (oatmeal, toast + banana, bagel). 16-20 oz water.
+- DURING: This run is over 60 min — bring fuel. Gel or chews at mile ${gelMiles.join(' and mile ')} (30-60g carbs/hour). Water every 15-20 min.
+- POST-RUN: Protein + carbs within 30 min (chocolate milk, protein shake + banana). Full meal within 2 hours.
+- PRACTICE race-day fueling on this long run — don't wait until race day to try gels.
+Include specific fueling guidance in your briefing — 3-4 bullet points.`;
     } else if (isLongRun || dist >= 8) {
-      fuelingSection = `
-FUELING NOTE: ${dist}mi run — bring water. Consider a gel if you tend to fade in the last miles.`;
+      nutritionSection = `
+NUTRITION (${dist}mi run, est. ${estMinutes} min):
+- PRE-RUN: Light carbs 90 min before (banana, toast). Water.
+- DURING: Bring water. Optional gel if you tend to fade in the last miles.
+- POST-RUN: Protein + carbs within 30 min.
+Mention fueling briefly in your briefing — 1-2 bullets.`;
+    } else if (isQuality) {
+      nutritionSection = `
+NUTRITION (quality session — ${workout.workout_type}):
+- Eat a moderate meal 2-3 hours before (carbs + some protein). Don't run on empty for hard efforts.
+- Post-run: protein + carbs within 30 min to support adaptation.
+Mention nutrition briefly — 1 bullet.`;
+    } else if (dist < 5) {
+      nutritionSection = `
+NUTRITION: Short easy run — no special fueling needed. Stay hydrated. Optional light snack if hungry.
+Don't spend time on nutrition for this run — keep the briefing focused on the workout.`;
+    } else {
+      nutritionSection = `
+NUTRITION: Moderate run — stay hydrated. Light snack if it's been >3 hours since a meal.
+Brief mention only — 1 line max.`;
+    }
+
+    // Add hydration emphasis for hot weather
+    if (weatherInfo && weatherInfo.includes('°F')) {
+      const tempMatch = weatherInfo.match(/(\d+)°F/);
+      if (tempMatch && parseInt(tempMatch[1]) > 75) {
+        nutritionSection += `\nHYDRATION WARNING: Hot conditions. Pre-hydrate with 16-20 oz water 2 hours before. Drink every 15 min during run. Consider electrolytes. Target ${Math.round(weightKg * 0.5)}-${Math.round(weightKg * 0.7)} oz/hour in this heat.`;
+      }
     }
 
     const prompt = `You are a running coach giving a quick pre-workout briefing. ${isLongRun ? '3-5 sentences — include fueling and pacing strategy.' : '2-3 sentences max.'} Be specific, reference the workout details and recent performance. Encouraging but practical.
@@ -90,8 +133,8 @@ PACE ZONES: E ${formatPaceRange(paceZones.E)}, M ${formatPaceRange(paceZones.M)}
 ${recoveryInfo || 'Recovery data: not available'}
 
 ${weatherInfo || 'Weather: not available'}
-${fuelingSection}
-If weather data is provided, mention it — adjust pace recommendations for heat, cold, rain, or wind. This is what real coaches do.
+${nutritionSection}
+If weather data is provided, mention it — adjust pace and hydration for heat, cold, rain, or wind. This is what real coaches do.
 
 Respond with ONLY the briefing text. No JSON, no formatting.`;
 
@@ -277,6 +320,7 @@ export async function generateRestDayBriefing(
   profile: UserProfile,
   currentWeek: TrainingWeek | null,
   recoveryInfo?: string | null,
+  tomorrowWorkout?: Workout | null,
 ): Promise<RestDayBriefing | null> {
   if (!isGeminiAvailable()) return null;
 
@@ -328,6 +372,8 @@ Week ${currentWeek?.week_number ?? '?'}, ${currentWeek?.phase ?? '?'} phase.
 Pace zones: E ${formatPaceRange(paceZones.E)}, M ${formatPaceRange(paceZones.M)}
 ${recoveryInfo || 'Recovery data: not available'}
 
+TOMORROW: ${tomorrowWorkout ? `${tomorrowWorkout.title} — ${tomorrowWorkout.workout_type}, ${tomorrowWorkout.target_distance_miles ?? 0}mi` : 'Not yet planned'}
+
 RULES:
 - "whyResting" MUST reference yesterday's specific workout data (distance, type, effort)
 - Tips must be actionable and specific, not generic platitudes
@@ -335,6 +381,8 @@ RULES:
 - If yesterday was threshold/interval, emphasize protein and sleep
 - If recovery data shows low score, acknowledge it
 - If yesterday was skipped or rest, adjust tone (back-to-back rest is fine during cutback weeks)
+- NUTRITION TIP: If tomorrow is a long run (>8mi) or quality session, the Nutrition tip MUST mention prepping tonight — "carb-rich dinner tonight to fuel tomorrow's long run" or "eat well tonight for tomorrow's threshold session"
+- If tomorrow is easy or rest, nutrition tip should focus on general recovery eating
 - Keep each tip to 1-2 sentences MAX
 - Return ONLY valid JSON, no markdown fences`;
 

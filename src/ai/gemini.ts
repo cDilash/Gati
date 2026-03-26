@@ -2,8 +2,8 @@
  * Gemini API client — dual-model routing with retry and fallback.
  *
  * Two models routed by task complexity:
- * - heavy (gemini-3.1-pro-preview): plan generation, adaptation, weekly digest
- * - fast (gemini-3-flash-preview): chat, briefings, analysis
+ * - heavy: weekly plan generation, weekly review
+ * - fast: coach chat, briefings, analysis
  *
  * Retry with exponential backoff on 429/5xx.
  * Heavy model falls back to fast on failure.
@@ -18,9 +18,13 @@ const genAI = new GoogleGenerativeAI(API_KEY);
 
 export type ModelTier = 'heavy' | 'fast';
 
+// DEV MODE: Using 2.5 Flash for all calls to save costs during debugging
+// PRODUCTION: Uncomment for better quality:
+// heavy: 'gemini-3.1-pro-preview',
+// fast: 'gemini-3-flash-preview',
 const MODELS: Record<ModelTier, string> = {
-  heavy: 'gemini-3.1-pro-preview',
-  fast: 'gemini-3-flash-preview',
+  heavy: 'gemini-2.5-flash',
+  fast: 'gemini-2.5-flash',
 };
 
 // Default timeouts per tier (ms)
@@ -54,9 +58,17 @@ export async function sendStructuredMessage(
     systemInstruction,
   });
 
+  // Wrap with our own timeout (SDK v0.24.1 doesn't support timeout option)
+  const withTimeout = <T>(promise: Promise<T>, ms: number): Promise<T> =>
+    Promise.race([
+      promise,
+      new Promise<T>((_, reject) => setTimeout(() => reject(new Error(`Gemini timeout after ${ms}ms`)), ms)),
+    ]);
+
   try {
-    const result = await withRetry(() =>
-      model.generateContent(userMessage, { timeout })
+    const result = await withTimeout(
+      withRetry(() => model.generateContent(userMessage)),
+      timeout
     );
     return result.response.text();
   } catch (error: any) {
@@ -67,8 +79,9 @@ export async function sendStructuredMessage(
         model: MODELS.fast,
         systemInstruction,
       });
-      const result = await withRetry(() =>
-        fallbackModel.generateContent(userMessage, { timeout })
+      const result = await withTimeout(
+        withRetry(() => fallbackModel.generateContent(userMessage)),
+        timeout
       );
       return result.response.text();
     }
@@ -105,9 +118,17 @@ export async function sendChatMessage(
 
   const chat = model.startChat({ history: geminiHistory });
 
+  // Wrap with our own timeout (SDK v0.24.1 doesn't support timeout option)
+  const withTimeout = <T>(promise: Promise<T>, ms: number): Promise<T> =>
+    Promise.race([
+      promise,
+      new Promise<T>((_, reject) => setTimeout(() => reject(new Error(`Gemini timeout after ${ms}ms`)), ms)),
+    ]);
+
   try {
-    const result = await withRetry(() =>
-      chat.sendMessage(userMessage, { timeout })
+    const result = await withTimeout(
+      withRetry(() => chat.sendMessage(userMessage)),
+      timeout
     );
     return result.response.text();
   } catch (error: any) {
@@ -118,8 +139,9 @@ export async function sendChatMessage(
         systemInstruction,
       });
       const fallbackChat = fallbackModel.startChat({ history: geminiHistory });
-      const result = await withRetry(() =>
-        fallbackChat.sendMessage(userMessage, { timeout })
+      const result = await withTimeout(
+        withRetry(() => fallbackChat.sendMessage(userMessage)),
+        timeout
       );
       return result.response.text();
     }

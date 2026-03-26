@@ -399,7 +399,13 @@ async function fetchAllHealthData(
   const displayName = await getDisplayName(tokens);
 
   // Fetch all endpoints in parallel for speed
-  const [hrv, daily, bb, readiness, training, sleep, stress, resp, spo2, vo2, racePreds, endurance, hillScore, lactate] =
+  // BLOCKED endpoints removed (confirmed 404/405 on 2026-03-25):
+  // - Race Predictions: /metrics-service/metrics/racepredictions (all 3 variants)
+  // - Lactate Threshold: /metrics-service/metrics/lactatethreshold (404), /biometric-service (405)
+  // - Fitness Age: /fitnessstats-service/fitnessAge (404)
+  // These are watch-computed via Firstbeat and not exposed through REST API.
+
+  const [hrv, daily, bb, readiness, training, sleep, stress, resp, spo2, vo2, endurance, hillScore, weightData] =
     await Promise.all([
       fetchEndpoint(tokens, "HRV", `/hrv-service/hrv/${dateStr}`),
       fetchEndpoint(tokens, "Daily", `/usersummary-service/usersummary/daily/${displayName}`, { calendarDate: dateStr }),
@@ -411,10 +417,9 @@ async function fetchAllHealthData(
       fetchEndpoint(tokens, "Respiration", `/wellness-service/wellness/daily/respiration/${dateStr}`),
       fetchEndpoint(tokens, "SpO2", `/wellness-service/wellness/daily/spo2/${dateStr}`),
       fetchEndpoint(tokens, "VO2max", `/metrics-service/metrics/maxmet/latest/${dateStr}`),
-      fetchRacePredictions(tokens),
-      fetchEndpoint(tokens, "Endurance", `/metrics-service/metrics/endurancescore/daily/${dateStr}`),
-      fetchEndpoint(tokens, "HillScore", `/metrics-service/metrics/hillscore/daily/${dateStr}`),
-      fetchEndpoint(tokens, "LactateThreshold", `/metrics-service/metrics/lactatethreshold/latest/${dateStr}`),
+      fetchEndpoint(tokens, "Endurance", "/metrics-service/metrics/endurancescore"),
+      fetchEndpoint(tokens, "HillScore", "/metrics-service/metrics/hillscore"),
+      fetchEndpoint(tokens, "Weight", `/weight-service/weight/dateRange`, { startDate: dateStr, endDate: dateStr }),
     ]);
 
   // ─── Parse HRV ───
@@ -545,11 +550,21 @@ async function fetchAllHealthData(
     hillStrength = hillScore[0].strengthScore ?? null;
   }
 
-  // ─── Parse Lactate Threshold ───
-  const lactateThresholdHr = lactate?.lactateThresholdHeartRate ?? lactate?.ltHR ?? null;
-  let lactateThresholdSpeed = lactate?.lactateThresholdSpeed ?? lactate?.ltSpeed ?? null;
-  if (lactateThresholdSpeed != null) {
-    lactateThresholdSpeed = Math.round(lactateThresholdSpeed * 10000) / 10000;
+  // ─── Lactate Threshold — BLOCKED by Garmin API (confirmed 2026-03-25) ───
+  const lactateThresholdHr = null;
+  const lactateThresholdSpeed = null;
+
+  // ─── Parse Weight / Body Composition (Garmin Index Scale) ───
+  let weightKg = null, bodyFatPct = null, muscleMassKg = null, boneMassKg = null, bodyWaterPct = null, bmiVal = null;
+  if (weightData?.dateWeightList && Array.isArray(weightData.dateWeightList) && weightData.dateWeightList.length > 0) {
+    const w = weightData.dateWeightList[0];
+    weightKg = w.weight != null ? Math.round((w.weight / 1000) * 10) / 10 : null; // grams → kg
+    bodyFatPct = w.bodyFat ?? null;
+    muscleMassKg = w.muscleMass != null ? Math.round((w.muscleMass / 1000) * 10) / 10 : null;
+    boneMassKg = w.boneMass != null ? Math.round((w.boneMass / 1000) * 10) / 10 : null;
+    bodyWaterPct = w.bodyWater ?? null;
+    bmiVal = w.bmi != null ? Math.round(w.bmi * 10) / 10 : null;
+    if (weightKg) console.log(`  Weight: ${weightKg}kg, Fat: ${bodyFatPct}%, Muscle: ${muscleMassKg}kg, BMI: ${bmiVal}`);
   }
 
   // ─── SpO2 fallback ───
@@ -562,8 +577,9 @@ async function fetchAllHealthData(
     respiratoryRate = resp.avgSleepRespiration ?? resp.avgWakingRespiration ?? null;
   }
 
-  // ─── Race Predictions (from multi-endpoint fetch above) ───
-  const { predicted5k, predicted10k, predictedHalf, predictedMarathon } = racePreds as RacePredResult;
+  // ─── Race Predictions — BLOCKED by Garmin API (confirmed 2026-03-25) ───
+  // App uses VDOT fallback from Garmin PRs instead
+  const predicted5k = null, predicted10k = null, predictedHalf = null, predictedMarathon = null;
 
   // ─── Build row ───
   const floorsClimbed = d.floorsAscended != null ? Math.round(d.floorsAscended) : null;
@@ -640,6 +656,13 @@ async function fetchAllHealthData(
     // Lactate threshold
     lactate_threshold_hr: lactateThresholdHr,
     lactate_threshold_speed: lactateThresholdSpeed,
+    // Weight / Body Composition
+    weight_kg: weightKg,
+    body_fat_pct: bodyFatPct,
+    muscle_mass_kg: muscleMassKg,
+    bone_mass_kg: boneMassKg,
+    body_water_pct: bodyWaterPct,
+    bmi: bmiVal,
     // Race predictions
     predicted_5k_sec: predicted5k,
     predicted_10k_sec: predicted10k,
@@ -845,15 +868,21 @@ Deno.serve(async (req) => {
     tokenRefreshed = tokens.oauth2_expires_at > now && tokens.oauth2_expires_at - now < 3600;
 
     // Determine dates to fetch
+    // Use user's local date (America/Los_Angeles) — Edge Function runs in UTC
+    function getLocalDate(offsetDays: number = 0): string {
+      const now = new Date();
+      // Convert UTC to PST/PDT by formatting in the target timezone
+      const local = new Date(now.toLocaleString("en-US", { timeZone: "America/Los_Angeles" }));
+      local.setDate(local.getDate() + offsetDays);
+      return `${local.getFullYear()}-${String(local.getMonth() + 1).padStart(2, "0")}-${String(local.getDate()).padStart(2, "0")}`;
+    }
+
     const dates: string[] = [];
     if (specificDate) {
       dates.push(specificDate);
     } else {
-      const today = new Date();
       for (let i = 0; i < daysBack; i++) {
-        const d = new Date(today);
-        d.setDate(d.getDate() - i);
-        dates.push(d.toISOString().split("T")[0]);
+        dates.push(getLocalDate(-i));
       }
     }
 

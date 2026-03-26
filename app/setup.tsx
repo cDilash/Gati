@@ -138,11 +138,39 @@ export default function SetupScreen() {
     if(!calculatedVDOT)return;const gm:Record<GoalType,string>={'Just Finish':'finish','Time Goal':'time_goal','BQ':'bq','PR':'pr'};const cm:Record<CourseProfile,string>={'Flat':'flat','Rolling':'rolling','Hilly':'hilly','Unknown':'unknown'};const lm:Record<ExperienceLevel,string>={'Beginner':'beginner','Intermediate':'intermediate','Advanced':'advanced'};const gn:Record<Gender,string>={'Male':'male','Female':'female'};let ts:number|null=null;if((goalType==='Time Goal'||goalType==='BQ')&&targetFinishTime.trim())ts=parseRaceTime(targetFinishTime.trim());
     const { toMiles } = require('../src/utils/units');
     const wm = Number(weeklyMileage); const lr = Number(longestRun);
-    useAppStore.getState().saveProfile({name:name.trim()||null,age:Number(age),gender:gn[gender] as any,weight_kg:weightKg?Number(weightKg):null,height_cm:heightCm?Number(heightCm):null,vdot_score:calculatedVDOT,max_hr:null,rest_hr:null,current_weekly_miles:toMiles(wm, u.units),longest_recent_run:toMiles(lr, u.units),experience_level:lm[experienceLevel] as any,race_date:raceDate.trim(),race_name:raceName.trim()||null,race_course_profile:cm[courseProfile] as any,race_goal_type:gm[goalType] as any,target_finish_time_sec:ts,injury_history:injuries.filter(i=>i!=='None'),known_weaknesses:weaknesses,scheduling_notes:schedulingNotes.trim()||null,available_days:availableDays,long_run_day:longRunDay,weight_source:'manual',weight_updated_at:new Date().toISOString().split('T')[0],vdot_updated_at:new Date().toISOString().split('T')[0],vdot_source:'manual',vdot_confidence:'moderate',avatar_base64:null});setStep(7);
+    useAppStore.getState().saveProfile({name:name.trim()||null,age:Number(age),gender:gn[gender] as any,weight_kg:weightKg?Number(weightKg):null,height_cm:heightCm?Number(heightCm):null,vdot_score:calculatedVDOT,max_hr:null,rest_hr:null,current_weekly_miles:toMiles(wm, u.units),longest_recent_run:toMiles(lr, u.units),experience_level:lm[experienceLevel] as any,race_date:raceDate.trim(),race_name:raceName.trim()||null,race_course_profile:cm[courseProfile] as any,race_goal_type:gm[goalType] as any,target_finish_time_sec:ts,injury_history:injuries.filter(i=>i!=='None'),known_weaknesses:weaknesses,scheduling_notes:schedulingNotes.trim()||null,available_days:availableDays,long_run_day:longRunDay,weight_source:'manual',weight_updated_at:require('../src/utils/dateUtils').getToday(),vdot_updated_at:require('../src/utils/dateUtils').getToday(),vdot_source:'manual',vdot_confidence:'moderate',avatar_base64:null});setStep(7);
   }, [calculatedVDOT,name,age,gender,weightKg,weeklyMileage,longestRun,experienceLevel,raceDate,raceName,courseProfile,goalType,targetFinishTime,availableDays,longRunDay,injuries,weaknesses,schedulingNotes]);
 
+  // Step 7: Skip old plan generation — weekly planning creates workouts via check-in
   const generatePlanRef = useRef(false);
-  useEffect(() => { if(step!==7||generatePlanRef.current)return;generatePlanRef.current=true;setPlanGenerating(true);setPlanError(null);(async()=>{try{const r=await useAppStore.getState().generatePlan();if(r.success){const p=useAppStore.getState().activePlan;const w=useAppStore.getState().weeks;let cn='',kp:string[]=[],wa:string[]=[],pv=0;if(p){cn=p.coaching_notes||'';try{kp=p.key_principles?JSON.parse(p.key_principles):[];}catch{}try{wa=p.warnings?JSON.parse(p.warnings):[];}catch{}}if(w.length>0)pv=Math.max(...w.map(x=>x.target_volume));if(r.violations)wa=[...wa,r.violations];setPlanSummary({totalWeeks:w.length,peakVolume:Math.round(pv),coachingNotes:cn,keyPrinciples:kp,warnings:wa});setPlanGenerating(false);setStep(8);}else{setPlanError(r.error||'Error');setPlanGenerating(false);}}catch(e:any){setPlanError(e.message||'Failed');setPlanGenerating(false);}})(); }, [step]);
+  useEffect(() => {
+    if (step !== 7 || generatePlanRef.current) return;
+    generatePlanRef.current = true;
+    // Create an empty plan shell so the app has an active plan record
+    try {
+      const { getDatabase } = require('../src/db/database');
+      const Crypto = require('expo-crypto');
+      const { getToday } = require('../src/utils/dateUtils');
+      const db = getDatabase();
+      const planId = Crypto.randomUUID();
+      db.runSync(
+        `INSERT INTO training_plan (id, plan_json, coaching_notes, key_principles, warnings, vdot_at_generation, status)
+         VALUES (?, ?, ?, ?, ?, ?, 'active')`,
+        [planId, JSON.stringify({ weeks: [] }), 'Weekly planning mode — plan your week each Sunday.', '[]', '[]', calculatedVDOT ?? 40]
+      );
+      // Create Week 1 training_week row
+      db.runSync(
+        `INSERT INTO training_week (id, plan_id, week_number, phase, target_volume, is_cutback)
+         VALUES (?, ?, 1, 'base', 0, 0)`,
+        [Crypto.randomUUID(), planId]
+      );
+      useAppStore.getState().refreshState();
+    } catch (e: any) {
+      console.error('[Setup] Failed to create plan shell:', e);
+    }
+    // Go straight to tabs — user will see "Plan My Week" card
+    router.replace('/(tabs)');
+  }, [step]);
 
   const canAdvance = (): boolean => { switch(step){case 3:return age.trim()!==''&&!isNaN(Number(age))&&Number(age)>0&&raceTime.trim()!==''&&calculatedVDOT!==null&&weeklyMileage.trim()!==''&&longestRun.trim()!=='';case 4:return raceDate.trim()!==''&&/^\d{4}-\d{2}-\d{2}$/.test(raceDate.trim());case 5:return availableDays.length>=3&&availableDays.includes(longRunDay);default:return true;} };
   const handleNext = () => { if(step===6){saveProfileAndGenerate();return;} if(step<TOTAL_STEPS)setStep(step+1); };
@@ -572,36 +600,19 @@ export default function SetupScreen() {
     </ScrollView>
   );
 
+  // Step 7: Creates plan shell and redirects to tabs (handled in useEffect above)
   const renderStep7 = () => (
-    <YStack flex={1}>
-      <PlanGenerationLoader isActive={planGenerating} error={planError} />
-      {planError&&(<YStack position="absolute" bottom={60} left={32} right={32} gap="$3">
-        <YStack backgroundColor="$accent" borderRadius="$5" paddingVertical="$3" alignItems="center" pressStyle={{opacity:0.8}} onPress={()=>{generatePlanRef.current=false;setPlanSummary(null);setPlanError(null);setStep(7);}}><B color="white" fontSize={16} fontWeight="700">Try Again</B></YStack>
-        <YStack padding="$3" alignItems="center" pressStyle={{opacity:0.7}} onPress={()=>{setStep(6);generatePlanRef.current=false;}}><B color="$textSecondary" fontSize={15} textDecorationLine="underline">Back to Edit</B></YStack>
-      </YStack>)}
+    <YStack flex={1} justifyContent="center" alignItems="center">
+      <Spinner size="large" color={colors.cyan} />
+      <B color="$textSecondary" fontSize={14} marginTop={16}>Setting up your training...</B>
     </YStack>
   );
 
-  const renderStep8 = () => (
-    <ScrollView flex={1} contentContainerStyle={{paddingHorizontal:24,paddingTop:8,paddingBottom:32}}>
-      <H color="$color" fontSize={32} letterSpacing={1} marginBottom="$4">Your Plan is Ready</H>
-      {planSummary&&(<>
-        <YStack backgroundColor="$surface" borderRadius="$5" padding="$5" marginBottom="$4">
-          <XStack justifyContent="space-between" alignItems="center" paddingVertical="$1"><B color="$textSecondary" fontSize={15}>Total Weeks</B><M color="$color" fontSize={24} fontWeight="700">{planSummary.totalWeeks}</M></XStack>
-          <View height={1} backgroundColor="$border" marginVertical="$3" />
-          <XStack justifyContent="space-between" alignItems="center" paddingVertical="$1"><B color="$textSecondary" fontSize={15}>Peak Volume</B><M color="$color" fontSize={24} fontWeight="700">{u.dist(planSummary.peakVolume, 0)}</M></XStack>
-        </YStack>
-        {planSummary.coachingNotes?<YStack backgroundColor="$surface" borderRadius="$5" padding="$4" marginBottom="$4"><H color="$color" fontSize={16} letterSpacing={1} marginBottom="$2">Coach Notes</H><B color="$textSecondary" fontSize={14} lineHeight={20}>{planSummary.coachingNotes}</B></YStack>:null}
-        {planSummary.keyPrinciples.length>0&&<YStack backgroundColor="$surface" borderRadius="$5" padding="$4" marginBottom="$4"><H color="$color" fontSize={16} letterSpacing={1} marginBottom="$2">Key Principles</H>{planSummary.keyPrinciples.map((p,i)=><B key={i} color="$textSecondary" fontSize={14} lineHeight={22} paddingLeft="$1">{'\u2022'} {p}</B>)}</YStack>}
-        {planSummary.warnings.length>0&&<YStack backgroundColor="$surface" borderRadius="$5" padding="$4" marginBottom="$4" borderWidth={1} borderColor="$warning"><H color="$warning" fontSize={16} letterSpacing={1} marginBottom="$2">Warnings</H>{planSummary.warnings.map((w,i)=><B key={i} color="$warning" fontSize={14} lineHeight={22}>{'\u26A0'} {w}</B>)}</YStack>}
-      </>)}
-      <YStack marginTop={24} gap={10}>
-        <GradientButton label="Start Training" onPress={()=>router.replace('/(tabs)')} />
-        <YStack borderRadius={12} paddingVertical={12} alignItems="center" borderWidth={1} borderColor={colors.border} pressStyle={{opacity:0.8}} onPress={()=>{generatePlanRef.current=false;setPlanSummary(null);setPlanError(null);setStep(7);}}><B color={colors.textSecondary} fontSize={15} fontWeight="600">Regenerate Plan</B></YStack>
-      </YStack>
-      <YStack height={20} />
-    </ScrollView>
-  );
+  // Step 8: No longer used (old plan review). Redirect to tabs.
+  const renderStep8 = () => {
+    router.replace('/(tabs)');
+    return null;
+  };
 
   const stepRenderers = [null, renderStep1, renderStep2, renderStep3, renderStep4, renderStep5, renderStep6, renderStep7, renderStep8];
   const showNav = step >= 3 && step <= 6;
@@ -625,7 +636,7 @@ export default function SetupScreen() {
       {showNav && (
         step === 6 ? (
           <YStack paddingHorizontal={24} paddingVertical={12} paddingBottom={36} gap={8}>
-            <GradientButton label="Generate Plan" onPress={handleNext} size="lg" />
+            <GradientButton label="Start Training" onPress={handleNext} size="lg" />
             <YStack paddingVertical={8} alignItems="center" pressStyle={{opacity:0.7}} onPress={handleBack}>
               <B color={colors.textTertiary} fontSize={14}>Back</B>
             </YStack>

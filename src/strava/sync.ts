@@ -511,7 +511,7 @@ function rematchOrphanedMetrics(): void {
       // Derive local date from UTC date + offset
       const utcDate = new Date(o.pm_date + 'T12:00:00Z');
       const localDate = new Date(utcDate.getTime() + (o.utc_offset! * 1000));
-      const localDateStr = localDate.toISOString().split('T')[0];
+      const localDateStr = `${localDate.getFullYear()}-${String(localDate.getMonth() + 1).padStart(2, '0')}-${String(localDate.getDate()).padStart(2, '0')}`;
       if (localDateStr !== o.pm_date) {
         console.log(`[Strava Sync] Fixing UTC date: metric ${o.pm_id} date ${o.pm_date} → ${localDateStr} (offset=${o.utc_offset})`);
         db.runSync('UPDATE performance_metric SET date = ? WHERE id = ?', localDateStr, o.pm_id);
@@ -519,13 +519,12 @@ function rematchOrphanedMetrics(): void {
     }
 
     // Step 2: Find unmatched metrics from the last 8 weeks
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - 56);
+    const cutoffStr = addDays(getToday(), -56);
     const orphans = db.getAllSync<{ id: string; date: string; distance_miles: number; strava_activity_id: number | null }>(
       `SELECT id, date, distance_miles, strava_activity_id FROM performance_metric
        WHERE workout_id IS NULL AND date >= ?
        ORDER BY date DESC`,
-      cutoff.toISOString().split('T')[0],
+      cutoffStr,
     );
 
     if (orphans.length === 0) return;
@@ -535,13 +534,9 @@ function rematchOrphanedMetrics(): void {
     const dates = orphans.map(o => o.date);
     const minDate = dates.reduce((a, b) => (a < b ? a : b));
     const maxDate = dates.reduce((a, b) => (a > b ? a : b));
-    const minExpanded = new Date(minDate + 'T00:00:00');
-    minExpanded.setDate(minExpanded.getDate() - 1);
-    const maxExpanded = new Date(maxDate + 'T00:00:00');
-    maxExpanded.setDate(maxExpanded.getDate() + 1);
     const scheduledWorkouts = getScheduledWorkoutsInRange(
-      minExpanded.toISOString().split('T')[0],
-      maxExpanded.toISOString().split('T')[0],
+      addDays(minDate, -1),
+      addDays(maxDate, 1),
     );
 
     let matched = 0;
@@ -553,9 +548,7 @@ function rematchOrphanedMetrics(): void {
 
       // If no match, try adjacent dates (UTC offset edge case)
       if (!workoutId) {
-        const prevDay = new Date(orphan.date + 'T00:00:00');
-        prevDay.setDate(prevDay.getDate() - 1);
-        const prevStr = prevDay.toISOString().split('T')[0];
+        const prevStr = addDays(orphan.date, -1);
         workoutId = matchToScheduledWorkout(prevStr, orphan.distance_miles, scheduledWorkouts);
         if (workoutId) {
           // Fix the metric date to match the workout

@@ -125,7 +125,7 @@ export interface SafetyValidation {
 
 export interface TrainingPlan {
   id: string;
-  plan_json: string;             // full AIGeneratedPlan as JSON
+  plan_json: string;             // plan structure as JSON (weekly system stores week data here)
   coaching_notes: string | null;
   key_principles: string | null; // JSON array
   warnings: string | null;       // JSON array
@@ -723,6 +723,12 @@ export interface GarminHealthData {
   sleepAwakeSec: number | null;          // awake time seconds
   sleepStart: string | null;             // bed start time (local ISO)
   sleepEnd: string | null;               // wake time (local ISO)
+  weightKg: number | null;               // from Garmin Index Scale (kg)
+  bodyFatPct: number | null;             // body fat percentage
+  muscleMassKg: number | null;           // muscle mass (kg)
+  boneMassKg: number | null;             // bone mass (kg)
+  bodyWaterPct: number | null;           // body water percentage
+  bmi: number | null;                    // BMI
   fetchedAt: string;
 }
 

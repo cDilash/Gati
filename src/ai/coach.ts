@@ -41,7 +41,7 @@ export interface CoachResponse {
 }
 
 export interface PlanChangeRequest {
-  type: 'adapt_plan' | 'modify_workout' | 'skip_workout';
+  type: 'modify_workout' | 'skip_workout' | 'swap_day';
   description: string;
   reason: string;
   workoutId?: string;
@@ -170,14 +170,15 @@ For next week changes: tell them to update through the weekly check-in on Sunday
     parts.push(`CURRENT WEEK: ${currentWeek.week_number} of ${weeks.length} — ${currentWeek.phase} phase${currentWeek.is_cutback ? ' (cutback)' : ''}`);
     parts.push(`Volume: ${formatDistance(currentWeek.actual_volume, units)} of ${formatDistance(currentWeek.target_volume, units)} completed`);
 
-    const scheduled = weekWorkouts.filter(w => w.workout_type !== 'rest');
-    for (const w of scheduled) {
+    // Show ALL workouts (including rest) with IDs for weekly adjustment
+    for (const w of weekWorkouts) {
       let status = w.status === 'completed' ? 'DONE' : w.status === 'skipped' ? 'SKIP' : w.status === 'partial' ? 'PARTIAL' : 'TODO';
       if (w.execution_quality && w.execution_quality !== 'on_target' && (w.status === 'completed' || w.status === 'partial')) {
         const qualityLabel = w.execution_quality === 'missed_pace' ? ' ⚠️ pace missed' : w.execution_quality === 'exceeded_pace' ? ' ⚠️ too fast' : w.execution_quality === 'wrong_type' ? ' ⚠️ wrong workout' : '';
         status += qualityLabel;
       }
-      parts.push(`  [${status}] ${w.scheduled_date}: ${w.title} — ${formatDistance(w.target_distance_miles ?? 0, units)}`);
+      const dist = w.workout_type !== 'rest' ? ` — ${formatDistance(w.target_distance_miles ?? 0, units)}` : '';
+      parts.push(`  [${status}] ${w.scheduled_date} (ID:${w.id.substring(0, 8)}): ${w.title || w.workout_type}${dist}`);
     }
     parts.push('');
   }
@@ -493,9 +494,21 @@ For next week changes: tell them to update through the weekly check-in on Sunday
         ].filter(Boolean).join(', ');
         parts.push(`  Stages: ${stages}`);
       }
-      // Bed/wake times (Garmin returns epoch ms as string)
+      // Bed/wake times (Garmin "local" timestamps: epoch ms already in local time — use UTC methods to avoid double-shift)
       if (g.sleepStart && g.sleepEnd) {
-        const fmtTime = (ts: string) => { try { const n = Number(ts); const d = !isNaN(n) && n > 1e12 ? new Date(n) : new Date(ts); return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }); } catch { return '?'; } };
+        const fmtTime = (ts: string) => {
+          try {
+            const n = Number(ts);
+            if (!isNaN(n) && n > 1e12) {
+              const d = new Date(n);
+              const h = d.getUTCHours();
+              const m = d.getUTCMinutes();
+              const ampm = h >= 12 ? 'PM' : 'AM';
+              return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${ampm}`;
+            }
+            return new Date(ts).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+          } catch { return '?'; }
+        };
         parts.push(`  Bed: ${fmtTime(g.sleepStart)} → ${fmtTime(g.sleepEnd)}`);
       }
     }
@@ -534,6 +547,15 @@ For next week changes: tell them to update through the weekly check-in on Sunday
       let spo2Line = `SpO2: ${g.spo2Avg}%`;
       if (g.minSpo2 != null && g.minSpo2 < 92) spo2Line += ` ⚠ min: ${g.minSpo2}% (below normal)`;
       parts.push(spo2Line);
+    }
+
+    // Weight / Body composition (from Garmin Index Scale)
+    if (g?.weightKg != null) {
+      let weightLine = `Weight: ${g.weightKg} kg`;
+      if (g.bodyFatPct != null) weightLine += `, body fat: ${g.bodyFatPct}%`;
+      if (g.muscleMassKg != null) weightLine += `, muscle: ${g.muscleMassKg} kg`;
+      if (g.bmi != null) weightLine += `, BMI: ${g.bmi}`;
+      parts.push(weightLine);
     }
 
     // Fitness metrics
@@ -593,13 +615,22 @@ For next week changes: tell them to update through the weekly check-in on Sunday
     parts.push('');
   }
 
-  // Plan change instructions
-  parts.push(`PLAN CHANGES:
-If you suggest modifying the training plan, include this JSON block at the END of your message:
+  // Plan adjustment instructions (weekly planning only — no full plan adaptation)
+  parts.push(`WORKOUT ADJUSTMENTS:
+This athlete uses WEEKLY planning. Each week is generated individually via check-in.
+You CANNOT regenerate the full plan or create new weeks.
+
+When the athlete asks to adjust their schedule, you can suggest these changes for the CURRENT WEEK:
+- "modify_workout": Change distance, type, intensity, or move to a different day
+- "skip_workout": Skip a workout with a reason
+
+If the athlete needs a completely different week, suggest re-running the weekly check-in from the Plan My Week card.
+
+When suggesting a change, include this JSON block at the END of your message:
 \`\`\`json
-{"planChange": {"type": "adapt_plan", "description": "what to change", "reason": "why"}}
+{"planChange": {"type": "modify_workout", "description": "Move long run from Sunday to Thursday", "reason": "weekend travel"}}
 \`\`\`
-Types: "adapt_plan" (replan future weeks), "modify_workout" (change a specific workout), "skip_workout" (skip a workout).
+Always confirm the specific change before executing. Describe exactly what will change.
 Only suggest changes when clearly warranted. Don't force changes.`);
 
   return parts.join('\n');
@@ -621,13 +652,22 @@ export async function sendCoachMessage(
   }
 
   // Convert to chat format (last 20 messages for context efficiency)
-  const history = conversationHistory
+  // Gemini requires: history must start with 'user' role, alternate user/model
+  let history = conversationHistory
     .slice(-20)
     .filter(m => m.role === 'user' || m.role === 'assistant')
     .map(m => ({
       role: m.role as 'user' | 'assistant',
       content: m.content,
     }));
+  // Drop leading assistant messages (Gemini requires first message to be 'user')
+  while (history.length > 0 && history[0].role === 'assistant') {
+    history = history.slice(1);
+  }
+  // Remove the last message if it's from user (we'll send it separately via sendMessage)
+  if (history.length > 0 && history[history.length - 1].role === 'user') {
+    history = history.slice(0, -1);
+  }
 
   console.log('[Coach:sendCoachMessage] Sending to Gemini, history:', history.length, 'messages, prompt:', systemPrompt.length, 'chars');
   const responseText = await sendChatMessage(systemPrompt, history, userMessage);
@@ -661,7 +701,7 @@ function parsePlanChange(responseText: string): PlanChangeRequest | null {
 
     if (!pc || !pc.type || !pc.description) return null;
 
-    const validTypes = ['adapt_plan', 'modify_workout', 'skip_workout'];
+    const validTypes = ['modify_workout', 'skip_workout', 'swap_day'];
     if (!validTypes.includes(pc.type)) return null;
 
     return {

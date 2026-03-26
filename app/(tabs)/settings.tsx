@@ -84,7 +84,6 @@ function SmallButton({ label, onPress, color }: { label: string; onPress: () => 
 
 export default function SettingsScreen() {
   const router = useRouter();
-  const generatePlan = useAppStore(s => s.generatePlan);
   const activePlan = useAppStore(s => s.activePlan);
   const userProfile = useAppStore(s => s.userProfile);
   const isStravaConnected = useAppStore(s => s.isStravaConnected);
@@ -96,7 +95,7 @@ export default function SettingsScreen() {
   const units = useSettingsStore(s => s.units);
   const setUnits = useSettingsStore(s => s.setUnits);
 
-  const [isGenerating, setIsGenerating] = useState(false);
+  // isGenerating removed — old plan system
   const [isBackingUp, setIsBackingUp] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -182,20 +181,7 @@ export default function SettingsScreen() {
     ]);
   }, []);
 
-  const handleRegeneratePlan = useCallback(() => {
-    if (!userProfile) { Alert.alert('No Profile', 'Set up your profile first.'); return; }
-    Alert.alert('Regenerate Plan', 'Delete current plan and create a new one? Workout history will be preserved.', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Regenerate', style: 'destructive', onPress: async () => {
-        setIsGenerating(true);
-        try {
-          const r = await generatePlan();
-          Alert.alert(r.success ? 'Plan Generated' : 'Failed', r.success ? 'Done.' : (r.error ?? 'Error.'));
-        } catch (e: any) { Alert.alert('Error', e.message ?? 'Failed.'); }
-        finally { setIsGenerating(false); }
-      }},
-    ]);
-  }, [userProfile, generatePlan]);
+  // REMOVED: handleRegeneratePlan — old full-plan system. Use weekly check-in instead.
 
   return (
     <ScrollView flex={1} backgroundColor={colors.background} contentContainerStyle={{ padding: 16, paddingBottom: 60 }} showsVerticalScrollIndicator={false}>
@@ -317,35 +303,7 @@ export default function SettingsScreen() {
           <SettingsRow icon="calendar-check" iconColor={colors.cyan} label="Current Plan"
             subtitle={`Generated ${new Date(activePlan.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} · VDOT ${activePlan.vdot_at_generation}`} />
         )}
-        <SettingsRow icon="refresh" iconColor={colors.orange} label="Regenerate Plan"
-          subtitle={activePlan ? 'Delete current plan and create new' : 'Generate your first plan'}
-          onPress={handleRegeneratePlan} loading={isGenerating} destructive={!!activePlan} />
-        <SettingsRow icon="calendar-week" iconColor={colors.cyan} label="Switch to Weekly Planning"
-          subtitle="AI generates one week at a time based on check-ins"
-          onPress={() => {
-            const { Alert } = require('react-native');
-            Alert.alert(
-              'Switch to Weekly Planning?',
-              'Future workouts will be removed. The AI will generate one week at a time based on your weekly check-in. Completed runs are preserved.',
-              [
-                { text: 'Cancel', style: 'cancel' },
-                { text: 'Switch', onPress: () => {
-                  try {
-                    const { transitionToWeeklyPlanning } = require('../../src/engine/weeklyPlanning');
-                    const result = transitionToWeeklyPlanning();
-                    useAppStore.getState().refreshState();
-                    Alert.alert(
-                      'Switched to Weekly Planning',
-                      `Preserved ${result.preservedCompleted} completed runs.\nDeleted ${result.deletedUpcoming} future workouts.\n\nPhase: ${result.currentPhase.phase} (${result.currentPhase.weeksUntilRace} weeks to race)\n\nTap "Plan My Week" to generate your first adaptive week.`,
-                    );
-                    router.push('/weekly-checkin' as any);
-                  } catch (e: any) {
-                    Alert.alert('Error', e?.message ?? 'Failed to transition.');
-                  }
-                }},
-              ]
-            );
-          }} />
+        {/* Weekly planning is the only mode — no switch needed */}
       </YStack>
 
       {/* ─── Account ──────────────────────────────────────── */}

@@ -1,6 +1,7 @@
 import * as Linking from 'expo-linking';
+import * as WebBrowser from 'expo-web-browser';
 import Constants from 'expo-constants';
-import { Alert, AppState } from 'react-native';
+import { Alert } from 'react-native';
 import { StravaTokens } from '../types';
 
 const CLIENT_ID = Constants.expoConfig?.extra?.stravaClientId || '';
@@ -174,16 +175,14 @@ function extractCodeFromUrl(input: string): string | null {
 }
 
 /**
- * Initiates the Strava OAuth2 flow.
+ * Initiates the Strava OAuth2 flow via Supabase redirect.
  *
- * Because Strava only accepts http/https redirect URIs and iOS cannot
- * intercept http://localhost redirects, we use a manual-paste flow:
- *
- * 1. Open Strava auth in Safari
- * 2. User authorizes → Strava redirects to http://localhost/...?code=XXX
- * 3. Safari shows "cannot connect" but the URL bar contains the code
- * 4. User returns to app → prompted to paste the URL
- * 5. App extracts the code and exchanges it for tokens
+ * Flow:
+ * 1. Open browser → Strava auth page
+ * 2. User authorizes → Strava redirects to Supabase Edge Function
+ * 3. Edge Function redirects to marathon-coach://strava-callback?code=XXX
+ * 4. App intercepts deep link → extracts code → exchanges for tokens
+ * 5. Done — seamless, no copy-paste
  */
 export async function connectStrava(): Promise<StravaTokens | null> {
   if (!CLIENT_ID || !CLIENT_SECRET) {
@@ -191,7 +190,8 @@ export async function connectStrava(): Promise<StravaTokens | null> {
     return null;
   }
 
-  const redirectUri = 'http://localhost/oauth/callback';
+  const redirectUri = 'https://dweimilkuzasrxscjgag.supabase.co/functions/v1/strava-callback';
+  const appScheme = 'marathon-coach://strava-callback';
 
   const authUrl =
     `${STRAVA_AUTH_URL}?client_id=${CLIENT_ID}` +
@@ -200,52 +200,64 @@ export async function connectStrava(): Promise<StravaTokens | null> {
     `&scope=read,activity:read_all` +
     `&approval_prompt=auto`;
 
-  console.log('[Strava] Opening auth URL in Safari');
+  console.log('[Strava] Opening auth via Supabase redirect...');
 
-  // Open in Safari (not in-app browser — gives user access to URL bar)
-  await Linking.openURL(authUrl);
-
-  // Wait for user to return to the app, then prompt for the URL
-  return new Promise<StravaTokens | null>((resolve) => {
+  return new Promise<StravaTokens | null>(async (resolve) => {
     let resolved = false;
 
-    const handleAppState = (state: string) => {
-      if (state !== 'active' || resolved) return;
-      resolved = true;
-      subscription.remove();
+    // Listen for the deep link callback
+    const handleUrl = async (event: { url: string }) => {
+      if (resolved) return;
+      try {
+        const url = event.url;
+        if (!url.includes('strava-callback')) return;
 
-      // Small delay to let the app fully foreground
-      setTimeout(() => {
-        Alert.prompt(
-          'Paste Strava URL',
-          'After authorizing on Strava, Safari showed "cannot connect".\n\n' +
-          'Tap Safari\'s address bar, copy the full URL, then paste it here.',
-          [
-            { text: 'Cancel', style: 'cancel', onPress: () => resolve(null) },
-            {
-              text: 'Connect',
-              onPress: async (pastedUrl?: string) => {
-                if (!pastedUrl) { resolve(null); return; }
-                const code = extractCodeFromUrl(pastedUrl);
-                if (code) {
-                  console.log('[Strava] Got code from pasted URL');
-                  const tokens = await exchangeCodeForTokens(code);
-                  resolve(tokens);
-                } else {
-                  Alert.alert('Invalid URL', 'Could not find an authorization code in that URL. Make sure you copied the full URL from Safari.');
-                  resolve(null);
-                }
-              },
-            },
-          ],
-          'plain-text',
-          '',
-          'url',
-        );
-      }, 500);
+        const code = extractCodeFromUrl(url);
+        if (code) {
+          resolved = true;
+          subscription.remove();
+          try { await WebBrowser.dismissBrowser(); } catch {}
+
+          console.log('[Strava] Got auth code from deep link, exchanging...');
+          const tokens = await exchangeCodeForTokens(code);
+          resolve(tokens);
+        }
+      } catch (e: any) {
+        console.error('[Strava] Deep link handler error:', e.message);
+      }
     };
 
-    const subscription = AppState.addEventListener('change', handleAppState);
+    const subscription = Linking.addEventListener('url', handleUrl);
+
+    // Check if app was opened with a URL already (cold start edge case)
+    try {
+      const initialUrl = await Linking.getInitialURL();
+      if (initialUrl?.includes('strava-callback')) {
+        handleUrl({ url: initialUrl });
+        return;
+      }
+    } catch {}
+
+    // Open the browser
+    try {
+      await WebBrowser.openBrowserAsync(authUrl, {
+        dismissButtonStyle: 'cancel',
+        presentationStyle: (WebBrowser as any).WebBrowserPresentationStyle?.FULL_SCREEN,
+      });
+    } catch (e: any) {
+      // openBrowserAsync throws if user dismisses — that's OK
+      console.log('[Strava] Browser closed:', e.message);
+    }
+
+    // If browser closed without a callback after 2s, user cancelled
+    setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
+        subscription.remove();
+        console.log('[Strava] Auth timed out or cancelled');
+        resolve(null);
+      }
+    }, 2000);
   });
 }
 

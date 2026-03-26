@@ -140,9 +140,11 @@ Strava:        #FC4C02           (Strava brand — keep their color)
 └──────────────────────┬──────────────────────────┘
                        │
 ┌──────────────────────▼──────────────────────────┐
-│     AI ENGINE (Gemini 3.1 Pro + 3 Flash)          │
-│  Plan generation, adaptation, briefings,          │
+│     AI ENGINE (Gemini 2.5 Flash)                  │
+│  Weekly plan generation, briefings,               │
 │  post-run analysis, weekly review, coaching chat  │
+│  NO full plan generation. NO adaptation.          │
+│  One week at a time from real data only.          │
 └──────────────────────┬──────────────────────────┘
                        │
 ┌──────────────────────▼──────────────────────────┐
@@ -165,7 +167,7 @@ Garmin Health Data Flow:
 ```
 
 ### Core Principle
-Gemini IS the coach. It generates plans, adapts them, and gives advice. The math layer is just a safety net that silently caps dangerous numbers. The app is a UI for the AI coach + a data pipeline from Strava.
+WEEKLY PLANNING ONLY. Gemini generates ONE week at a time from real check-in data. There is NO full plan generation and NO plan adaptation. The math layer is a safety net that silently caps dangerous numbers. The coach can suggest individual workout swaps/modifications but cannot regenerate weeks. NEVER create a function that generates more than 7 days of workouts.
 
 ## File Structure
 ```
@@ -186,21 +188,22 @@ app/
 
 src/
 ├── ai/
-│   ├── gemini.ts             # Dual-model client (heavy=Pro, fast=Flash), retry, fallback
-│   ├── planGenerator.ts      # AI plan generation + validation (heavy model)
+│   ├── gemini.ts             # AI client (Gemini 2.5 Flash), retry, timeout
+│   ├── weekGenerator.ts      # Weekly plan generation from check-in data (the ONLY plan creator)
 │   ├── safetyValidator.ts    # Safety constraint clamping (~50 lines of logic)
-│   ├── adaptation.ts         # Plan adaptation (heavy model)
-│   ├── weeklyReview.ts       # AI weekly review + adaptation triggers (heavy model)
-│   ├── coach.ts              # Coaching chat with full context (fast model)
-│   ├── briefing.ts           # Pre-workout, post-run, race strategy (fast model)
+│   ├── weeklyReview.ts       # AI weekly review + adjustment suggestions
+│   ├── coach.ts              # Coaching chat with full context
+│   ├── briefing.ts           # Pre-workout, post-run, race strategy, nutrition
 │   └── crossTrainingAdvisor.ts # Cross-training impact evaluation (pure logic, no AI)
 ├── db/
 │   ├── schema.ts             # All CREATE TABLE statements
 │   ├── database.ts           # DB init, CRUD, migrations
 │   └── client.ts             # Re-export for backward compat
 ├── engine/
-│   ├── vdot.ts               # VDOT calculator + race predictions
-│   └── paceZones.ts          # Daniels pace zones + HR zones
+│   ├── vdot.ts               # VDOT calculator + race predictions + Garmin PR lookup
+│   ├── paceZones.ts          # Daniels pace zones + HR zones
+│   ├── weeklyPlanning.ts     # Phase calculator, check-in CRUD, weekly triggers
+│   └── weeklyAdjustments.ts  # Swap/modify/skip workouts within current week
 ├── strava/
 │   ├── auth.ts               # OAuth2 + token management
 │   ├── api.ts                # REST client (activities, detail, streams, athlete, gear)
@@ -360,7 +363,7 @@ Fetches: activities, detail (splits, laps, best efforts, segments), streams (HR,
 
 ## Key Constraints
 
-1. **AI generates, math validates** — Gemini creates plans, safety validator clamps numbers
+1. **WEEKLY PLANNING ONLY** — Gemini generates ONE week at a time. NEVER generate more than 7 days. No full plan generation, no adaptation. Old system (planGenerator.ts, adaptation.ts) was removed.
 2. **Local-first** — SQLite is primary, Supabase is backup only, app works offline
 3. **Garmin = health data** — All recovery/health data from Garmin via Supabase Edge Function (every 5 min). No HealthKit.
 4. **Fail gracefully everywhere** — if Gemini is down, show fallback. If Strava/Garmin unavailable, works without.
@@ -378,6 +381,19 @@ Fetches: activities, detail (splits, laps, best efforts, segments), streams (HR,
 16. **Workout swaps are 1-2 row changes** — never full plan regeneration for a single workout swap
 17. **Past workouts auto-skipped** — `sweepPastWorkouts()` runs on every app open
 18. **Volume from real data** — `recalculateWeeklyVolumes()` uses actual performance_metric, not target distances
+
+## Garmin API — Endpoint Map (confirmed 2026-03-25)
+
+### Accessible (returns data — fetched by Edge Function)
+HRV, Daily Summary, Body Battery, Stress, Respiration, SpO2, Sleep (with stages + bed times),
+Training Readiness, Training Status, VO2max, Endurance Score, Hill Score,
+Weight + Body Composition (Index Scale), Personal Records, Activities, Devices
+
+### Blocked (REST API doesn't expose — confirmed 404/405)
+Race Predictions, Lactate Threshold, Fitness Age, Stamina, Running Dynamics timeline, HR timeline
+
+**Do NOT add endpoint calls for blocked data — they will always 404/405.**
+Fallbacks: Race predictions → VDOT Daniels table. Lactate threshold → manual entry or VDOT estimate.
 
 ## Skill Triggers
 

@@ -3,8 +3,9 @@
  * Markdown rendering, coach avatar, themed quick actions, typing indicator.
  */
 
-import { useRef, useState, useEffect, useCallback } from 'react';
+import { useRef, useState, useEffect, useCallback, useMemo } from 'react';
 import { FlatList, KeyboardAvoidingView, Platform, Alert, ScrollView as RNScrollView, Animated } from 'react-native';
+import { useFocusEffect } from 'expo-router';
 import { YStack, XStack, Text, View, Input, Spinner } from 'tamagui';
 import { useAppStore } from '../../src/store';
 import { CoachMessage } from '../../src/types';
@@ -323,7 +324,8 @@ function MessageBubble({ message, onApplyChange }: { message: CoachMessage; onAp
 // ─── Timestamp formatter ─────────────────────────────────────
 
 function formatTimestamp(iso: string): string {
-  const d = new Date(iso);
+  // SQLite datetime('now') stores UTC without Z suffix — append Z so JS parses as UTC, then getHours() gives local
+  const d = new Date(iso.includes('T') || iso.includes('Z') ? iso : iso + 'Z');
   const now = new Date();
   const isToday = d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
   const h = d.getHours() % 12 || 12;
@@ -347,45 +349,17 @@ export default function CoachScreen() {
   const requestPlanAdaptation = useAppStore(s => s.requestPlanAdaptation);
   const userProfile = useAppStore(s => s.userProfile);
 
-  // Auto-scroll: only when user is near the bottom (don't yank during history browsing)
-  const isNearBottom = useRef(true);
-  const didInitialScroll = useRef(false);
-  const scrollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // No manual scroll needed — inverted FlatList shows latest at bottom automatically
 
-  const scrollToBottom = useCallback((animated = true) => {
-    // Debounce: cancel any pending scroll, schedule one 150ms from now
-    if (scrollTimer.current) clearTimeout(scrollTimer.current);
-    scrollTimer.current = setTimeout(() => {
-      flatListRef.current?.scrollToEnd({ animated });
-      scrollTimer.current = null;
-    }, 150);
-  }, []);
-
-  // Initial mount: snap to bottom (once)
-  useEffect(() => {
-    if (coachMessages.length > 0 && !didInitialScroll.current) {
-      didInitialScroll.current = true;
-      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 100);
-    }
-  }, [coachMessages.length]);
-
-  // New messages: auto-scroll if user is near bottom
-  const prevCountRef = useRef(coachMessages.length);
-  useEffect(() => {
-    if (coachMessages.length > prevCountRef.current && isNearBottom.current) {
-      scrollToBottom(true);
-    }
-    prevCountRef.current = coachMessages.length;
-  }, [coachMessages.length]);
+  // Inverted FlatList: data must be reversed (newest first)
+  const invertedMessages = useMemo(() => [...coachMessages].reverse(), [coachMessages]);
 
   const handleSend = useCallback((text?: string) => {
     const msg = (text ?? inputText).trim();
     if (!msg || isCoachThinking) return;
     setInputText('');
     sendToCoach(msg);
-    // Always scroll when user sends — they expect to see their message
-    isNearBottom.current = true;
-    scrollToBottom(true);
+    // Inverted FlatList auto-shows new messages at bottom — no scroll needed
   }, [inputText, isCoachThinking, sendToCoach]);
 
   const handleApplyChange = useCallback(async (reason: string): Promise<{ success: boolean; summary?: string; error?: string }> => {
@@ -454,25 +428,16 @@ export default function CoachScreen() {
       ) : (
         <FlatList
           ref={flatListRef}
-          data={coachMessages}
+          data={invertedMessages}
           renderItem={renderMessage}
           keyExtractor={item => item.id}
           extraData={coachMessages.length}
-          contentContainerStyle={{ paddingTop: 12, paddingBottom: 8 }}
-          onScroll={(e) => {
-            const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
-            isNearBottom.current = contentOffset.y >= contentSize.height - layoutMeasurement.height - 120;
-          }}
+          contentContainerStyle={{ paddingTop: 8, paddingBottom: 12 }}
+          inverted
           scrollEventThrottle={100}
-          onContentSizeChange={() => {
-            // Only auto-scroll on content size change if we just sent/received a message
-            // (not on every re-render or text wrap change)
-          }}
+          ListHeaderComponent={isCoachThinking ? <TypingDots /> : null}
         />
       )}
-
-      {/* Typing indicator */}
-      {isCoachThinking && <TypingDots />}
 
       {/* Quick action chips */}
       <YStack borderTopWidth={0.5} borderTopColor={colors.border} paddingVertical={6}>

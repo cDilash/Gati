@@ -1,7 +1,16 @@
 /**
- * Week Generator — AI generates exactly ONE week of workouts
- * based on check-in answers, previous week data, and athlete context.
- * Uses the HEAVY model (gemini-3.1-pro-preview).
+ * WEEKLY PLAN GENERATOR — the ONLY way to create workouts in Gati.
+ *
+ * Generates exactly ONE week (Mon-Sun) based on:
+ * - Weekly check-in answers (availability, energy, soreness)
+ * - Previous week's actual performance data
+ * - Current training phase (from race date)
+ * - Garmin health/fitness data
+ *
+ * NEVER generate more than 7 days of workouts.
+ * NEVER create a full multi-week plan.
+ * The old 18-week plan system was removed because it caused data loss
+ * when adaptation wiped all workouts and created empty weeks.
  */
 
 import {
@@ -43,11 +52,11 @@ function buildWeekPrompt(
 
   // MANDATORY phase — Gemini cannot override this
   const PHASE_DESCRIPTIONS: Record<string, string> = {
-    base: 'Focus on easy aerobic running ONLY. Build weekly mileage gradually. NO threshold, tempo, or interval work. ALL runs at conversational pace (Zone 1-2). This phase builds the aerobic engine. Long runs should be easy effort throughout.',
-    build: 'Introduce ONE quality session per week (tempo or threshold). Continue building volume. Long run gets longer with some progression. One hard day per week, everything else easy.',
-    peak: 'Highest volume and intensity. TWO quality sessions possible (threshold + intervals). Long run at maximum distance. Sharpening for race fitness. This is the hardest phase.',
-    taper: 'REDUCE volume 30-50% from peak. Keep one SHORT quality session for sharpness. Easy runs shorter. REST more. The goal is to arrive at race day fresh and recovered.',
-    race_week: 'Very light running Mon-Wed only. Complete rest Thu-Fri. Race day Saturday/Sunday. No intensity except race itself.',
+    base: 'Focus on easy aerobic running only. Build weekly mileage gradually while keeping all runs at a conversational pace (Zone 1-2). Avoid threshold, tempo, or interval work. Long runs should remain easy throughout, with the primary goal of developing a strong aerobic foundation and improving endurance.',
+    build: 'Introduce one quality session per week, such as a tempo or threshold run, while continuing to increase overall volume. Maintain mostly easy running outside of this session. Long runs should gradually extend in distance and may include light progression toward a moderate effort near the end.',
+    peak: 'Reach the highest training volume and intensity of the plan. Include up to two quality sessions per week, such as threshold runs and intervals. Long runs should be at their maximum planned distance and may incorporate segments at race pace. This phase is focused on sharpening fitness and preparing for race demands.',
+    taper: 'Reduce overall training volume by 30-50% while maintaining some intensity through short, controlled efforts. Keep runs shorter and prioritize rest and recovery. The goal is to arrive at race day feeling fresh, energized, and fully prepared.',
+    race_week: 'Keep running very light early in the week, typically Monday to Wednesday, with short and easy sessions. Take complete rest days later in the week to ensure full recovery. Avoid any intense workouts, and focus entirely on being ready for race day.',
   };
 
   parts.push(`MANDATORY PHASE: ${phase.phase.toUpperCase()}`);

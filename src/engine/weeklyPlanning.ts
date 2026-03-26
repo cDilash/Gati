@@ -9,6 +9,37 @@ import {
   WeekGeneration, PreviousWeekSummary,
 } from '../types';
 
+// ─── Weekly Mode Detection ──────────────────────────────────
+
+/**
+ * Check if the app is in weekly planning mode.
+ * Weekly mode if ANY of these are true:
+ * 1. weekly_checkin table has entries (user did the check-in flow)
+ * 2. week_generation table has entries (weeks were generated individually)
+ * 3. Active plan has very few workouts (< 21 = less than 3 full weeks)
+ * In weekly mode, full plan adaptation must NEVER run.
+ */
+export function isWeeklyPlanningActive(): boolean {
+  try {
+    const { getDatabase } = require('../db/database');
+    const db = getDatabase();
+    // Check weekly_checkin
+    const checkins = db.getFirstSync('SELECT COUNT(*) as count FROM weekly_checkin') as { count: number } | null;
+    if ((checkins?.count ?? 0) > 0) return true;
+    // Check week_generation
+    const gens = db.getFirstSync('SELECT COUNT(*) as count FROM week_generation') as { count: number } | null;
+    if ((gens?.count ?? 0) > 0) return true;
+    // Check if active plan has few workouts (weekly mode generates ~7 per week)
+    const workouts = db.getFirstSync(
+      "SELECT COUNT(*) as count FROM workout WHERE plan_id = (SELECT id FROM training_plan WHERE status = 'active')"
+    ) as { count: number } | null;
+    if ((workouts?.count ?? 0) > 0 && (workouts?.count ?? 0) < 21) return true;
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 // ─── Phase Calculation ──────────────────────────────────────
 
 export function calculatePhase(raceDate: string, currentDate: string, peakWeeklyMiles: number = 25): TrainingPhaseInfo {

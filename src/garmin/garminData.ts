@@ -70,6 +70,12 @@ function mapRow(row: any): GarminHealthData {
     sleepAwakeSec: row.sleep_awake_sec ?? null,
     sleepStart: row.sleep_start ?? null,
     sleepEnd: row.sleep_end ?? null,
+    weightKg: row.weight_kg ?? null,
+    bodyFatPct: row.body_fat_pct ?? null,
+    muscleMassKg: row.muscle_mass_kg ?? null,
+    boneMassKg: row.bone_mass_kg ?? null,
+    bodyWaterPct: row.body_water_pct ?? null,
+    bmi: row.bmi ?? null,
     fetchedAt: row.fetched_at ?? '',
   };
 }
@@ -110,9 +116,8 @@ export async function fetchGarminHealthData(date: string): Promise<GarminHealthD
 export async function fetchGarminHealthTrend(daysBack: number = 14): Promise<GarminHealthData[]> {
   try {
     const { supabase } = require('../backup/supabase');
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - daysBack);
-    const startStr = startDate.toISOString().split('T')[0];
+    const { getToday, addDays } = require('../utils/dateUtils');
+    const startStr = addDays(getToday(), -daysBack);
 
     const { data, error } = await supabase
       .from('garmin_health')

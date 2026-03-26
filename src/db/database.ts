@@ -329,88 +329,7 @@ export function savePlan(
   return { planId, weekCount, workoutCount };
 }
 
-/**
- * Apply an adaptation to the EXISTING active plan (in-place update).
- * Only replaces UPCOMING workouts — completed/skipped/partial are preserved.
- * Does NOT create a new plan row.
- */
-export function applyAdaptation(
-  adaptedPlan: AIGeneratedPlan,
-  planId: string,
-  startDate: string,
-): { updatedWeeks: number; updatedWorkouts: number } {
-  const database = getDatabase();
-  let updatedWeeks = 0;
-  let updatedWorkouts = 0;
-
-  // Safety check: don't let workout count exceed 200
-  const existing = database.getFirstSync<{ cnt: number }>('SELECT count(*) as cnt FROM workout WHERE plan_id = ?', planId);
-  if (existing && existing.cnt > 200) {
-    console.error(`[DB] SAFETY: ${existing.cnt} workouts for plan — running dedup first`);
-    deduplicateWorkouts();
-  }
-
-  database.withTransactionSync(() => {
-    // Update plan_json with the new adapted plan
-    database.runSync(
-      `UPDATE training_plan SET plan_json = ?, updated_at = datetime('now') WHERE id = ?`,
-      JSON.stringify(adaptedPlan), planId,
-    );
-
-    for (const week of adaptedPlan.weeks) {
-      // Upsert training_week (INSERT OR REPLACE works here — UNIQUE on plan_id, week_number)
-      const existingWeek = database.getFirstSync<{ id: string }>(
-        'SELECT id FROM training_week WHERE plan_id = ? AND week_number = ?', planId, week.weekNumber
-      );
-      const weekId = existingWeek?.id ?? Crypto.randomUUID();
-      database.runSync(
-        `INSERT OR REPLACE INTO training_week (id, plan_id, week_number, phase, target_volume, is_cutback, ai_notes)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        weekId, planId, week.weekNumber, week.phase, week.targetVolume, week.isCutback ? 1 : 0, week.aiNotes ?? null,
-      );
-      updatedWeeks++;
-
-      // Delete ONLY upcoming workouts for this week (preserve completed/skipped/partial)
-      database.runSync(
-        `DELETE FROM workout WHERE plan_id = ? AND week_number = ? AND status = 'upcoming'`,
-        planId, week.weekNumber,
-      );
-
-      // Calculate week start date
-      const weekStart = addDaysToDate(startDate, (week.weekNumber - 1) * 7);
-
-      // Insert new workouts for this week
-      for (const workout of week.workouts) {
-        const scheduledDate = addDaysToDate(weekStart, workout.dayOfWeek);
-
-        // Check if a non-upcoming workout already exists on this date (don't overwrite)
-        const existingWorkout = database.getFirstSync<{ id: string }>(
-          `SELECT id FROM workout WHERE plan_id = ? AND scheduled_date = ? AND status != 'upcoming'`,
-          planId, scheduledDate,
-        );
-        if (existingWorkout) continue; // Skip — there's a completed/skipped workout on this date
-
-        database.runSync(
-          `INSERT INTO workout
-           (id, plan_id, week_number, day_of_week, scheduled_date, workout_type, title,
-            description, target_distance_miles, target_pace_zone, intervals_json, status)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'upcoming')`,
-          Crypto.randomUUID(), planId, week.weekNumber, workout.dayOfWeek, scheduledDate,
-          workout.type, workout.title, workout.description,
-          workout.distanceMiles ?? null, workout.paceZone ?? null,
-          workout.intervals ? JSON.stringify(workout.intervals) : null,
-        );
-        updatedWorkouts++;
-      }
-    }
-  });
-
-  // Recalculate volumes from real data
-  recalculateWeeklyVolumes();
-
-  console.log(`[DB] Adaptation applied in-place: ${updatedWeeks} weeks, ${updatedWorkouts} workouts updated`);
-  return { updatedWeeks, updatedWorkouts };
-}
+// REMOVED: applyAdaptation — old full-plan system. Weekly planning uses individual workout updates.
 
 export function deleteActivePlan(): void {
   const database = getDatabase();
@@ -662,6 +581,8 @@ export function getStravaDetailByActivityId(stravaActivityId: number): any | nul
 
 export function saveCoachMessage(message: Omit<CoachMessage, 'created_at'>): void {
   const database = getDatabase();
+  // Use datetime('now') for consistent ordering (all messages in UTC)
+  // The UI's formatTimestamp handles display conversion
   database.runSync(
     `INSERT INTO coach_message (id, role, content, message_type, metadata_json)
      VALUES (?, ?, ?, ?, ?)`,
@@ -673,9 +594,8 @@ export function saveCoachMessage(message: Omit<CoachMessage, 'created_at'>): voi
   );
 }
 
-export function getCoachMessages(limit: number = 50): CoachMessage[] {
+export function getCoachMessages(limit: number = 100): CoachMessage[] {
   const database = getDatabase();
-  // Select newest N messages (DESC) then reverse to chronological order for display
   const messages = database.getAllSync<CoachMessage>(
     'SELECT * FROM coach_message ORDER BY created_at DESC LIMIT ?',
     limit,

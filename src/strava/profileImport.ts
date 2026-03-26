@@ -99,7 +99,7 @@ export async function importStravaProfile(
     const weekStart = new Date(date);
     const dow = weekStart.getDay();
     weekStart.setDate(weekStart.getDate() - (dow === 0 ? 6 : dow - 1)); // Monday
-    const weekKey = weekStart.toISOString().split('T')[0];
+    const weekKey = `${weekStart.getFullYear()}-${String(weekStart.getMonth() + 1).padStart(2, '0')}-${String(weekStart.getDate()).padStart(2, '0')}`;
     weekMap.set(weekKey, (weekMap.get(weekKey) ?? 0) + miles);
   }
 

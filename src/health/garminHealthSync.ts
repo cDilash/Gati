@@ -73,6 +73,12 @@ function mapRow(row: any): GarminHealthData {
     sleepAwakeSec: row.sleep_awake_sec ?? null,
     sleepStart: row.sleep_start ?? null,
     sleepEnd: row.sleep_end ?? null,
+    weightKg: row.weight_kg ?? null,
+    bodyFatPct: row.body_fat_pct ?? null,
+    muscleMassKg: row.muscle_mass_kg ?? null,
+    boneMassKg: row.bone_mass_kg ?? null,
+    bodyWaterPct: row.body_water_pct ?? null,
+    bmi: row.bmi ?? null,
     fetchedAt: row.fetched_at ?? '',
   };
 }
@@ -102,9 +108,8 @@ export async function syncGarminHealthData(): Promise<{
     const today = getToday();
 
     // Fetch today + yesterday in one query (fallback if today not synced yet)
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    const yesterdayStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
+    const { addDays } = require('../utils/dateUtils');
+    const yesterdayStr = addDays(today, -1);
 
     const { data, error } = await supabaseQuery((sb: any) =>
       sb
@@ -164,9 +169,8 @@ export async function syncGarminHealthData(): Promise<{
  */
 export async function fetchGarminTrend(daysBack: number = 14): Promise<GarminHealthData[]> {
   try {
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - daysBack);
-    const startStr = `${startDate.getFullYear()}-${String(startDate.getMonth() + 1).padStart(2, '0')}-${String(startDate.getDate()).padStart(2, '0')}`;
+    const { getToday, addDays } = require('../utils/dateUtils');
+    const startStr = addDays(getToday(), -daysBack);
 
     const { data, error } = await supabaseQuery((sb: any) =>
       sb
@@ -204,16 +208,15 @@ function buildHealthSnapshot(
 
   // Sleep trend: map Garmin sleep data into SleepResult-compatible shape
   const sleepTrend = trend
-    .filter(d => d.sleepScore != null || d.sleepDurationSec != null)
+    .filter(d => d.sleepDurationSec != null || (d.sleepNeedMinutes != null && d.sleepDebtMinutes != null))
     .map(d => {
-      // Use actual duration if available, fall back to need - debt estimate
+      // Use actual duration if available, fall back to need - debt (only if BOTH exist)
       let totalMinutes: number;
       if (d.sleepDurationSec != null) {
         totalMinutes = Math.round(d.sleepDurationSec / 60);
       } else {
-        const needMin = d.sleepNeedMinutes ?? 480;
-        const debtMin = d.sleepDebtMinutes ?? 0;
-        totalMinutes = needMin - debtMin;
+        // Only estimate if we have real need AND debt data (not defaults)
+        totalMinutes = (d.sleepNeedMinutes ?? 0) - (d.sleepDebtMinutes ?? 0);
       }
       return {
         totalMinutes: Math.max(0, totalMinutes),
@@ -258,7 +261,7 @@ function buildHealthSnapshot(
     restingHRTrend,
     hrvTrend,
     sleepTrend,
-    weight: null, // Garmin scale data not in this table yet
+    weight: garmin.weightKg != null ? { value: garmin.weightKg, date: garmin.date } : null,
     vo2max: garmin.vo2max != null ? { value: garmin.vo2max, date: garmin.date } : null,
     respiratoryRate: garmin.respiratoryRate,
     respiratoryRateTrend,

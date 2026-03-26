@@ -45,9 +45,8 @@ import {
 } from './db/database';
 import { calculatePaceZones, calculateHRZones } from './engine/paceZones';
 import { getToday, daysBetween } from './utils/dateUtils';
-import { generateTrainingPlan } from './ai/planGenerator';
+// REMOVED: Old full-plan system (planGenerator.ts, adaptation.ts). Using weekly planning only.
 import { validateAndCorrectPlan, getViolationSummary } from './ai/safetyValidator';
-import { adaptPlan, AdaptationResult } from './ai/adaptation';
 import type { SyncResult } from './strava/sync';
 import { generateWeeklyReview, WeeklyReview } from './ai/weeklyReview';
 import { sendCoachMessage as aiSendCoachMessage, buildCoachSystemPrompt, CoachResponse } from './ai/coach';
@@ -130,7 +129,7 @@ interface AppState {
   refreshTodaysWorkout: () => void;
   saveProfile: (profile: Omit<UserProfile, 'id' | 'updated_at'>) => void;
   storePlan: (plan: AIGeneratedPlan, vdot: number, startDate: string) => { planId: string; weekCount: number; workoutCount: number };
-  generatePlan: () => Promise<{ success: boolean; error?: string; violations?: string }>;
+  // REMOVED: generatePlan — old 18-week system. Use weekly check-in instead.
   markWorkoutComplete: (workoutId: string, stravaActivityId?: number) => void;
   markWorkoutSkipped: (workoutId: string) => void;
   addCoachMessage: (role: 'user' | 'assistant' | 'system', content: string, messageType?: CoachMessage['message_type'], metadata?: string) => void;
@@ -500,43 +499,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     return result;
   },
 
-  generatePlan: async () => {
-    const { userProfile, paceZones } = get();
-    if (!userProfile || !paceZones) {
-      return { success: false, error: 'No profile or pace zones available' };
-    }
-
-    try {
-      // Step 1: AI generates the plan
-      console.log('[Store] Generating plan via Gemini...');
-      const rawPlan = await generateTrainingPlan(userProfile, paceZones, null);
-
-      // Step 2: Safety validator clamps violations
-      console.log('[Store] Running safety validator...');
-      const validation = validateAndCorrectPlan(rawPlan, userProfile);
-      const violationSummary = getViolationSummary(validation.violations);
-      if (violationSummary) {
-        console.log('[Store] Safety:', violationSummary);
-      }
-
-      // Step 3: Save to SQLite
-      const today = getToday();
-      const result = savePlan(validation.correctedPlan, userProfile.vdot_score, today);
-      console.log(`[Store] Plan saved: ${result.weekCount} weeks, ${result.workoutCount} workouts`);
-
-      // Step 4: Refresh store state
-      get().refreshState();
-      try { setSetting('plan_last_updated', new Date().toISOString()); setSetting('plan_update_source', 'generated'); } catch {}
-
-      return {
-        success: true,
-        violations: violationSummary ?? undefined,
-      };
-    } catch (error: any) {
-      console.error('[Store] Plan generation failed:', error);
-      return { success: false, error: error.message || 'Plan generation failed' };
-    }
-  },
+  // REMOVED: generatePlan — old 18-week system. Use weekly check-in (app/weekly-checkin.tsx) instead.
 
   // ─── Workouts ───────────────────────────────────────────
 
@@ -576,9 +539,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     dbSaveCoachMessage({ id: Crypto.randomUUID(), role: 'user', content: message, message_type: 'chat', metadata_json: null });
     set({ coachMessages: getCoachMessages(), isCoachThinking: true });
 
-    // 30s safety timeout — guarantees isCoachThinking resets
+    // 60s safety timeout — guarantees isCoachThinking resets
+    // (Gemini thinking models can take 15-30s with large prompts)
     const safetyTimeout = setTimeout(() => {
-      console.log('[Coach] SAFETY TIMEOUT — 30 seconds exceeded, forcing reset');
+      console.log('[Coach] SAFETY TIMEOUT — 60 seconds exceeded, forcing reset');
       if (get().isCoachThinking) {
         dbSaveCoachMessage({
           id: Crypto.randomUUID(),
@@ -589,7 +553,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         });
         set({ coachMessages: getCoachMessages(), isCoachThinking: false });
       }
-    }, 30_000);
+    }, 60_000);
 
     try {
       console.log('[Coach] 2. Building system prompt...');
@@ -624,22 +588,29 @@ export const useAppStore = create<AppState>((set, get) => ({
       });
 
       const updatedMessages = getCoachMessages();
-      console.log('[Coach] 6. Messages after save:', updatedMessages.length, 'last role:', updatedMessages[updatedMessages.length - 1]?.role, 'last id:', updatedMessages[updatedMessages.length - 1]?.id);
-      console.log('[Coach] 6a. Saved assistant id:', assistantId, 'found in list:', updatedMessages.some(m => m.id === assistantId));
       set({ coachMessages: updatedMessages, isCoachThinking: false });
-      console.log('[Coach] 7. State set, coachMessages length:', get().coachMessages.length);
     } catch (error: any) {
       clearTimeout(safetyTimeout);
-      console.error('[Coach] ERROR:', error?.message || error);
-      console.error('[Coach] ERROR stack:', error?.stack?.substring(0, 300));
-      dbSaveCoachMessage({
-        id: Crypto.randomUUID(),
-        role: 'assistant',
-        content: "Sorry, I couldn't process that. Please try again in a moment.",
-        message_type: 'chat',
-        metadata_json: null,
-      });
-      set({ coachMessages: getCoachMessages(), isCoachThinking: false });
+      const errMsg = error?.message || String(error);
+      console.error('[Coach] ERROR:', errMsg);
+      // Wrap in try/catch so the catch block itself NEVER fails silently
+      try {
+        dbSaveCoachMessage({
+          id: Crypto.randomUUID(),
+          role: 'assistant',
+          content: `Coach error: ${errMsg.substring(0, 200)}`,
+          message_type: 'chat',
+          metadata_json: null,
+        });
+      } catch (saveErr) {
+        console.error('[Coach] DOUBLE ERROR — could not save error message:', saveErr);
+      }
+      try {
+        set({ coachMessages: getCoachMessages(), isCoachThinking: false });
+      } catch (setErr) {
+        console.error('[Coach] TRIPLE ERROR — could not update state:', setErr);
+        set({ isCoachThinking: false });
+      }
     }
   },
 
@@ -659,9 +630,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     const tomorrowIsLongRun = tomorrowWorkout && (tomorrowWorkout.workout_type === 'long' || tomorrowWorkout.workout_type === 'long_run' || (tomorrowWorkout.target_distance_miles ?? 0) >= 10);
 
     if (tomorrowIsLongRun && (!todaysWorkout || todaysWorkout.workout_type === 'rest')) {
-      // Show night-before prep briefing
+      // Show night-before prep briefing with nutrition
       const dist = tomorrowWorkout!.target_distance_miles?.toFixed(1) ?? '?';
-      set({ preWorkoutBriefing: `Tomorrow's long run: ${tomorrowWorkout!.title} (${dist} mi). Tonight, eat a carb-rich dinner — pasta, rice, or potatoes. Hydrate well. Lay out your gear, charge your watch, and get to bed early. You've got this.` });
+      const estMin = Math.round((tomorrowWorkout!.target_distance_miles ?? 0) * 10);
+      set({ preWorkoutBriefing: `Tomorrow's long run: ${tomorrowWorkout!.title} (${dist} mi, ~${estMin} min). Tonight: carb-rich dinner — pasta, rice, or potatoes. Drink 16-20 oz of water before bed. Morning: toast with peanut butter + banana 90 min before. Bring gels/chews for fueling after mile 5. Lay out gear, charge watch, early bedtime.` });
       return;
     }
 
@@ -744,66 +716,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   setPostRunAnalysis: (analysis) => set({ postRunAnalysis: analysis }),
   setWeeklyDigest: (digest) => set({ weeklyDigest: digest }),
 
-  // ─── Plan Adaptation ─────────────────────────────────────
-
-  requestPlanAdaptation: async (reason) => {
-    console.log('[Store] requestPlanAdaptation called, reason:', reason?.substring(0, 100));
-    const { activePlan, userProfile, paceZones, currentWeekNumber, workouts } = get();
-    if (!activePlan || !userProfile || !paceZones) {
-      console.log('[Store] Adaptation ABORT — missing:', !activePlan ? 'plan' : !userProfile ? 'profile' : 'paceZones');
-      return { success: false, error: 'No active plan or profile' };
-    }
-
-    try {
-      // Parse the full plan from JSON
-      let existingPlan: AIGeneratedPlan;
-      try {
-        existingPlan = JSON.parse(activePlan.plan_json);
-      } catch {
-        return { success: false, error: 'Could not parse existing plan' };
-      }
-
-      const completedWorkouts = workouts.filter(w => w.status === 'completed');
-      const recentMetrics = getRecentMetrics(14);
-      const totalWeeks = existingPlan.weeks.length;
-
-      const result = await adaptPlan(
-        reason, currentWeekNumber, totalWeeks,
-        completedWorkouts, recentMetrics, existingPlan,
-        userProfile, paceZones,
-      );
-
-      // Apply adaptation IN-PLACE (update existing plan, don't create new one)
-      const { applyAdaptation, getDatabase: getDb } = require('./db/database');
-      // Get the plan's actual start date from the earliest workout
-      const firstWorkout = getDb().getFirstSync(
-        'SELECT scheduled_date FROM workout WHERE plan_id = ? ORDER BY scheduled_date ASC LIMIT 1',
-        [activePlan.id]
-      ) as { scheduled_date: string } | null;
-      const planStartDate = firstWorkout?.scheduled_date ?? getToday();
-      applyAdaptation(result.plan, activePlan.id, planStartDate);
-      get().refreshState();
-      try { setSetting('plan_last_updated', new Date().toISOString()); setSetting('plan_update_source', 'adapted'); } catch {}
-
-      // Log the adaptation as a coach message
-      const Crypto = require('expo-crypto');
-      dbSaveCoachMessage({
-        id: Crypto.randomUUID(),
-        role: 'system',
-        content: result.changesSummary,
-        message_type: 'plan_change',
-        metadata_json: JSON.stringify({ reason, violations: result.validation.violations.length }),
-      });
-      set({ coachMessages: getCoachMessages() });
-
-      // Auto-backup after plan adaptation
-      (async () => { try { const { autoBackup } = require('./backup/backup'); await autoBackup(); { const _t = Date.now(); set({ lastBackupTime: _t, backupDirty: false }); try { setSetting('last_backup_time', String(_t)); } catch {} } } catch {} })();
-
-      return { success: true, summary: result.changesSummary };
-    } catch (error: any) {
-      console.error('[Store] Adaptation failed:', error);
-      return { success: false, error: error.message || 'Adaptation failed' };
-    }
+  // ─── Plan Adaptation (REMOVED — weekly planning only) ────
+  // Full plan adaptation was removed. Use weekly check-in to adjust schedule.
+  requestPlanAdaptation: async (_reason) => {
+    return { success: false, error: 'Plan adaptation is no longer available. Use the Plan My Week check-in to adjust your schedule, or ask the coach to swap/modify individual workouts.' };
   },
 
   checkWeeklyReview: async () => {
@@ -1124,6 +1040,28 @@ export const useAppStore = create<AppState>((set, get) => ({
           }
         }
 
+        // Auto-update weight from Garmin Index Scale
+        if (garmin.weightKg && garmin.weightKg > 0) {
+          const currentProfile = get().userProfile;
+          if (currentProfile) {
+            const currentWeight = currentProfile.weight_kg ?? 0;
+            if (Math.abs(garmin.weightKg - currentWeight) > 0.1) {
+              try {
+                const db = require('./db/database').getDatabase();
+                const { getToday } = require('./utils/dateUtils');
+                db.runSync(
+                  'UPDATE user_profile SET weight_kg = ?, weight_source = ?, weight_updated_at = ? WHERE id = 1',
+                  [garmin.weightKg, 'garmin', getToday()]
+                );
+                console.log(`[Store] Weight auto-updated from Garmin scale: ${garmin.weightKg}kg`);
+                needsRefresh = true;
+              } catch (e) {
+                console.log('[Store] Weight auto-update failed:', e);
+              }
+            }
+          }
+        }
+
         if (needsRefresh) {
           get().refreshState();
         }
@@ -1176,9 +1114,42 @@ export const useAppStore = create<AppState>((set, get) => ({
     // Step 2: Sweep past workouts AFTER Strava sync (so new activities are matched first)
     if (state.activePlan) {
       try {
-        const { deduplicateWorkouts, sweepPastWorkouts } = require('./db/database');
+        const { deduplicateWorkouts, sweepPastWorkouts, getDatabase: getDb2 } = require('./db/database');
         deduplicateWorkouts();
         sweepPastWorkouts();
+
+        // Safety: clean up empty training_week rows from broken adaptation
+        try {
+          const db2 = getDb2();
+          const emptyWeeks = db2.getFirstSync(
+            `SELECT COUNT(*) as count FROM training_week
+             WHERE target_volume = 0 AND actual_volume = 0
+             AND plan_id = (SELECT id FROM training_plan WHERE status = 'active')`
+          ) as { count: number } | null;
+          if (emptyWeeks && emptyWeeks.count > 3) {
+            console.warn(`[Safety] Found ${emptyWeeks.count} empty training weeks — cleaning up (adaptation damage)`);
+            db2.runSync(
+              `DELETE FROM training_week
+               WHERE target_volume = 0 AND actual_volume = 0
+               AND plan_id = (SELECT id FROM training_plan WHERE status = 'active')`
+            );
+            // Also fix Week 1's phase if it was overwritten
+            const { isWeeklyPlanningActive } = require('./engine/weeklyPlanning');
+            if (isWeeklyPlanningActive()) {
+              const { calculatePhase } = require('./engine/weeklyPlanning');
+              const profile = get().userProfile;
+              if (profile?.race_date) {
+                const { getToday } = require('./utils/dateUtils');
+                const phase = calculatePhase(profile.race_date, getToday());
+                db2.runSync(
+                  `UPDATE training_week SET phase = ? WHERE week_number = 1
+                   AND plan_id = (SELECT id FROM training_plan WHERE status = 'active')`,
+                  [phase.phase]
+                );
+              }
+            }
+          }
+        } catch (e) { console.warn('[Safety] Empty week cleanup failed:', e); }
       } catch {}
 
       // Auto-generate weekly plan if user missed check-in

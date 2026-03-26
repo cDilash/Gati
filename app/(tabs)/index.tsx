@@ -120,7 +120,7 @@ export default function TodayScreen() {
     } catch { return null; }
   }, [todaysWorkout?.id, todaysWorkout?.status]);
 
-  const totalWeeks = weeks.length;
+  const totalWeeks = weeks.length >= 8 ? weeks.length : Math.max(weeks.length, Math.ceil((daysUntilRace + 7) / 7));
 
   useEffect(() => {
     if (activePlan && todaysWorkout) fetchBriefing();
@@ -159,9 +159,14 @@ export default function TodayScreen() {
           } catch {}
         }
 
+        // Find tomorrow's workout for nutrition prep context
+        const { addDays: ad } = require('../../src/utils/dateUtils');
+        const tomorrowStr = ad(today, 1);
+        const tomorrowWk = currentWorkouts.find((w: any) => w.scheduled_date === tomorrowStr);
+
         const result = await generateRestDayBriefing(
           yWorkouts, yMetrics, paceZones,
-          userProfile, currentWeek, recoveryInfo,
+          userProfile, currentWeek, recoveryInfo, tomorrowWk,
         );
         if (result) setRestDayBriefing(result);
       } catch (e) {
@@ -562,12 +567,7 @@ export default function TodayScreen() {
               <B color="$color" fontSize={14} lineHeight={20}>
                 VDOT updated from <M color="$color" fontSize={14} fontWeight="700">{vdotNotification.oldVDOT}</M> → <M color="$color" fontSize={14} fontWeight="700">{vdotNotification.newVDOT}</M> based on your {vdotNotification.source}. Pace zones recalculated.
               </B>
-              {Math.abs(vdotNotification.newVDOT - vdotNotification.oldVDOT) >= 2 && (
-                <YStack backgroundColor="$accent" borderRadius="$4" paddingVertical="$2" paddingHorizontal="$4" marginTop="$3" alignSelf="flex-start"
-                  pressStyle={{ opacity: 0.8 }} onPress={() => router.push('/(tabs)/settings')}>
-                  <B color="white" fontSize={13} fontWeight="700">Regenerate Plan</B>
-                </YStack>
-              )}
+              {/* Regenerate Plan removed — weekly planning only */}
             </YStack>
             <B color="$textTertiary" fontSize={18} marginLeft="$2"
               onPress={() => { useAppStore.setState({ vdotNotification: null }); try { const { setSetting } = require('../../src/db/database'); setSetting('pending_vdot_notification', ''); } catch {} }}>✕</B>

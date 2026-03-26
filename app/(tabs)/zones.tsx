@@ -286,10 +286,9 @@ function buildFillPath(points: { x: number; y: number }[], bottom: number): stri
 
 // ─── Resting HR Card (SVG line graph) ────────────────────────
 
-function RestingHRCard({ signal, trendData, garminRhr }: {
+function RestingHRCard({ signal, trendData }: {
   signal: { type: string; value: number | null; baseline: number | null; status: string; score: number; detail: string };
   trendData: RestingHRResult[];
-  garminRhr?: number | null;
 }) {
   const [width, setWidth] = useState(0);
   const statusColor = signal.status === 'good' ? colors.cyan : signal.status === 'fair' ? colors.orange : colors.error;
@@ -321,8 +320,6 @@ function RestingHRCard({ signal, trendData, garminRhr }: {
 
   const points = data.map((d, i) => ({ x: toX(i), y: toY(d.value) }));
   const baselineY = toY(baseline);
-  const bandTopY = toY(baseline + 2);
-  const bandBotY = toY(baseline - 2);
 
   const { activeIdx, panResponder } = useGraphScrubber(points.map(p => p.x));
 
@@ -342,7 +339,7 @@ function RestingHRCard({ signal, trendData, garminRhr }: {
         <M color={colors.orange} fontSize={32} fontWeight="800">{signal.value ?? '--'}</M>
         <B color={colors.textTertiary} fontSize={12}>bpm</B>
       </XStack>
-      <B color={colors.textTertiary} fontSize={11} marginTop={2}>Baseline: {baseline} bpm (14-day avg)</B>
+      <B color={colors.textTertiary} fontSize={11} marginTop={2}>Baseline: {baseline} bpm · lower is better</B>
       <XStack alignItems="center" gap={8} marginTop={4}>
         <View backgroundColor={deltaColor + '22'} paddingHorizontal={8} paddingVertical={2} borderRadius={6}>
           <B color={deltaColor} fontSize={11} fontWeight="700">{deltaContext}</B>
@@ -364,9 +361,9 @@ function RestingHRCard({ signal, trendData, garminRhr }: {
                   </LinearGradient>
                 </Defs>
 
-                {/* Baseline ±2 bpm band */}
-                <SvgRect x={0} y={bandTopY} width={chartW} height={Math.max(0, bandBotY - bandTopY)}
-                  fill={colors.cyan} opacity={0.08} />
+                {/* Warning zone ABOVE baseline (higher RHR = worse recovery) */}
+                <SvgRect x={0} y={padT} width={chartW + padL + padR} height={Math.max(0, baselineY - padT)}
+                  fill={colors.orange} opacity={0.05} />
 
                 {/* Gradient fill below line */}
                 <Path d={buildFillPath(points, padT + chartH)} fill="url(#rhrFill2)" />
@@ -441,17 +438,9 @@ function RestingHRCard({ signal, trendData, garminRhr }: {
         </XStack>
       )}
 
-      {/* Source + Garmin comparison */}
-      <XStack marginTop={8} alignItems="center" justifyContent="space-between">
-        <XStack alignItems="center" gap={4}>
-          <B color={colors.textTertiary} fontSize={10}>by</B>
-          <GarminIcon size={11} />
-        </XStack>
-        {garminRhr != null && (
-          <B color={colors.textTertiary} fontSize={10}>
-            Garmin: {garminRhr} bpm{Math.abs((signal.value ?? 0) - garminRhr) > 5 ? ' ⚠' : ''}
-          </B>
-        )}
+      {/* Source */}
+      <XStack marginTop={8} justifyContent="flex-end">
+        <GarminIcon size={11} />
       </XStack>
     </YStack>
   );
@@ -531,9 +520,19 @@ function SignalNotAvailable({ type }: { type: string }) {
 function formatTime12h(timestamp: string): string {
   try {
     if (!timestamp) return '';
-    // Handle epoch milliseconds (Garmin returns "1774304665000") or ISO strings
     const num = Number(timestamp);
-    const d = !isNaN(num) && num > 1e12 ? new Date(num) : new Date(timestamp);
+    if (!isNaN(num) && num > 1e12) {
+      // Garmin "local" timestamps: epoch ms that ALREADY represent local time
+      // Use getUTCHours to avoid double-converting (the ms value IS local, not UTC)
+      const d = new Date(num);
+      const h = d.getUTCHours();
+      const m = d.getUTCMinutes();
+      const ampm = h >= 12 ? 'PM' : 'AM';
+      const h12 = h % 12 || 12;
+      return `${h12}:${String(m).padStart(2, '0')} ${ampm}`;
+    }
+    // ISO string or other format — use local time
+    const d = new Date(timestamp);
     if (isNaN(d.getTime())) return '';
     const h = d.getHours();
     const m = d.getMinutes();
@@ -606,13 +605,17 @@ function SleepCard({ signal, sleepTrend, garmin }: {
         <M color={colors.orange} fontSize={12} fontWeight="700">{signal.score}/33</M>
       </XStack>
 
-      {/* Hero value + bed times */}
+      {/* Hero value + bed/wake times */}
       {latest && (
         <XStack justifyContent="space-between" alignItems="baseline" marginTop={8}>
           <M color={colors.textPrimary} fontSize={32} fontWeight="800">{formatSleepDuration(latest.totalMinutes)}</M>
-          <B color={colors.textTertiary} fontSize={12}>
-            {formatTime12h(latest.bedStart)} → {formatTime12h(latest.bedEnd)}
-          </B>
+          <XStack alignItems="center" gap={4}>
+            <MaterialCommunityIcons name="weather-night" size={12} color={colors.textTertiary} />
+            <B color={colors.textTertiary} fontSize={12}>{formatTime12h(latest.bedStart)}</B>
+            <MaterialCommunityIcons name="arrow-right" size={10} color={colors.textTertiary} />
+            <MaterialCommunityIcons name="weather-sunny" size={12} color={colors.textTertiary} />
+            <B color={colors.textTertiary} fontSize={12}>{formatTime12h(latest.bedEnd)}</B>
+          </XStack>
         </XStack>
       )}
 
@@ -632,7 +635,7 @@ function SleepCard({ signal, sleepTrend, garmin }: {
       {garmin && (garmin.sleepNeedMinutes != null || garmin.sleepSubscores || garmin.sleepScore != null) && (
         <YStack marginBottom={8} paddingTop={8} borderTopWidth={0.5} borderTopColor={colors.border}>
           {/* Score · Need · Debt · Awakenings — compact single row */}
-          <XStack gap={12} alignItems="center" flexWrap="wrap" marginBottom={garmin.sleepSubscores ? 8 : 0}>
+          <XStack gap={12} alignItems="center" flexWrap="wrap" marginBottom={8}>
             {garmin.sleepScore != null && (
               <XStack alignItems="baseline" gap={2}>
                 <GarminIcon size={8} />
@@ -641,26 +644,26 @@ function SleepCard({ signal, sleepTrend, garmin }: {
               </XStack>
             )}
             {garmin.sleepNeedMinutes != null && (
-              <B color={colors.textTertiary} fontSize={10}>Need {Math.floor(garmin.sleepNeedMinutes / 60)}h {garmin.sleepNeedMinutes % 60}m</B>
+              <XStack alignItems="center" gap={3}>
+                <MaterialCommunityIcons name="target" size={10} color={colors.textTertiary} />
+                <B color={colors.textTertiary} fontSize={10}>Need {Math.floor(garmin.sleepNeedMinutes / 60)}h {garmin.sleepNeedMinutes % 60}m</B>
+              </XStack>
             )}
             {garmin.sleepDebtMinutes != null && garmin.sleepDebtMinutes > 0 && (
-              <B color={colors.orange} fontSize={10}>Debt {garmin.sleepDebtMinutes}m</B>
+              <XStack alignItems="center" gap={3}>
+                <MaterialCommunityIcons name="clock-alert-outline" size={10} color={colors.orange} />
+                <B color={colors.orange} fontSize={10}>Debt {garmin.sleepDebtMinutes}m</B>
+              </XStack>
             )}
             {garmin.sleepAwakeCount != null && (
-              <B color={garmin.sleepAwakeCount > 3 ? colors.orange : colors.textTertiary} fontSize={10}>
-                {garmin.sleepAwakeCount} awakening{garmin.sleepAwakeCount !== 1 ? 's' : ''}
-              </B>
+              <XStack alignItems="center" gap={3}>
+                <MaterialCommunityIcons name="eye-outline" size={10} color={garmin.sleepAwakeCount > 3 ? colors.orange : colors.textTertiary} />
+                <B color={garmin.sleepAwakeCount > 3 ? colors.orange : colors.textTertiary} fontSize={10}>
+                  {garmin.sleepAwakeCount} awakening{garmin.sleepAwakeCount !== 1 ? 's' : ''}
+                </B>
+              </XStack>
             )}
           </XStack>
-
-          {/* Need vs Got progress bar */}
-          {garmin.sleepNeedMinutes != null && latest && (
-            <View height={4} borderRadius={2} backgroundColor={colors.surfaceHover} marginBottom={garmin.sleepSubscores ? 8 : 0} overflow="hidden">
-              <View height={4} borderRadius={2}
-                backgroundColor={garmin.sleepDebtMinutes && garmin.sleepDebtMinutes > 30 ? colors.orange : colors.cyan}
-                width={`${Math.min((latest.totalMinutes / garmin.sleepNeedMinutes) * 100, 100)}%` as any} />
-            </View>
-          )}
 
           {/* Stacked stage bar — single horizontal bar with colored segments */}
           {(garmin.sleepDeepSec != null || garmin.sleepLightSec != null || garmin.sleepRemSec != null) && (() => {
@@ -695,23 +698,7 @@ function SleepCard({ signal, sleepTrend, garmin }: {
             );
           })()}
 
-          {/* Sub-scores grid — no % sign, they're 0-100 scores */}
-          {garmin.sleepSubscores && (
-            <XStack gap={4} flexWrap="wrap">
-              {Object.entries(garmin.sleepSubscores).filter(([, v]) => v != null).map(([key, val]) => {
-                const label = key.replace('Percentage', '').replace(/([A-Z])/g, ' $1').trim().toUpperCase();
-                const numVal = val as number;
-                const scoreColor = numVal >= 80 ? colors.cyan : numVal >= 60 ? colors.textPrimary : colors.orange;
-                return (
-                  <YStack key={key} backgroundColor={colors.surfaceHover} borderRadius={6}
-                    paddingHorizontal={8} paddingVertical={4} alignItems="center" minWidth={48}>
-                    <M color={scoreColor} fontSize={14} fontWeight="700">{numVal}</M>
-                    <H color={colors.textTertiary} fontSize={7} letterSpacing={0.5}>{label}</H>
-                  </YStack>
-                );
-              })}
-            </XStack>
-          )}
+          {/* Sub-scores removed — stacked bar with durations is more useful */}
         </YStack>
       )}
 
@@ -893,8 +880,7 @@ function SleepCard({ signal, sleepTrend, garmin }: {
       })()}
 
       {/* Source */}
-      <XStack marginTop={8} alignItems="center" gap={4}>
-        <B color={colors.textTertiary} fontSize={10}>by</B>
+      <XStack marginTop={8} justifyContent="flex-end">
         <GarminIcon size={11} />
       </XStack>
     </YStack>
@@ -903,25 +889,52 @@ function SleepCard({ signal, sleepTrend, garmin }: {
 
 // ─── Pace / HR / Fitness / Shoes (from old Zones screen) ────
 
-function PaceZoneRow({ zone, paceZones }: { zone: PaceZoneName; paceZones: PaceZones }) {
+function PaceZoneRow({ zone, paceZones, isActive }: { zone: PaceZoneName; paceZones: PaceZones; isActive?: boolean }) {
   const u = useUnits();
   const range = paceZones[zone];
   const desc = ZONE_DESCRIPTIONS[zone].split(' \u2014 ')[1] ?? ZONE_DESCRIPTIONS[zone];
+  const zoneColor = ZONE_COLORS[zone];
+  // Intensity bar width: E=20%, M=40%, T=60%, I=80%, R=100%
+  const intensityPct = { E: 20, M: 40, T: 60, I: 80, R: 100 }[zone];
+  const zoneIcon = { E: 'walk', M: 'run', T: 'run-fast', I: 'lightning-bolt', R: 'rocket-launch' }[zone];
+
   return (
-    <XStack alignItems="center" paddingVertical="$3" paddingHorizontal="$3" borderBottomWidth={0.5} borderBottomColor="$border">
-      <View width={4} height={40} borderRadius={2} marginRight="$3" backgroundColor={ZONE_COLORS[zone]} />
-      <YStack flex={1}>
-        <XStack alignItems="center" gap="$2" marginBottom={2}>
-          <H color="$color" fontSize={17} letterSpacing={1} width={20}>{zone}</H>
-          <B color="$color" fontSize={15} fontWeight="600" flex={1}>{ZONE_FULL_NAMES[zone]}</B>
-          <B color="$textTertiary" fontSize={12}>{ZONE_RPE[zone]}</B>
-        </XStack>
-        <M color={colors.cyan} fontSize={15} fontWeight="700" marginLeft={28} marginBottom={2}>
-          {formatPaceRange(range)} {u.paceSuffix}
-        </M>
-        <B color="$textSecondary" fontSize={12} marginLeft={28} lineHeight={16}>{desc}</B>
-      </YStack>
-    </XStack>
+    <YStack paddingVertical={12} paddingHorizontal={14} borderBottomWidth={0.5} borderBottomColor={colors.border}
+      backgroundColor={isActive ? zoneColor + '08' : 'transparent'}>
+      <XStack alignItems="center" gap={10}>
+        {/* Zone badge */}
+        <View width={36} height={36} borderRadius={18} backgroundColor={zoneColor + '20'}
+          alignItems="center" justifyContent="center">
+          <H color={zoneColor} fontSize={16} letterSpacing={1} fontWeight="800">{zone}</H>
+        </View>
+        {/* Name + pace */}
+        <YStack flex={1}>
+          <XStack alignItems="center" gap={6}>
+            <B color={colors.textPrimary} fontSize={14} fontWeight="700">{ZONE_FULL_NAMES[zone]}</B>
+            <MaterialCommunityIcons name={zoneIcon as any} size={12} color={zoneColor} />
+            {isActive && (
+              <View backgroundColor={zoneColor + '33'} paddingHorizontal={6} paddingVertical={1} borderRadius={4}>
+                <B color={zoneColor} fontSize={8} fontWeight="800">ACTIVE</B>
+              </View>
+            )}
+          </XStack>
+          <M color={zoneColor} fontSize={16} fontWeight="800" marginTop={2}>
+            {formatPaceRange(range)} <B color={colors.textTertiary} fontSize={11}>{u.paceSuffix}</B>
+          </M>
+        </YStack>
+        {/* RPE badge */}
+        <View backgroundColor={colors.surfaceHover} paddingHorizontal={8} paddingVertical={4} borderRadius={6}>
+          <M color={colors.textSecondary} fontSize={10} fontWeight="700">{ZONE_RPE[zone]}</M>
+        </View>
+      </XStack>
+      {/* Intensity bar + description */}
+      <XStack alignItems="center" gap={8} marginTop={6} marginLeft={46}>
+        <View flex={1} height={3} borderRadius={1.5} backgroundColor={colors.surfaceHover} overflow="hidden">
+          <View height={3} borderRadius={1.5} backgroundColor={zoneColor} width={`${intensityPct}%` as any} opacity={0.7} />
+        </View>
+        <B color={colors.textTertiary} fontSize={10} width={90} textAlign="right">{desc}</B>
+      </XStack>
+    </YStack>
   );
 }
 
@@ -1040,7 +1053,7 @@ export default function RecoveryScreen() {
         <YStack marginTop="$4" gap="$3">
           {/* Resting HR */}
           {hasRHR ? (
-            <RestingHRCard signal={recoveryStatus.signals.find(s => s.type === 'resting_hr')!} trendData={rhrTrendFull} garminRhr={garminHealth?.restingHr} />
+            <RestingHRCard signal={recoveryStatus.signals.find(s => s.type === 'resting_hr')!} trendData={rhrTrendFull} />
           ) : (
             <NoDataCard icon="heart-pulse" label="Resting Heart Rate" message="No recent data — wear your watch overnight" />
           )}
@@ -1147,10 +1160,7 @@ export default function RecoveryScreen() {
                 {/* Weekly avg + source */}
                 <XStack marginTop={10} alignItems="center" justifyContent="space-between">
                   {weeklyAvg != null && <B color={colors.textTertiary} fontSize={11}>Weekly avg: {weeklyAvg} ms</B>}
-                  <XStack alignItems="center" gap={4}>
-                    <B color={colors.textTertiary} fontSize={10}>by</B>
-                    <GarminIcon size={11} />
-                  </XStack>
+                  <GarminIcon size={11} />
                 </XStack>
               </YStack>
             );
@@ -1458,6 +1468,94 @@ export default function RecoveryScreen() {
             );
           })()}
 
+          {/* Body Composition — Garmin Index Scale */}
+          {garminHealth.weightKg != null && (() => {
+            const g = garminHealth;
+            const u = require('../../src/hooks/useUnits').useUnits();
+            const weightDisplay = u.units === 'metric' ? `${g.weightKg} kg` : `${Math.round(g.weightKg! * 2.20462 * 10) / 10} lbs`;
+            return (
+              <YStack backgroundColor={colors.surface} borderRadius={16} padding={16}>
+                <XStack alignItems="center" gap={6} marginBottom={12}>
+                  <MaterialCommunityIcons name="scale-bathroom" size={16} color={colors.cyan} />
+                  <B color={colors.textPrimary} fontSize={14} fontWeight="600">Body Composition</B>
+                  <View flex={1} />
+                  <GarminIcon size={10} />
+                </XStack>
+
+                {/* Weight hero */}
+                <XStack alignItems="baseline" gap={6} marginBottom={12}>
+                  <GradientText text={weightDisplay.split(' ')[0]} style={{ fontSize: 32, fontWeight: '800' }} />
+                  <B color={colors.textTertiary} fontSize={14}>{weightDisplay.split(' ')[1]}</B>
+                  {g.bmi != null && (
+                    <View marginLeft={8} backgroundColor={colors.surfaceHover} paddingHorizontal={8} paddingVertical={2} borderRadius={6}>
+                      <M color={colors.textSecondary} fontSize={11} fontWeight="700">BMI {g.bmi}</M>
+                    </View>
+                  )}
+                </XStack>
+
+                {/* Composition bars */}
+                {(g.bodyFatPct != null || g.muscleMassKg != null) && (
+                  <YStack gap={8}>
+                    {g.bodyFatPct != null && (
+                      <YStack>
+                        <XStack justifyContent="space-between" marginBottom={3}>
+                          <XStack alignItems="center" gap={4}>
+                            <MaterialCommunityIcons name="water-percent" size={12} color={colors.orange} />
+                            <B color={colors.textSecondary} fontSize={11}>Body Fat</B>
+                          </XStack>
+                          <M color={colors.orange} fontSize={13} fontWeight="800">{g.bodyFatPct}%</M>
+                        </XStack>
+                        <View height={6} borderRadius={3} backgroundColor={colors.surfaceHover} overflow="hidden">
+                          <View height={6} borderRadius={3} backgroundColor={colors.orange}
+                            width={`${Math.min(g.bodyFatPct! * 2, 100)}%` as any} opacity={0.7} />
+                        </View>
+                      </YStack>
+                    )}
+                    {g.muscleMassKg != null && (
+                      <YStack>
+                        <XStack justifyContent="space-between" marginBottom={3}>
+                          <XStack alignItems="center" gap={4}>
+                            <MaterialCommunityIcons name="arm-flex" size={12} color={colors.cyan} />
+                            <B color={colors.textSecondary} fontSize={11}>Muscle Mass</B>
+                          </XStack>
+                          <M color={colors.cyan} fontSize={13} fontWeight="800">
+                            {u.units === 'metric' ? `${g.muscleMassKg} kg` : `${Math.round(g.muscleMassKg! * 2.20462 * 10) / 10} lbs`}
+                          </M>
+                        </XStack>
+                        <View height={6} borderRadius={3} backgroundColor={colors.surfaceHover} overflow="hidden">
+                          <View height={6} borderRadius={3} backgroundColor={colors.cyan}
+                            width={`${Math.min((g.muscleMassKg! / (g.weightKg || 80)) * 100, 100)}%` as any} opacity={0.7} />
+                        </View>
+                      </YStack>
+                    )}
+                  </YStack>
+                )}
+
+                {/* Bottom stats row */}
+                {(g.bodyWaterPct != null || g.boneMassKg != null) && (
+                  <XStack justifyContent="space-around" marginTop={10} paddingTop={10} borderTopWidth={0.5} borderTopColor={colors.border}>
+                    {g.bodyWaterPct != null && (
+                      <YStack alignItems="center">
+                        <MaterialCommunityIcons name="water" size={14} color={colors.textTertiary} />
+                        <M color={colors.textSecondary} fontSize={13} fontWeight="700" marginTop={2}>{g.bodyWaterPct}%</M>
+                        <H color={colors.textTertiary} fontSize={8} letterSpacing={1}>WATER</H>
+                      </YStack>
+                    )}
+                    {g.boneMassKg != null && (
+                      <YStack alignItems="center">
+                        <MaterialCommunityIcons name="bone" size={14} color={colors.textTertiary} />
+                        <M color={colors.textSecondary} fontSize={13} fontWeight="700" marginTop={2}>
+                          {u.units === 'metric' ? `${g.boneMassKg} kg` : `${Math.round(g.boneMassKg! * 2.20462 * 10) / 10} lbs`}
+                        </M>
+                        <H color={colors.textTertiary} fontSize={8} letterSpacing={1}>BONE</H>
+                      </YStack>
+                    )}
+                  </XStack>
+                )}
+              </YStack>
+            );
+          })()}
+
           {/* Fitness Scores — Endurance + Hill */}
           {(garminHealth.enduranceScore != null || garminHealth.hillScore != null) && (() => {
             const endLabel = (v: number) => v >= 8000 ? 'Excellent' : v >= 5000 ? 'Good' : v >= 2000 ? 'Moderate' : 'Low';
@@ -1684,7 +1782,12 @@ export default function RecoveryScreen() {
       {/* SECTION 5: Pace Zones (collapsible) */}
       <CollapsibleSection title="Pace Zones">
         <YStack backgroundColor="$surface" borderRadius="$6" overflow="hidden">
-          {ZONE_NAMES.map(zone => <PaceZoneRow key={zone} zone={zone} paceZones={paceZones} />)}
+          {(() => {
+            // Highlight the zone most relevant to current phase
+            const phase = useAppStore.getState().currentPhase ?? '';
+            const activeZone: PaceZoneName | null = phase === 'base' ? 'E' : phase === 'build' ? 'T' : phase === 'peak' ? 'I' : null;
+            return ZONE_NAMES.map(zone => <PaceZoneRow key={zone} zone={zone} paceZones={paceZones} isActive={zone === activeZone} />);
+          })()}
         </YStack>
       </CollapsibleSection>
 

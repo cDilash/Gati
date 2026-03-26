@@ -232,7 +232,9 @@ export default function CalendarScreen() {
     );
   }
 
-  const progressPct = weeks.length > 0 ? Math.round((currentWeekNumber / weeks.length) * 100) : 0;
+  // Total weeks: use actual weeks if full plan, otherwise calculate from race date
+  const totalWeeks = weeks.length >= 8 ? weeks.length : Math.max(weeks.length, Math.ceil((daysUntilRace + 7) / 7));
+  const progressPct = totalWeeks > 0 ? Math.round((currentWeekNumber / totalWeeks) * 100) : 0;
   const maxVolume = Math.max(...weeks.map(w => Math.max(w.target_volume, w.actual_volume)), 1);
 
   // ─── Calendar: compute week data ────────────────────────
@@ -363,7 +365,7 @@ export default function CalendarScreen() {
                 {calendarWeek ? (
                   <XStack alignItems="center" gap={4} marginTop={2}>
                     <B color={colors.textTertiary} fontSize={11}>
-                      Week {calendarWeek.week_number} of {weeks.length}
+                      Week {calendarWeek.week_number} of {totalWeeks}
                     </B>
                     {calendarWeek.is_cutback && (
                       <B color={colors.textTertiary} fontSize={9}>· CUTBACK</B>
@@ -681,7 +683,7 @@ export default function CalendarScreen() {
               )}
               <XStack alignItems="center" marginBottom={8}>
                 <B color={colors.cyan} fontSize={13} fontWeight="600">
-                  Week {currentWeekNumber} of {weeks.length}
+                  Week {currentWeekNumber} of {totalWeeks}
                 </B>
                 {weeks.find(w => w.week_number === currentWeekNumber) && (
                   <B color={colors.textTertiary} fontSize={13}> · {weeks.find(w => w.week_number === currentWeekNumber)!.phase} phase</B>
@@ -814,18 +816,28 @@ export default function CalendarScreen() {
                         <Stop offset="1" stopColor={colors.orange} />
                       </LinearGradient>
                     </Defs>
-                    {weeks.map((w, i) => {
-                      const barW = Math.max(((arcWidth - 16) / weeks.length) - 2, 3);
-                      const x = i * ((arcWidth - 16) / weeks.length) + 1;
-                      const targetH = (w.target_volume / maxVolume) * 70;
-                      const actualH = (w.actual_volume / maxVolume) * 70;
-                      const isCurr = w.week_number === currentWeekNumber;
-                      const isPast = w.week_number < currentWeekNumber;
+                    {Array.from({ length: totalWeeks }, (_, i) => {
+                      const weekNum = i + 1;
+                      const w = weeks.find(wk => wk.week_number === weekNum);
+                      const barW = Math.max(((arcWidth - 16) / totalWeeks) - 2, 2);
+                      const x = i * ((arcWidth - 16) / totalWeeks) + 1;
+                      const targetH = w ? (w.target_volume / maxVolume) * 70 : 0;
+                      const actualH = w ? (w.actual_volume / maxVolume) * 70 : 0;
+                      const isCurr = weekNum === currentWeekNumber;
+                      const isPast = weekNum < currentWeekNumber;
+                      const isFuture = !w;
                       return (
-                        <React.Fragment key={w.id}>
+                        <React.Fragment key={weekNum}>
+                          {/* Future placeholder — subtle bar */}
+                          {isFuture && (
+                            <SvgRect x={x} y={74} width={barW} height={10}
+                              fill={colors.border} rx={1.5} opacity={0.3} />
+                          )}
                           {/* Target outline */}
-                          <SvgRect x={x} y={84 - targetH} width={barW} height={targetH}
-                            fill="none" stroke={colors.border} strokeWidth={0.5} rx={1.5} />
+                          {w && targetH > 0 && (
+                            <SvgRect x={x} y={84 - targetH} width={barW} height={targetH}
+                              fill="none" stroke={colors.border} strokeWidth={0.5} rx={1.5} />
+                          )}
                           {/* Actual fill */}
                           {isPast && actualH > 0 && (
                             <SvgRect x={x} y={84 - actualH} width={barW} height={actualH}
