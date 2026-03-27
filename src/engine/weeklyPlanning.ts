@@ -42,12 +42,47 @@ export function isWeeklyPlanningActive(): boolean {
 
 // ─── Phase Calculation ──────────────────────────────────────
 
-export function calculatePhase(raceDate: string, currentDate: string, peakWeeklyMiles: number = 25): TrainingPhaseInfo {
+/**
+ * Calculate peak weekly miles based on goal marathon time and current fitness.
+ * Capped at 3x current weekly mileage to prevent injury.
+ */
+export function calculatePeakWeeklyMiles(
+  targetFinishTimeSec: number | null,
+  currentWeeklyMiles: number,
+): number {
+  // Base peak on goal time
+  let peak: number;
+  if (!targetFinishTimeSec || targetFinishTimeSec <= 0) {
+    peak = 30; // default for unknown goal
+  } else if (targetFinishTimeSec <= 12600) {
+    peak = 50; // sub-3:30
+  } else if (targetFinishTimeSec <= 13500) {
+    peak = 40; // 3:30-3:45
+  } else if (targetFinishTimeSec <= 15300) {
+    peak = 35; // 3:45-4:15
+  } else if (targetFinishTimeSec <= 18000) {
+    peak = 30; // 4:15-5:00
+  } else {
+    peak = 25; // 5:00+
+  }
+
+  // Safety: cap at 3x current volume (injury prevention)
+  if (currentWeeklyMiles > 0) {
+    peak = Math.min(peak, currentWeeklyMiles * 3);
+  }
+
+  return Math.round(peak);
+}
+
+export function calculatePhase(raceDate: string, currentDate: string, peakWeeklyMiles: number = 30): TrainingPhaseInfo {
   const race = new Date(raceDate + 'T00:00:00');
   const now = new Date(currentDate + 'T00:00:00');
   const weeksUntilRace = Math.ceil((race.getTime() - now.getTime()) / (7 * 86400000));
   const totalWeeks = Math.max(8, weeksUntilRace);
   const weekNumber = Math.max(1, totalWeeks - weeksUntilRace + 1);
+
+  // Recovery week every 4th week
+  const isRecoveryWeek = weekNumber > 1 && weekNumber % 4 === 0;
 
   let phase: PhaseName;
   let targetWeeklyMiles: number;
@@ -57,7 +92,7 @@ export function calculatePhase(raceDate: string, currentDate: string, peakWeekly
     targetWeeklyMiles = peakWeeklyMiles * 0.3;
   } else if (weeksUntilRace <= 2) {
     phase = 'taper';
-    const taperWeek = 3 - weeksUntilRace; // 1 or 2
+    const taperWeek = 3 - weeksUntilRace;
     targetWeeklyMiles = peakWeeklyMiles * (taperWeek === 1 ? 0.65 : 0.4);
   } else if (weeksUntilRace <= 5) {
     phase = 'peak';
@@ -70,6 +105,11 @@ export function calculatePhase(raceDate: string, currentDate: string, peakWeekly
     phase = 'base';
     const baseProgress = weekNumber / Math.floor(totalWeeks * 0.4);
     targetWeeklyMiles = peakWeeklyMiles * (0.5 + Math.min(baseProgress, 1) * 0.15);
+  }
+
+  // Recovery week: reduce by 20%
+  if (isRecoveryWeek) {
+    targetWeeklyMiles *= 0.8;
   }
 
   return {
@@ -416,8 +456,12 @@ export function transitionToWeeklyPlanning(): TransitionResult {
   setSetting('planning_mode', 'weekly');
 
   // Calculate current phase
-  const profile = db.getFirstSync('SELECT race_date FROM user_profile LIMIT 1') as { race_date: string } | null;
-  const phase = calculatePhase(profile?.race_date ?? today, today);
+  const profile = db.getFirstSync('SELECT race_date, target_finish_time_sec, current_weekly_miles FROM user_profile LIMIT 1') as { race_date: string; target_finish_time_sec: number | null; current_weekly_miles: number } | null;
+  const peakMiles = calculatePeakWeeklyMiles(
+    profile?.target_finish_time_sec ?? null,
+    profile?.current_weekly_miles ?? 15,
+  );
+  const phase = calculatePhase(profile?.race_date ?? today, today, peakMiles);
 
   // Save the current phase
   setCurrentPhase(phase);
@@ -598,7 +642,11 @@ export async function autoGenerateWeek(): Promise<boolean> {
     if (!profile) return false;
 
     const today = getToday();
-    const phase = calculatePhase(profile.race_date ?? today, today);
+    const peakMiles = calculatePeakWeeklyMiles(
+      profile.target_finish_time_sec ?? null,
+      profile.current_weekly_miles ?? 15,
+    );
+    const phase = calculatePhase(profile.race_date ?? today, today, peakMiles);
     const defaultCheckin = buildDefaultCheckin(profile, phase);
 
     // Save the default checkin

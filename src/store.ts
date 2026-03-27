@@ -583,13 +583,18 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (adjustments.length > 0) {
         console.log(`[Coach] Found ${adjustments.length} adjustment(s) in response`);
         const results = executeAdjustments(adjustments);
-        const summary = results.map((r: any) => `${r.success ? '✅' : '❌'} ${r.message}`).join('\n');
+        const hasErrors = results.some((r: any) => !r.success);
+        const hasSuccess = results.some((r: any) => r.success);
 
-        // Save system message confirming changes
+        // Save system message — friendly summary
+        const systemContent = hasErrors && !hasSuccess
+          ? 'The change couldn\'t be applied automatically. You can make this adjustment from the Plan screen.'
+          : results.filter((r: any) => r.success).map((r: any) => `✅ ${r.message}`).join('\n');
+
         dbSaveCoachMessage({
           id: Crypto.randomUUID(),
           role: 'system',
-          content: summary,
+          content: systemContent,
           message_type: 'chat',
           metadata_json: null,
         });
@@ -1167,11 +1172,15 @@ export const useAppStore = create<AppState>((set, get) => ({
             // Also fix Week 1's phase if it was overwritten
             const { isWeeklyPlanningActive } = require('./engine/weeklyPlanning');
             if (isWeeklyPlanningActive()) {
-              const { calculatePhase } = require('./engine/weeklyPlanning');
+              const { calculatePhase, calculatePeakWeeklyMiles } = require('./engine/weeklyPlanning');
               const profile = get().userProfile;
               if (profile?.race_date) {
                 const { getToday } = require('./utils/dateUtils');
-                const phase = calculatePhase(profile.race_date, getToday());
+                const peakMiles = calculatePeakWeeklyMiles(
+                  profile.target_finish_time_sec ?? null,
+                  profile.current_weekly_miles ?? 15,
+                );
+                const phase = calculatePhase(profile.race_date, getToday(), peakMiles);
                 db2.runSync(
                   `UPDATE training_week SET phase = ? WHERE week_number = 1
                    AND plan_id = (SELECT id FROM training_plan WHERE status = 'active')`,

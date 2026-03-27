@@ -37,6 +37,20 @@ function isWithinCurrentWeek(date: string): boolean {
   return date >= monday && date <= sunday;
 }
 
+/**
+ * Resolve a partial workout ID (8-char prefix from coach prompt) to the full UUID.
+ * The coach sees IDs like "ID:749b8b8d" but SQLite stores full UUIDs.
+ */
+function resolveWorkoutId(partialId: string): string | null {
+  const db = getDb();
+  // Try exact match first
+  const exact = db.getFirstSync("SELECT id FROM workout WHERE id = ?", [partialId]) as { id: string } | null;
+  if (exact) return exact.id;
+  // Try prefix match (8-char from coach prompt)
+  const prefix = db.getFirstSync("SELECT id FROM workout WHERE id LIKE ?", [partialId + '%']) as { id: string } | null;
+  return prefix?.id ?? null;
+}
+
 // ─── SWAP: Move a workout to a different day ─────────────────
 
 export function swapWorkoutDay(
@@ -44,6 +58,7 @@ export function swapWorkoutDay(
   newDate: string,
 ): { success: boolean; message: string } {
   const db = getDb();
+  const resolvedId = resolveWorkoutId(workoutId);
 
   if (!isWithinCurrentWeek(newDate)) {
     return { success: false, message: 'Can only swap within the current week (Mon-Sun)' };
@@ -51,7 +66,7 @@ export function swapWorkoutDay(
 
   const workout = db.getFirstSync(
     "SELECT * FROM workout WHERE id = ? AND status = 'upcoming'",
-    [workoutId]
+    [resolvedId ?? workoutId]
   ) as any;
   if (!workout) {
     return { success: false, message: 'Workout not found or already completed/skipped' };
@@ -65,12 +80,12 @@ export function swapWorkoutDay(
 
   if (existing) {
     // Swap both dates
-    db.runSync('UPDATE workout SET scheduled_date = ? WHERE id = ?', [newDate, workoutId]);
+    db.runSync('UPDATE workout SET scheduled_date = ? WHERE id = ?', [newDate, workout.id]);
     db.runSync('UPDATE workout SET scheduled_date = ? WHERE id = ?', [workout.scheduled_date, existing.id]);
     return { success: true, message: `Swapped ${workout.workout_type} (${workout.scheduled_date}) with ${existing.workout_type} (${newDate})` };
   } else {
     // Just move
-    db.runSync('UPDATE workout SET scheduled_date = ? WHERE id = ?', [newDate, workoutId]);
+    db.runSync('UPDATE workout SET scheduled_date = ? WHERE id = ?', [newDate, workout.id]);
     return { success: true, message: `Moved ${workout.workout_type} from ${workout.scheduled_date} to ${newDate}` };
   }
 }
@@ -88,10 +103,11 @@ export function modifyWorkout(
   }
 ): { success: boolean; message: string } {
   const db = getDb();
+  const resolvedId = resolveWorkoutId(workoutId);
 
   const workout = db.getFirstSync(
     "SELECT * FROM workout WHERE id = ? AND status = 'upcoming'",
-    [workoutId]
+    [resolvedId ?? workoutId]
   ) as any;
   if (!workout) {
     return { success: false, message: 'Workout not found or already completed/skipped' };
@@ -127,7 +143,7 @@ export function modifyWorkout(
 
   // Mark as modified
   sets.push("status = 'modified'");
-  vals.push(workoutId);
+  vals.push(workout.id);
   db.runSync(`UPDATE workout SET ${sets.join(', ')} WHERE id = ?`, vals);
 
   const changedFields = Object.keys(changes).join(', ');
@@ -141,10 +157,11 @@ export function skipWorkout(
   reason: string,
 ): { success: boolean; message: string } {
   const db = getDb();
+  const resolvedId = resolveWorkoutId(workoutId);
 
   const workout = db.getFirstSync(
     "SELECT * FROM workout WHERE id = ? AND status IN ('upcoming', 'modified')",
-    [workoutId]
+    [resolvedId ?? workoutId]
   ) as any;
   if (!workout) {
     return { success: false, message: 'Workout not found or already completed/skipped' };
@@ -152,7 +169,7 @@ export function skipWorkout(
 
   db.runSync(
     "UPDATE workout SET status = 'skipped' WHERE id = ?",
-    [workoutId]
+    [workout.id]
   );
 
   return { success: true, message: `Skipped ${workout.workout_type} on ${workout.scheduled_date}: ${reason}` };

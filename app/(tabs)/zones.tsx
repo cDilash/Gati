@@ -1092,11 +1092,17 @@ export default function RecoveryScreen() {
                     {hrvSignal.value != null && hrvSignal.value >= baseLow ? `Within baseline (${baseLow}–${baseHigh})` : `Below baseline (${baseLow}–${baseHigh})`}
                   </B>
                 )}
-                {hrvStatus && (
-                  <View alignSelf="flex-start" backgroundColor={statusColor + '22'} paddingHorizontal={8} paddingVertical={2} borderRadius={6} marginTop={4}>
-                    <B color={statusColor} fontSize={11} fontWeight="700">{hrvStatus}</B>
-                  </View>
-                )}
+                {(() => {
+                  // Use our own label based on actual value vs baseline, not Garmin's raw status
+                  const val = hrvSignal.value ?? 0;
+                  const label = val >= (baseLow ?? 999) ? 'Balanced' : val >= (baseLow ?? 999) * 0.9 ? 'Slightly Low' : val >= (baseLow ?? 999) * 0.75 ? 'Low' : 'Suppressed';
+                  const pillColor = val >= (baseLow ?? 999) ? colors.cyan : val >= (baseLow ?? 999) * 0.9 ? colors.textSecondary : val >= (baseLow ?? 999) * 0.75 ? colors.orange : colors.error;
+                  return (
+                    <View alignSelf="flex-start" backgroundColor={pillColor + '22'} paddingHorizontal={8} paddingVertical={2} borderRadius={6} marginTop={4}>
+                      <B color={pillColor} fontSize={11} fontWeight="700">{label}</B>
+                    </View>
+                  );
+                })()}
 
                 {/* 3-zone baseline range bar */}
                 {baseLow != null && baseHigh != null && hrvSignal.value != null && (

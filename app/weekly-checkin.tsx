@@ -127,11 +127,15 @@ export default function WeeklyCheckinScreen() {
   const handleGenerate = async () => {
     setIsGenerating(true);
     try {
-      const { saveWeeklyCheckin, calculatePhase } = require('../src/engine/weeklyPlanning');
+      const { saveWeeklyCheckin, calculatePhase, calculatePeakWeeklyMiles } = require('../src/engine/weeklyPlanning');
       const { getToday } = require('../src/utils/dateUtils');
 
       const today = getToday();
-      const phase = calculatePhase(userProfile?.race_date ?? today, today);
+      const peakMiles = calculatePeakWeeklyMiles(
+        userProfile?.target_finish_time_sec ?? null,
+        userProfile?.current_weekly_miles ?? 15,
+      );
+      const phase = calculatePhase(userProfile?.race_date ?? today, today, peakMiles);
 
       const checkin = {
         id: Crypto.randomUUID(),
@@ -356,9 +360,13 @@ export default function WeeklyCheckinScreen() {
   const renderStep4 = () => {
     const phase = (() => {
       try {
-        const { calculatePhase } = require('../src/engine/weeklyPlanning');
+        const { calculatePhase, calculatePeakWeeklyMiles } = require('../src/engine/weeklyPlanning');
         const { getToday } = require('../src/utils/dateUtils');
-        return calculatePhase(userProfile?.race_date ?? getToday(), getToday());
+        const peakMiles = calculatePeakWeeklyMiles(
+          userProfile?.target_finish_time_sec ?? null,
+          userProfile?.current_weekly_miles ?? 15,
+        );
+        return calculatePhase(userProfile?.race_date ?? getToday(), getToday(), peakMiles);
       } catch { return null; }
     })();
 

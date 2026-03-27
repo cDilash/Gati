@@ -72,6 +72,18 @@ export function executeAdjustments(adjustments: ParsedAdjustment[]): AdjustmentR
           if (adj.params.pace) changes.targetPaceZone = adj.params.pace;
           if (adj.params.title) changes.title = adj.params.title;
           result = modifyWorkout(adj.params.workout, changes);
+          // Fallback: if modify fails because workout not found, try ADD instead
+          if (!result.success && result.message.includes('not found') && (adj.params.date || adj.params.to)) {
+            console.log('[Adjustment] MODIFY failed — trying ADD fallback');
+            const fallbackDate = adj.params.date || adj.params.to;
+            result = addWorkout(fallbackDate, {
+              workoutType: adj.params.type || 'easy',
+              targetDistanceMiles: parseFloat(adj.params.distance || '3'),
+              description: adj.params.description || 'Coach-suggested workout',
+              targetPaceZone: adj.params.pace,
+            });
+            if (result.success) result.message = `Added (auto-corrected): ${result.message}`;
+          }
           break;
         }
 

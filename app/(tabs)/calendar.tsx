@@ -713,9 +713,13 @@ export default function CalendarScreen() {
               {/* Phase progress bar */}
               {(() => {
                 try {
-                  const { calculatePhase } = require('../../src/engine/weeklyPlanning');
+                  const { calculatePhase, calculatePeakWeeklyMiles } = require('../../src/engine/weeklyPlanning');
                   const { getToday } = require('../../src/utils/dateUtils');
-                  const phase = calculatePhase(userProfile?.race_date ?? getToday(), getToday());
+                  const peakMiles = calculatePeakWeeklyMiles(
+                    userProfile?.target_finish_time_sec ?? null,
+                    userProfile?.current_weekly_miles ?? 15,
+                  );
+                  const phase = calculatePhase(userProfile?.race_date ?? getToday(), getToday(), peakMiles);
                   const phases: { key: string; label: string; color: string }[] = [
                     { key: 'base', label: 'BASE', color: colors.cyan },
                     { key: 'build', label: 'BUILD', color: colors.orange },

@@ -26,6 +26,15 @@ const OAUTH_EXCHANGE_PATH = "/oauth-service/oauth/exchange/user/2.0";
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
+// ─── Timezone-aware date helper ─────────────────────────────────
+// Edge Function runs in UTC — convert to user's local date (America/Los_Angeles)
+function getLocalDate(offsetDays: number = 0): string {
+  const now = new Date();
+  const local = new Date(now.toLocaleString("en-US", { timeZone: "America/Los_Angeles" }));
+  local.setDate(local.getDate() + offsetDays);
+  return `${local.getFullYear()}-${String(local.getMonth() + 1).padStart(2, "0")}-${String(local.getDate()).padStart(2, "0")}`;
+}
+
 // ─── OAuth1 Signing ─────────────────────────────────────────────
 
 function percentEncode(str: string): string {
@@ -375,7 +384,7 @@ async function fetchRacePredictions(tokens: GarminTokens): Promise<RacePredResul
 
   // Endpoint 4: Check VO2max response for embedded predictions
   try {
-    const today = new Date().toISOString().split("T")[0];
+    const today = getLocalDate();
     const resp = await garminGet(tokens, `/metrics-service/metrics/maxmet/latest/${today}`);
     if (resp?.generic?.racePredictions && Array.isArray(resp.generic.racePredictions)) {
       console.log(`  [RacePred] Found in VO2max response: ${JSON.stringify(resp.generic.racePredictions).substring(0, 300)}`);
@@ -867,16 +876,7 @@ Deno.serve(async (req) => {
     const now = Math.floor(Date.now() / 1000);
     tokenRefreshed = tokens.oauth2_expires_at > now && tokens.oauth2_expires_at - now < 3600;
 
-    // Determine dates to fetch
-    // Use user's local date (America/Los_Angeles) — Edge Function runs in UTC
-    function getLocalDate(offsetDays: number = 0): string {
-      const now = new Date();
-      // Convert UTC to PST/PDT by formatting in the target timezone
-      const local = new Date(now.toLocaleString("en-US", { timeZone: "America/Los_Angeles" }));
-      local.setDate(local.getDate() + offsetDays);
-      return `${local.getFullYear()}-${String(local.getMonth() + 1).padStart(2, "0")}-${String(local.getDate()).padStart(2, "0")}`;
-    }
-
+    // Determine dates to fetch (getLocalDate is module-level)
     const dates: string[] = [];
     if (specificDate) {
       dates.push(specificDate);

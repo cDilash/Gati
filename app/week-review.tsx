@@ -137,7 +137,7 @@ export default function WeekReviewScreen() {
   const handleRegenerate = async () => {
     setIsRegenerating(true);
     try {
-      const { getLatestCheckin, buildPreviousWeekSummary, calculatePhase, getCurrentMonday } = require('../src/engine/weeklyPlanning');
+      const { getLatestCheckin, buildPreviousWeekSummary, calculatePhase, calculatePeakWeeklyMiles, getCurrentMonday } = require('../src/engine/weeklyPlanning');
       const { generateWeekPlan } = require('../src/ai/weekGenerator');
       const { addDays, getToday } = require('../src/utils/dateUtils');
 
@@ -148,7 +148,11 @@ export default function WeekReviewScreen() {
       const paceZones = useAppStore.getState().paceZones;
       const recoveryStatus = useAppStore.getState().recoveryStatus;
       const garminHealth = useAppStore.getState().garminHealth;
-      const phase = calculatePhase(userProfile?.race_date ?? getToday(), getToday());
+      const peakMiles = calculatePeakWeeklyMiles(
+        userProfile?.target_finish_time_sec ?? null,
+        userProfile?.current_weekly_miles ?? 15,
+      );
+      const phase = calculatePhase(userProfile?.race_date ?? getToday(), getToday(), peakMiles);
       const prevWeek = buildPreviousWeekSummary(phase.weekNumber - 1);
       const { getNextMonday } = require('../src/engine/weeklyPlanning');
       const dow = new Date().getDay();

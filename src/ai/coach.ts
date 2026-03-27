@@ -615,36 +615,36 @@ For next week changes: tell them to update through the weekly check-in on Sunday
     parts.push('');
   }
 
-  // Weekly adjustment instructions — coach can modify THIS WEEK's workouts
-  parts.push(`WORKOUT ADJUSTMENTS:
-This athlete uses WEEKLY planning. You CAN adjust this week's upcoming workouts.
-Use the workout IDs from the list above.
+  // Weekly adjustment instructions
+  parts.push(`WORKOUT ADJUSTMENTS — CHOOSING THE RIGHT TYPE:
 
-When the athlete asks to change their schedule, include an adjustment block AFTER your explanation:
+MODIFY — ONLY when changing an EXISTING upcoming workout from the list above:
+  User: "make my Wednesday run 6 miles" → workout EXISTS with TODO status → use MODIFY
+  [ADJUST: modify | workout=EXISTING_ID_FROM_LIST | distance=6.0]
 
-SWAP (move a workout to a different day this week):
-[ADJUST: swap | workout=WORKOUT_ID | to=YYYY-MM-DD]
+ADD — When creating a NEW workout on a rest day or empty day:
+  User: "add a recovery run tomorrow" → tomorrow is rest/empty → use ADD
+  [ADJUST: add | date=YYYY-MM-DD | type=recovery | distance=2.0 | description=Easy recovery run]
 
-MODIFY (change distance, type, or description):
-[ADJUST: modify | workout=WORKOUT_ID | distance=6.0]
-[ADJUST: modify | workout=WORKOUT_ID | type=easy | distance=3.0]
+SWAP — When moving an existing workout to a different day:
+  User: "move my long run to Thursday" → use SWAP
+  [ADJUST: swap | workout=EXISTING_ID_FROM_LIST | to=YYYY-MM-DD]
 
-SKIP (mark a workout as skipped):
-[ADJUST: skip | workout=WORKOUT_ID | reason=feeling sick]
+SKIP — When canceling an existing workout:
+  User: "skip today, I am sick" → use SKIP
+  [ADJUST: skip | workout=EXISTING_ID_FROM_LIST | reason=feeling sick]
 
-ADD (add a workout on an empty/rest day):
-[ADJUST: add | date=YYYY-MM-DD | type=easy | distance=3.0 | description=Easy recovery run]
+RESCHEDULE — When multiple days change due to travel/events:
+  User: "I am away Friday-Sunday" → use RESCHEDULE
+  [ADJUST: reschedule | unavailable=YYYY-MM-DD,YYYY-MM-DD,YYYY-MM-DD]
 
-RESCHEDULE (rearrange around unavailable days):
-[ADJUST: reschedule | unavailable=2026-03-28,2026-03-29,2026-03-30 | longrun=2026-03-27]
-
-RULES:
-- ONLY modify workouts with status TODO (not DONE or SKIP)
-- ONLY use dates within the current week
-- Use the 8-character workout ID from the list (e.g., ID:abc12345 → workout=abc12345)
-- Always explain the change BEFORE the adjustment block
-- For a completely different week: suggest "Let's redo your weekly check-in"
-- You CAN make multiple adjustments in one response (multiple [ADJUST] blocks)`);
+CRITICAL:
+- If the day has NO workout or only a rest day → ALWAYS use ADD, never MODIFY
+- NEVER invent workout IDs — only use IDs from the list above (ID:xxxxxxxx)
+- If user says "add" or "can I run tomorrow" → use ADD
+- If user says "change my run" or "make it longer" → use MODIFY (only if workout exists in list)
+- Always explain the change BEFORE the [ADJUST] block
+- For a completely different week → suggest the weekly check-in instead`);
 
   return parts.join('\n');
 }
