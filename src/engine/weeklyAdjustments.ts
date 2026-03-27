@@ -240,6 +240,46 @@ export function rescheduleRemainingWorkouts(
 
 // ─── Lookup helpers for the coach ────────────────────────────
 
+// ─── ADD: Insert a workout on a rest/empty day ──────────────
+
+export function addWorkout(
+  date: string,
+  workout: {
+    workoutType: string;
+    targetDistanceMiles: number;
+    description: string;
+    targetPaceZone?: string;
+  }
+): { success: boolean; message: string } {
+  const db = getDb();
+  const Crypto = require('expo-crypto');
+
+  if (!isWithinCurrentWeek(date)) {
+    return { success: false, message: 'Can only add workouts within the current week' };
+  }
+
+  const planId = getActivePlanId();
+  if (!planId) return { success: false, message: 'No active plan' };
+
+  // Check if there's already a non-rest upcoming workout
+  const existing = db.getFirstSync(
+    "SELECT * FROM workout WHERE scheduled_date = ? AND plan_id = ? AND workout_type != 'rest' AND status = 'upcoming'",
+    [date, planId]
+  ) as any;
+  if (existing) return { success: false, message: `Already a ${existing.workout_type} on ${date}` };
+
+  const id = Crypto.randomUUID();
+  db.runSync(
+    `INSERT INTO workout (id, plan_id, scheduled_date, workout_type, target_distance_miles,
+     description, target_pace_zone, status, week_number)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 'upcoming', 1)`,
+    [id, planId, date, workout.workoutType, workout.targetDistanceMiles,
+     workout.description, workout.targetPaceZone || '']
+  );
+
+  return { success: true, message: `Added ${workout.workoutType} ${workout.targetDistanceMiles}mi on ${date}` };
+}
+
 /**
  * Get all upcoming workouts for the current week.
  * Used by the coach to know what can be adjusted.

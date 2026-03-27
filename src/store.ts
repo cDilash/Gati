@@ -576,16 +576,47 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       clearTimeout(safetyTimeout);
 
-      // Save assistant response
-      const metadata = response.planChange ? JSON.stringify(response.planChange) : null;
-      const assistantId = Crypto.randomUUID();
-      dbSaveCoachMessage({
-        id: assistantId,
-        role: 'assistant',
-        content: response.message,
-        message_type: response.planChange ? 'plan_change' : 'chat',
-        metadata_json: metadata,
-      });
+      // Check for [ADJUST: ...] blocks in the response
+      const { parseAdjustmentBlocks, executeAdjustments, stripAdjustmentBlocks } = require('./ai/adjustmentParser');
+      const adjustments = parseAdjustmentBlocks(response.message);
+
+      if (adjustments.length > 0) {
+        console.log(`[Coach] Found ${adjustments.length} adjustment(s) in response`);
+        const results = executeAdjustments(adjustments);
+        const summary = results.map((r: any) => `${r.success ? '✅' : '❌'} ${r.message}`).join('\n');
+
+        // Save system message confirming changes
+        dbSaveCoachMessage({
+          id: Crypto.randomUUID(),
+          role: 'system',
+          content: summary,
+          message_type: 'chat',
+          metadata_json: null,
+        });
+
+        // Save cleaned response (without raw [ADJUST] blocks)
+        const cleanMessage = stripAdjustmentBlocks(response.message);
+        dbSaveCoachMessage({
+          id: Crypto.randomUUID(),
+          role: 'assistant',
+          content: cleanMessage,
+          message_type: 'chat',
+          metadata_json: null,
+        });
+
+        // Refresh workouts so UI updates
+        get().refreshState();
+      } else {
+        // No adjustments — save response normally
+        const metadata = response.planChange ? JSON.stringify(response.planChange) : null;
+        dbSaveCoachMessage({
+          id: Crypto.randomUUID(),
+          role: 'assistant',
+          content: response.message,
+          message_type: response.planChange ? 'plan_change' : 'chat',
+          metadata_json: metadata,
+        });
+      }
 
       const updatedMessages = getCoachMessages();
       set({ coachMessages: updatedMessages, isCoachThinking: false });
@@ -719,7 +750,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   // ─── Plan Adaptation (REMOVED — weekly planning only) ────
   // Full plan adaptation was removed. Use weekly check-in to adjust schedule.
   requestPlanAdaptation: async (_reason) => {
-    return { success: false, error: 'Plan adaptation is no longer available. Use the Plan My Week check-in to adjust your schedule, or ask the coach to swap/modify individual workouts.' };
+    return { success: false, error: 'Ask the coach to adjust specific workouts (swap, modify, skip), or use the Plan My Week check-in for bigger changes.' };
   },
 
   checkWeeklyReview: async () => {

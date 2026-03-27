@@ -1,7 +1,8 @@
 import { useEffect, useRef } from 'react';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { View, ActivityIndicator, Pressable, AppState } from 'react-native';
+import { View, ActivityIndicator, Pressable, AppState, Alert } from 'react-native';
+import * as Linking from 'expo-linking';
 import { TamaguiProvider } from 'tamagui';
 import { useFonts } from 'expo-font';
 import { BebasNeue_400Regular } from '@expo-google-fonts/bebas-neue';
@@ -73,6 +74,44 @@ export default function RootLayout() {
     }, 300000);
     return () => clearInterval(interval);
   }, [userProfile?.id]);
+
+  // Handle Strava OAuth deep link callback
+  useEffect(() => {
+    const handleDeepLink = async (event: { url: string }) => {
+      const url = event.url;
+      if (!url.includes('strava-callback')) return;
+      try {
+        // Extract code from URL
+        let code: string | null = null;
+        try {
+          const parsed = new URL(url);
+          code = parsed.searchParams.get('code');
+        } catch {
+          const match = url.match(/[?&]code=([^&\s]+)/);
+          code = match ? match[1] : null;
+        }
+        if (!code) return;
+
+        console.log('[Strava] Deep link received, exchanging code...');
+        const { exchangeAndStoreTokens } = require('../src/strava/auth');
+        const tokens = await exchangeAndStoreTokens(code);
+        if (tokens) {
+          Alert.alert('Strava Connected', `Connected as ${tokens.athleteName ?? 'athlete'}.`);
+          useAppStore.getState().refreshState();
+          useAppStore.getState().syncAll();
+        }
+      } catch (e: any) {
+        console.error('[Strava] Deep link error:', e);
+      }
+    };
+
+    const sub = Linking.addEventListener('url', handleDeepLink);
+    // Also check if app was opened with this URL (cold start)
+    Linking.getInitialURL().then(url => {
+      if (url?.includes('strava-callback')) handleDeepLink({ url });
+    });
+    return () => sub.remove();
+  }, []);
 
   // Navigation guard
   useEffect(() => {

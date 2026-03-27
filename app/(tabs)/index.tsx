@@ -120,7 +120,7 @@ export default function TodayScreen() {
     } catch { return null; }
   }, [todaysWorkout?.id, todaysWorkout?.status]);
 
-  const totalWeeks = weeks.length >= 8 ? weeks.length : Math.max(weeks.length, Math.ceil((daysUntilRace + 7) / 7));
+  const totalWeeks = weeks.length >= 8 ? weeks.length : Math.max(weeks.length, Math.ceil(daysUntilRace / 7));
 
   useEffect(() => {
     if (activePlan && todaysWorkout) fetchBriefing();

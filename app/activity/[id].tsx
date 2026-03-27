@@ -310,7 +310,8 @@ export default function ActivityDetailScreen() {
 
       {/* ─── Route Map ───────────────────────────────────── */}
       {polyline && (
-        <YStack marginHorizontal={16} marginBottom={12} borderRadius={14} overflow="hidden">
+        <GradientBorder borderWidth={1.5} borderRadius={14} side="all" style={{ marginHorizontal: 16, marginBottom: 12 }}>
+          <View borderRadius={14} overflow="hidden">
           <RouteMap
             polyline={polyline} height={280} strokeWidth={4}
             showGradient showMarkers showReplay
@@ -320,7 +321,8 @@ export default function ActivityDetailScreen() {
             paceStream={detail?.pace_stream_json ? safeParseJSON(detail.pace_stream_json) : undefined}
             elevationStream={detail?.elevation_stream_json ? safeParseJSON(detail.elevation_stream_json) : undefined}
           />
-        </YStack>
+          </View>
+        </GradientBorder>
       )}
 
       {/* ─── Tab Bar ──────────────────────────────────────── */}

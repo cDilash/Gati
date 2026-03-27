@@ -14,6 +14,7 @@ import { PerformanceMetric } from '../../src/types';
 import { PolylineThumbnail } from '../../src/components/PolylineThumbnail';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { colors } from '../../src/theme/colors';
+import { GradientBorder } from '../../src/theme/GradientBorder';
 import { PRBadge } from '../../src/components/PRBadge';
 import { useUnits } from '../../src/hooks/useUnits';
 
@@ -387,10 +388,9 @@ export default function ActivitiesScreen() {
     const durStr = durH > 0 ? `${durH}h${durM > 0 ? ` ${durM}m` : ''}` : `${durMin}m`;
 
     return (
+      <GradientBorder borderWidth={1.5} borderRadius={14} side="left" style={{ marginBottom: 8 }}>
       <XStack
-        backgroundColor="$surface" borderRadius={14} padding={12} marginBottom={8}
-        borderWidth={0.5} borderColor="$border"
-        borderLeftWidth={3} borderLeftColor={borderColor}
+        backgroundColor="$surface" borderRadius={14} padding={12}
         pressStyle={{ opacity: 0.8 }} onPress={() => router.push(`/activity/${m.id}`)}
       >
         {/* Left: route thumbnail or treadmill icon */}
@@ -468,6 +468,7 @@ export default function ActivitiesScreen() {
           )}
         </YStack>
       </XStack>
+      </GradientBorder>
     );
   }
 }

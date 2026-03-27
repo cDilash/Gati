@@ -298,6 +298,14 @@ async function exchangeCodeForTokens(code: string): Promise<StravaTokens | null>
   }
 }
 
+/**
+ * Exchange auth code for tokens and store them.
+ * Called from the deep link handler in _layout.tsx.
+ */
+export async function exchangeAndStoreTokens(code: string): Promise<StravaTokens | null> {
+  return exchangeCodeForTokens(code);
+}
+
 // ─── Disconnect ────────────────────────────────────────────
 
 /**

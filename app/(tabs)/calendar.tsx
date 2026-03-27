@@ -233,7 +233,7 @@ export default function CalendarScreen() {
   }
 
   // Total weeks: use actual weeks if full plan, otherwise calculate from race date
-  const totalWeeks = weeks.length >= 8 ? weeks.length : Math.max(weeks.length, Math.ceil((daysUntilRace + 7) / 7));
+  const totalWeeks = weeks.length >= 8 ? weeks.length : Math.max(weeks.length, Math.ceil(daysUntilRace / 7));
   const progressPct = totalWeeks > 0 ? Math.round((currentWeekNumber / totalWeeks) * 100) : 0;
   const maxVolume = Math.max(...weeks.map(w => Math.max(w.target_volume, w.actual_volume)), 1);
 
