@@ -113,6 +113,11 @@ export function modifyWorkout(
     return { success: false, message: 'Workout not found or already completed/skipped' };
   }
 
+  // Validate workout is within current week
+  if (!isWithinCurrentWeek(workout.scheduled_date)) {
+    return { success: false, message: 'Can only modify workouts in the current week (Mon-Sun)' };
+  }
+
   const sets: string[] = [];
   const vals: any[] = [];
 
@@ -285,13 +290,26 @@ export function addWorkout(
   ) as any;
   if (existing) return { success: false, message: `Already a ${existing.workout_type} on ${date}` };
 
+  // Calculate week_number from plan start date
+  let weekNumber = 1;
+  try {
+    const firstDate = db.getFirstSync(
+      'SELECT MIN(scheduled_date) as d FROM workout WHERE plan_id = ?', [planId]
+    ) as { d: string } | null;
+    if (firstDate?.d) {
+      const planStart = new Date(firstDate.d + 'T00:00:00');
+      const workoutDate = new Date(date + 'T00:00:00');
+      weekNumber = Math.max(1, Math.floor((workoutDate.getTime() - planStart.getTime()) / (7 * 86400000)) + 1);
+    }
+  } catch {}
+
   const id = Crypto.randomUUID();
   db.runSync(
     `INSERT INTO workout (id, plan_id, scheduled_date, workout_type, target_distance_miles,
      description, target_pace_zone, status, week_number)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 'upcoming', 1)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, 'upcoming', ?)`,
     [id, planId, date, workout.workoutType, workout.targetDistanceMiles,
-     workout.description, workout.targetPaceZone || '']
+     workout.description, workout.targetPaceZone || '', weekNumber]
   );
 
   return { success: true, message: `Added ${workout.workoutType} ${workout.targetDistanceMiles}mi on ${date}` };

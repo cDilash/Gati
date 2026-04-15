@@ -496,25 +496,33 @@ export default function TodayScreen() {
       })()}
 
       {/* Weekly Plan Prompt */}
-      {showWeeklyPrompt && (
-        <YStack marginBottom="$4">
-          <GradientBorder side="all" borderRadius={16} borderWidth={1.5}>
-            <YStack backgroundColor="$surface" borderRadius={16} padding={16}>
-              <XStack alignItems="center" justifyContent="space-between" marginBottom={8}>
-                <XStack alignItems="center" gap={8}>
-                  <MaterialCommunityIcons name="calendar-plus" size={20} color={colors.cyan} />
-                  <H color={colors.cyan} fontSize={14} letterSpacing={1.5}>PLAN YOUR WEEK</H>
+      {showWeeklyPrompt && (() => {
+        const isSunday = new Date().getDay() === 0;
+        const planLabel = isSunday ? 'PLAN NEXT WEEK' : 'PLAN THIS WEEK';
+        const planDesc = isSunday
+          ? 'Get ahead — plan next week\'s training with a quick check-in.'
+          : 'Ready to plan your training? A quick check-in helps the AI build your perfect week.';
+        const btnLabel = isSunday ? 'Plan Next Week →' : 'Plan My Week →';
+        return (
+          <YStack marginBottom="$4">
+            <GradientBorder side="all" borderRadius={16} borderWidth={1.5}>
+              <YStack backgroundColor="$surface" borderRadius={16} padding={16}>
+                <XStack alignItems="center" justifyContent="space-between" marginBottom={8}>
+                  <XStack alignItems="center" gap={8}>
+                    <MaterialCommunityIcons name="calendar-plus" size={20} color={colors.cyan} />
+                    <H color={colors.cyan} fontSize={14} letterSpacing={1.5}>{planLabel}</H>
+                  </XStack>
+                  <B color="$textTertiary" fontSize={14} onPress={() => setShowWeeklyPrompt(false)}>✕</B>
                 </XStack>
-                <B color="$textTertiary" fontSize={14} onPress={() => setShowWeeklyPrompt(false)}>✕</B>
-              </XStack>
-              <B color="$textSecondary" fontSize={13} lineHeight={19} marginBottom={12}>
-                Ready to plan your training? A quick check-in helps the AI build your perfect week.
-              </B>
-              <GradientButton label="Plan My Week →" onPress={() => router.push('/weekly-checkin')} size="md" />
-            </YStack>
-          </GradientBorder>
-        </YStack>
-      )}
+                <B color="$textSecondary" fontSize={13} lineHeight={19} marginBottom={12}>
+                  {planDesc}
+                </B>
+                <GradientButton label={btnLabel} onPress={() => router.push('/weekly-checkin')} size="md" />
+              </YStack>
+            </GradientBorder>
+          </YStack>
+        );
+      })()}
 
       {/* PR Celebration */}
       {newPRNotification && newPRNotification.prs.length > 0 && (

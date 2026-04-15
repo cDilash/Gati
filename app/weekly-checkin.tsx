@@ -473,6 +473,35 @@ export default function WeeklyCheckinScreen() {
         </Pressable>
       </XStack>
 
+      {/* Week info header */}
+      {(() => {
+        try {
+          const { calculatePhase, calculatePeakWeeklyMiles, getCurrentMonday, getNextMonday } = require('../src/engine/weeklyPlanning');
+          const { getToday, addDays: ad } = require('../src/utils/dateUtils');
+          const today = getToday();
+          const dow = new Date(today + 'T12:00:00').getDay();
+          const monday = dow === 0 ? getNextMonday() : getCurrentMonday();
+          const sunday = ad(monday, 6);
+          const peakMiles = calculatePeakWeeklyMiles(
+            userProfile?.target_finish_time_sec ?? null,
+            userProfile?.current_weekly_miles ?? 15,
+          );
+          const phase = calculatePhase(userProfile?.race_date ?? today, today, peakMiles);
+          const monLabel = new Date(monday + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+          const sunLabel = new Date(sunday + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+          return (
+            <YStack alignItems="center" paddingBottom={8}>
+              <H color={colors.cyan} fontSize={16} letterSpacing={1.5}>
+                WEEK {phase.weekNumber} · {phase.phase.toUpperCase()} PHASE
+              </H>
+              <B color={colors.textSecondary} fontSize={13}>
+                {monLabel} – {sunLabel}
+              </B>
+            </YStack>
+          );
+        } catch { return null; }
+      })()}
+
       {/* Content */}
       <RNScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 120 }}
         keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>

@@ -81,7 +81,24 @@ export async function buildCoachSystemPrompt(
     if (isWeekly) latestCheckin = getLatestCheckin();
   } catch {}
 
-  parts.push(`You are an expert marathon running coach guiding this athlete through their training.
+  // Current date context — so the AI knows what day it is
+  const { getToday, addDays: addD } = require('../utils/dateUtils');
+  const todayStr = getToday();
+  const todayDate = new Date(todayStr + 'T12:00:00');
+  const dayNamesLong = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const todayDayName = dayNamesLong[todayDate.getDay()];
+  const tomorrowStr = addD(todayStr, 1);
+  const tomorrowDate = new Date(tomorrowStr + 'T12:00:00');
+  const tomorrowDayName = dayNamesLong[tomorrowDate.getDay()];
+
+  parts.push(`TODAY IS: ${todayDayName}, ${todayStr}
+TOMORROW IS: ${tomorrowDayName}, ${tomorrowStr}
+
+When the athlete says "tomorrow", use date ${tomorrowStr}.
+When they say "today", use date ${todayStr}.
+When they say a day name (e.g. "Thursday"), find that date within the current week.
+
+You are an expert marathon running coach guiding this athlete through their training.
 You follow Jack Daniels' methodology and the 80/20 polarized training approach.
 Be concise, direct, encouraging, and specific. Reference actual data, not generic advice.
 Keep responses to 2-4 paragraphs max unless the athlete asks for detailed analysis.
@@ -170,15 +187,22 @@ For next week changes: tell them to update through the weekly check-in on Sunday
     parts.push(`CURRENT WEEK: ${currentWeek.week_number} of ${weeks.length} — ${currentWeek.phase} phase${currentWeek.is_cutback ? ' (cutback)' : ''}`);
     parts.push(`Volume: ${formatDistance(currentWeek.actual_volume, units)} of ${formatDistance(currentWeek.target_volume, units)} completed`);
 
-    // Show ALL workouts (including rest) with IDs for weekly adjustment
+    // Show ALL workouts (including rest) with IDs and day names for weekly adjustment
+    if (weekWorkouts.length === 0) {
+      parts.push('  (No workouts planned this week)');
+      parts.push('  If the athlete asks about their plan, tell them: "You don\'t have a plan for this week yet. Tap Plan My Week on the Today screen to set one up."');
+    }
+    const dayShort = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     for (const w of weekWorkouts) {
-      let status = w.status === 'completed' ? 'DONE' : w.status === 'skipped' ? 'SKIP' : w.status === 'partial' ? 'PARTIAL' : 'TODO';
+      const wDate = new Date(w.scheduled_date + 'T12:00:00');
+      const wDayName = dayShort[wDate.getDay()];
+      const statusEmoji = w.status === 'completed' ? '✅' : w.status === 'skipped' ? '⏭️' : w.status === 'partial' ? '⚠️' : '📋';
+      let qualityNote = '';
       if (w.execution_quality && w.execution_quality !== 'on_target' && (w.status === 'completed' || w.status === 'partial')) {
-        const qualityLabel = w.execution_quality === 'missed_pace' ? ' ⚠️ pace missed' : w.execution_quality === 'exceeded_pace' ? ' ⚠️ too fast' : w.execution_quality === 'wrong_type' ? ' ⚠️ wrong workout' : '';
-        status += qualityLabel;
+        qualityNote = w.execution_quality === 'missed_pace' ? ' (pace missed)' : w.execution_quality === 'exceeded_pace' ? ' (too fast)' : w.execution_quality === 'wrong_type' ? ' (wrong workout)' : '';
       }
-      const dist = w.workout_type !== 'rest' ? ` — ${formatDistance(w.target_distance_miles ?? 0, units)}` : '';
-      parts.push(`  [${status}] ${w.scheduled_date} (ID:${w.id.substring(0, 8)}): ${w.title || w.workout_type}${dist}`);
+      const dist = w.workout_type !== 'rest' ? ` ${formatDistance(w.target_distance_miles ?? 0, units)}` : '';
+      parts.push(`  ${statusEmoji} ${wDayName} ${w.scheduled_date} (ID:${w.id.substring(0, 8)}): ${w.title || w.workout_type}${dist} — ${w.status}${qualityNote}`);
     }
     parts.push('');
   }

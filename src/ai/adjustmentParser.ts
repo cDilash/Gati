@@ -56,13 +56,17 @@ export function executeAdjustments(adjustments: ParsedAdjustment[]): AdjustmentR
   const results: AdjustmentResult[] = [];
 
   for (const adj of adjustments) {
+    console.log(`[Adjustment] Executing ${adj.type}: params=${JSON.stringify(adj.params)} raw="${adj.rawBlock}"`);
     try {
       let result: AdjustmentResult;
 
       switch (adj.type) {
-        case 'swap':
-          result = swapWorkoutDay(adj.params.workout, adj.params.to);
+        case 'swap': {
+          const swapId = adj.params.workout || adj.params.id;
+          const swapTo = adj.params.to || adj.params.date || adj.params.day;
+          result = swapWorkoutDay(swapId, swapTo);
           break;
+        }
 
         case 'modify': {
           const changes: Record<string, any> = {};
@@ -71,7 +75,8 @@ export function executeAdjustments(adjustments: ParsedAdjustment[]): AdjustmentR
           if (adj.params.description) changes.description = adj.params.description;
           if (adj.params.pace) changes.targetPaceZone = adj.params.pace;
           if (adj.params.title) changes.title = adj.params.title;
-          result = modifyWorkout(adj.params.workout, changes);
+          const modifyId = adj.params.workout || adj.params.id;
+          result = modifyWorkout(modifyId, changes);
           // Fallback: if modify fails because workout not found, try ADD instead
           if (!result.success && result.message.includes('not found') && (adj.params.date || adj.params.to)) {
             console.log('[Adjustment] MODIFY failed — trying ADD fallback');
@@ -87,18 +92,27 @@ export function executeAdjustments(adjustments: ParsedAdjustment[]): AdjustmentR
           break;
         }
 
-        case 'skip':
-          result = skipWorkout(adj.params.workout, adj.params.reason || 'Skipped by coach');
+        case 'skip': {
+          const skipId = adj.params.workout || adj.params.id;
+          result = skipWorkout(skipId, adj.params.reason || 'Skipped by coach');
           break;
+        }
 
-        case 'add':
-          result = addWorkout(adj.params.date, {
-            workoutType: adj.params.type || 'easy',
-            targetDistanceMiles: parseFloat(adj.params.distance || '3'),
-            description: adj.params.description || 'Coach-added workout',
-            targetPaceZone: adj.params.pace,
-          });
+        case 'add': {
+          // Accept flexible date param names (AI sometimes uses 'day', 'to', 'on')
+          const addDate = adj.params.date || adj.params.day || adj.params.to || adj.params.on;
+          if (!addDate) {
+            result = { success: false, message: `ADD missing date param. Got: ${Object.keys(adj.params).join(', ')}` };
+          } else {
+            result = addWorkout(addDate, {
+              workoutType: adj.params.type || 'easy',
+              targetDistanceMiles: parseFloat(adj.params.distance || '3'),
+              description: adj.params.description || 'Coach-added workout',
+              targetPaceZone: adj.params.pace,
+            });
+          }
           break;
+        }
 
         case 'reschedule': {
           const unavailable = (adj.params.unavailable || '').split(',').map(d => d.trim());

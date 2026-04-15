@@ -76,15 +76,15 @@ function WorkoutCard({ workout }: { workout: GeneratedWorkout }) {
         {/* Description */}
         <B color={colors.textSecondary} fontSize={13} lineHeight={18}>{workout.description}</B>
 
-        {/* Pace + HR zone */}
+        {/* Pace + HR zone — filter out literal "null" strings from AI */}
         <XStack gap={12}>
-          {workout.targetPaceZone && (
+          {workout.targetPaceZone && workout.targetPaceZone !== 'null' && workout.type !== 'rest' && (
             <XStack alignItems="center" gap={4}>
               <MaterialCommunityIcons name="speedometer" size={12} color={colors.textTertiary} />
               <M color={colors.textTertiary} fontSize={11}>{workout.targetPaceZone}</M>
             </XStack>
           )}
-          {workout.hrZone && (
+          {workout.hrZone && workout.hrZone !== 'null' && workout.type !== 'rest' && (
             <XStack alignItems="center" gap={4}>
               <MaterialCommunityIcons name="heart-pulse" size={12} color={colors.orange} />
               <M color={colors.textTertiary} fontSize={11}>{workout.hrZone}</M>
@@ -172,6 +172,37 @@ export default function WeekReviewScreen() {
   };
 
   const handleAccept = async () => {
+    // Check if any upcoming workouts were coach-modified before overwriting
+    try {
+      const { getDatabase: gdb } = require('../src/db/database');
+      const checkDb = gdb();
+      if (week.workouts.length > 0) {
+        const firstDate = week.workouts[0].date;
+        const lastDate = week.workouts[week.workouts.length - 1].date;
+        const modified = checkDb.getFirstSync(
+          `SELECT COUNT(*) as cnt FROM workout
+           WHERE plan_id IN (SELECT id FROM training_plan WHERE status = 'active')
+           AND scheduled_date >= ? AND scheduled_date <= ?
+           AND status = 'modified'`,
+          [firstDate, lastDate],
+        ) as { cnt: number } | null;
+        if ((modified?.cnt ?? 0) > 0) {
+          Alert.alert(
+            'Replace adjusted workouts?',
+            'Some workouts were modified by the coach this week. Accepting this plan will replace them.',
+            [
+              { text: 'Cancel', style: 'cancel', onPress: () => setIsAccepting(false) },
+              { text: 'Replace', style: 'destructive', onPress: () => doAccept() },
+            ],
+          );
+          return;
+        }
+      }
+    } catch {}
+    await doAccept();
+  };
+
+  const doAccept = async () => {
     setIsAccepting(true);
     try {
       const { getDatabase, recalculateWeeklyVolumes } = require('../src/db/database');

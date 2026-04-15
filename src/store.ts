@@ -586,10 +586,10 @@ export const useAppStore = create<AppState>((set, get) => ({
         const hasErrors = results.some((r: any) => !r.success);
         const hasSuccess = results.some((r: any) => r.success);
 
-        // Save system message — friendly summary
-        const systemContent = hasErrors && !hasSuccess
-          ? 'The change couldn\'t be applied automatically. You can make this adjustment from the Plan screen.'
-          : results.filter((r: any) => r.success).map((r: any) => `✅ ${r.message}`).join('\n');
+        // Save system message — show ALL results (successes AND failures)
+        const successMsgs = results.filter((r: any) => r.success).map((r: any) => `✅ ${r.message}`);
+        const errorMsgs = results.filter((r: any) => !r.success).map((r: any) => `❌ ${r.message}`);
+        const systemContent = [...successMsgs, ...errorMsgs].join('\n') || 'No changes applied.';
 
         dbSaveCoachMessage({
           id: Crypto.randomUUID(),

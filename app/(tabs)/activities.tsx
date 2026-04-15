@@ -423,7 +423,7 @@ export default function ActivitiesScreen() {
           </XStack>
 
           {/* Row 2: Stat pills */}
-          <XStack gap={16} flexWrap="wrap" marginBottom={2}>
+          <XStack gap={10} marginBottom={2}>
             <XStack alignItems="center" gap={3}>
               <MaterialCommunityIcons name="map-marker-distance" size={13} color={colors.cyan} />
               <M color="$color" fontSize={13} fontWeight="700">{u.dist(m.distance_miles)}</M>
@@ -451,7 +451,7 @@ export default function ActivitiesScreen() {
           {/* Matched workout indicator */}
           {matched && (
             <B color="$textTertiary" fontSize={10} marginTop={1}>
-              Plan: {matched.title}{matched.target_distance_miles ? ` · ${u.dist(matched.target_distance_miles)}` : ''}
+              Plan: {matched.title}{matched.target_distance_miles && !matched.title?.includes('mi') ? ` · ${u.dist(matched.target_distance_miles)}` : ''}
             </B>
           )}
         </YStack>

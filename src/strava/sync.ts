@@ -17,6 +17,12 @@ import {
   StravaStreams,
 } from '../types';
 
+/** Convert a Strava UTC ISO timestamp to local YYYY-MM-DD date string. */
+function stravaDateToLocal(isoUtc: string): string {
+  const d = new Date(isoUtc);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 export interface SyncResult {
   newActivities: number;
   matched: number;
@@ -299,7 +305,7 @@ function stravaActivityToMetric(
     id: Crypto.randomUUID(),
     workout_id: matchedWorkoutId,
     strava_activity_id: detail.id,
-    date: detail.startDate.split('T')[0],
+    date: stravaDateToLocal(detail.startDate),
     source: 'strava',
     distance_miles: Math.round(distanceMiles * 100) / 100,
     duration_minutes: durationMinutes,
@@ -372,7 +378,7 @@ export async function syncStravaActivities(options?: {
   console.log(`[Strava Sync] API returned ${activities.length} running activities`);
   if (activities.length > 0) {
     activities.forEach((a, i) => {
-      console.log(`[Strava Sync]   ${i + 1}. id=${a.id} "${a.name}" ${a.startDate.split('T')[0]} ${(a.distance / 1609.344).toFixed(1)}mi`);
+      console.log(`[Strava Sync]   ${i + 1}. id=${a.id} "${a.name}" ${stravaDateToLocal(a.startDate)} ${(a.distance / 1609.344).toFixed(1)}mi`);
     });
   }
   if (activities.length === 0) {
@@ -391,7 +397,7 @@ export async function syncStravaActivities(options?: {
   }
 
   // Get scheduled workouts in the date range for matching
-  const dates = activities.map(a => a.startDate.split('T')[0]);
+  const dates = activities.map(a => stravaDateToLocal(a.startDate));
   const minDate = dates.reduce((a, b) => (a < b ? a : b));
   const maxDate = dates.reduce((a, b) => (a > b ? a : b));
   const scheduledWorkouts = getScheduledWorkoutsInRange(minDate, maxDate);
@@ -412,7 +418,7 @@ export async function syncStravaActivities(options?: {
         continue;
       }
     } catch {}
-    console.log(`[Strava Sync] Activity ${activity.id} "${activity.name}" ${activity.startDate.split('T')[0]} — NEW, importing...`);
+    console.log(`[Strava Sync] Activity ${activity.id} "${activity.name}" ${stravaDateToLocal(activity.startDate)} — NEW, importing...`);
 
     // Fetch detailed data + streams
     const detail = await getActivityDetail(activity.id);
@@ -421,7 +427,7 @@ export async function syncStravaActivities(options?: {
     const streams = await getActivityStreams(activity.id);
 
     // Convert and match
-    const activityDate = detail.startDate.split('T')[0];
+    const activityDate = stravaDateToLocal(detail.startDate);
     const distanceMiles = metersToMiles(detail.distance);
 
     const matchedWorkoutId = matchToScheduledWorkout(

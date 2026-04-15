@@ -120,7 +120,15 @@ Brief mention only — 1 line max.`;
       }
     }
 
+    const { getToday: gt } = require('../utils/dateUtils');
+    const bToday = gt();
+    const bDate = new Date(bToday + 'T12:00:00');
+    const bDayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const bDayName = bDayNames[bDate.getDay()];
+
     const prompt = `You are a running coach giving a quick pre-workout briefing. ${isLongRun ? '3-5 sentences — include fueling and pacing strategy.' : '2-3 sentences max.'} Be specific, reference the workout details and recent performance. Encouraging but practical.
+
+Today is ${bDayName}, ${bToday}.
 
 TODAY'S WORKOUT: ${workout.title} — ${dist}mi
 Description: ${workout.description}

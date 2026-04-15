@@ -182,7 +182,6 @@ function buildWeekContext(
   } catch {}
 
   // ── Volume targets ──
-  const numRuns = checkin.availableDays.length;
   const isRecoveryWeek = phase.weekNumber > 1 && phase.weekNumber % 4 === 0;
 
   // Base target from phase calculation (already includes peakWeeklyMiles + recovery week)
@@ -210,14 +209,27 @@ function buildWeekContext(
 
   adjustedTarget = Math.round(adjustedTarget * 10) / 10;
 
-  // Long run target
-  const longRunTarget = prevLongestRun > 0
-    ? Math.min(prevLongestRun + 1, adjustedTarget * 0.35) // +1 mi, capped at 35%
+  // Auto-reduce number of runs when volume is too low for the run count
+  // Target: minimum ~3mi per easy run to be meaningful training
+  let numRuns = checkin.availableDays.length;
+  const minMilesPerRun = 3.0;
+  if (numRuns > 2 && adjustedTarget / numRuns < minMilesPerRun) {
+    const idealRuns = Math.max(2, Math.floor(adjustedTarget / minMilesPerRun));
+    if (idealRuns < numRuns) {
+      console.log(`[WeekContext] Reducing runs from ${numRuns} to ${idealRuns} (${adjustedTarget}mi ÷ ${numRuns} = ${(adjustedTarget / numRuns).toFixed(1)}mi/run < ${minMilesPerRun}mi minimum)`);
+      numRuns = idealRuns;
+    }
+  }
+
+  // Long run target — use the BEST reference (all-time longest or prev week longest)
+  const bestLongestRef = Math.max(prevLongestRun, allTimeLongestRun);
+  const longRunTarget = bestLongestRef > 0
+    ? Math.min(bestLongestRef + 1, adjustedTarget * 0.35) // +1mi from best reference, capped at 35%
     : Math.max(4, adjustedTarget * 0.33); // first week: 33%, min 4mi
   const longRunMin = Math.max(4, Math.round(adjustedTarget * 0.28));
   const longRunMax = Math.min(
-    prevLongestRun > 0 ? prevLongestRun + 2 : 20, // max +2mi over previous
-    Math.round(adjustedTarget * 0.38),
+    bestLongestRef > 0 ? bestLongestRef + 2 : 20, // max +2mi over best reference
+    Math.round(adjustedTarget * 0.40),
   );
 
   return {
@@ -437,8 +449,9 @@ function buildWeekPrompt(
   // 4d. Workout Type Progression
   parts.push('WORKOUT TYPE PROGRESSION BY PHASE:');
   parts.push('BASE:');
-  parts.push('- Only easy runs + optional hill strides 1x/week (6×60s uphill)');
-  parts.push('- NO intervals. NO tempo. NO marathon pace work.');
+  parts.push('- Mostly easy runs + optional hill strides 1x/week (6×60s uphill)');
+  parts.push('- ONE steady tempo per week is allowed (e.g. 3×8min or 20min continuous at Zone 3)');
+  parts.push('- NO intervals. NO marathon pace work. Keep the tempo SHORT and controlled.');
   parts.push('');
   parts.push('BUILD:');
   parts.push('- 1 interval session/week: start 6×400m → progress to 4×800m → 3×1200m');
@@ -464,10 +477,14 @@ function buildWeekPrompt(
   // 4e. Strength Training Integration
   if (checkin.strengthDays.length > 0 || legDaysList.length > 0) {
     parts.push('STRENGTH TRAINING INTEGRATION:');
-    parts.push(`Athlete lifts ${checkin.strengthDays.length}x/week${legDaysList.length > 0 ? ` (leg days: ${legDaysList.join(', ')})` : ''}.`);
-    parts.push('- NEVER schedule a hard run (tempo/intervals) the day after leg day');
-    parts.push('- Easy/recovery run is fine the day after leg day');
-    parts.push('- Hard runs on days WITH NO heavy lifting planned');
+    parts.push(`Athlete lifts ${checkin.strengthDays.length}x/week.`);
+    if (legDaysList.length > 0) {
+      parts.push(`LEG DAYS are ONLY: ${legDaysList.join(', ')}. All other lifting days are upper body — treat them normally.`);
+      parts.push('- The day AFTER a LEG DAY: only easy/recovery run (legs are fatigued)');
+      parts.push('- The day AFTER an UPPER BODY day: any run type is fine (legs are fresh)');
+      parts.push('- NEVER call a day "leg day" unless it is explicitly listed above');
+    }
+    parts.push('- Hard runs (tempo/intervals) on days with NO heavy leg lifting planned');
     if (['peak', 'taper'].includes(phase.phase)) {
       parts.push('- In PEAK/TAPER: reduce gym to 1-2 lighter sessions');
     }
@@ -553,7 +570,7 @@ function buildWeekPrompt(
 
   // Mandatory phase
   const PHASE_DESCRIPTIONS: Record<string, string> = {
-    base: 'Focus on easy aerobic running only. Build weekly mileage gradually at conversational pace (Zone 1-2). NO threshold, tempo, or interval work. Long runs easy throughout.',
+    base: 'Focus on easy aerobic running. Build weekly mileage gradually at conversational pace (Zone 1-2). ONE short steady tempo per week is allowed (e.g. 3×8min at Zone 3, ~80% HRmax) to begin raising lactate threshold. NO intervals, NO marathon pace work. Long runs easy throughout.',
     build: 'Introduce ONE quality session per week (tempo or threshold). Maintain mostly easy running. Long runs gradually extend, may include light progression at the end.',
     peak: 'Highest volume and intensity. Up to TWO quality sessions (threshold + intervals). Long runs at maximum planned distance, may include race pace segments.',
     taper: 'Reduce volume 30-50%. Maintain some intensity through short efforts. Prioritize rest and freshness for race day.',
@@ -565,9 +582,20 @@ function buildWeekPrompt(
   parts.push(`${phase.phase.toUpperCase()} RULES: ${PHASE_DESCRIPTIONS[phase.phase] ?? 'Follow standard training principles.'}`);
   parts.push('');
 
-  // Check-in
+  // Check-in — clearly separate leg days from upper body days
   parts.push('ATHLETE CHECK-IN FOR THIS WEEK:');
-  parts.push(`- Lifting: ${checkin.strengthDays.length > 0 ? checkin.strengthDays.join(', ') : 'None'}${legDaysList.length > 0 ? ` (Leg days: ${legDaysList.join(', ')})` : ''}`);
+  if (checkin.strengthDays.length > 0) {
+    const upperBodyDays = checkin.strengthDays.filter(d => !legDaysList.includes(d));
+    parts.push(`- Strength training: ${checkin.strengthDays.length} days/week`);
+    if (legDaysList.length > 0) {
+      parts.push(`  LEG DAYS (heavy lower body): ${legDaysList.join(', ')} ← no hard run the day AFTER these`);
+    }
+    if (upperBodyDays.length > 0) {
+      parts.push(`  Upper body / other lifting: ${upperBodyDays.join(', ')} ← running is fine the day after these`);
+    }
+  } else {
+    parts.push('- Strength training: None');
+  }
   parts.push(`- Available to run: ${checkin.availableDays.join(', ')}`);
   parts.push(`- Long run preference: ${checkin.preferredLongRunDay}`);
   if (checkin.timeConstraints) parts.push(`- Time constraints: ${checkin.timeConstraints}`);
@@ -594,7 +622,12 @@ function buildWeekPrompt(
   }
   parts.push('');
 
-  parts.push(`Number of runs this week: ${ctx.numRuns} (from check-in available days)`);
+  const restDays = 7 - ctx.numRuns;
+  parts.push(`Number of RUNS this week: EXACTLY ${ctx.numRuns}. Number of REST days: ${restDays}.`);
+  parts.push(`Generate exactly ${ctx.numRuns} run workouts + ${restDays} rest day entries = 7 total.`);
+  if (ctx.numRuns < checkin.availableDays.length) {
+    parts.push(`(Reduced from ${checkin.availableDays.length} available days because ${formatDistance(ctx.adjustedTarget, units)} ÷ ${checkin.availableDays.length} runs would make each run too short)`);
+  }
   parts.push('');
 
   parts.push('Volume distribution:');
@@ -613,7 +646,7 @@ function buildWeekPrompt(
   parts.push(`- Long run: ${formatDistance(ctx.longRunMin, units)} (MUST be the longest run of the week)`);
   parts.push(`- Easy/recovery: ${formatDistance(2.5, units)} minimum`);
   parts.push(`- Threshold/tempo: ${formatDistance(3.0, units)} minimum`);
-  parts.push(`- No workout under ${formatDistance(2.0, units)}`);
+  parts.push(`- No workout under ${formatDistance(2.5, units)}`);
   parts.push('');
 
   parts.push('MAXIMUM distances:');
@@ -639,7 +672,11 @@ function buildWeekPrompt(
   parts.push(`3. Increase volume no more than 10% per week, with a recovery week every 4th week`);
   parts.push(`4. Currently running ${ctx.avgRunsPerWeek}x/week — add runs gradually (max +1 run per 2 weeks)`);
   if (checkin.strengthDays.length > 0) {
-    parts.push(`5. Does strength training on ${checkin.strengthDays.join(', ')} — schedule easy/recovery runs the day after${legDaysList.length > 0 ? ` leg day (${legDaysList.join(', ')})` : ''}`);
+    if (legDaysList.length > 0) {
+      parts.push(`5. Lifts ${checkin.strengthDays.length}x/week — LEG DAY is ONLY ${legDaysList.join(', ')}. Schedule easy run the day after leg day. Other lifting days (upper body) don't affect run scheduling.`);
+    } else {
+      parts.push(`5. Lifts ${checkin.strengthDays.length}x/week — no specific leg day reported, so running schedule is flexible.`);
+    }
   }
 
   // Garmin-driven coaching decisions
@@ -681,9 +718,16 @@ function buildWeekPrompt(
   parts.push('5. All non-run days are "rest" type with distanceMiles: 0');
   parts.push('');
 
-  // Example distribution
-  parts.push(`EXAMPLE for ${formatDistance(ctx.adjustedTarget, units)} over ${ctx.numRuns} runs:`);
-  if (ctx.numRuns >= 4) {
+  // Example distribution — must match numRuns exactly
+  parts.push(`EXAMPLE for ${formatDistance(ctx.adjustedTarget, units)} over EXACTLY ${ctx.numRuns} runs (rest days fill remaining days):`);
+  if (ctx.numRuns >= 5) {
+    const lr = Math.round(ctx.adjustedTarget * 0.30 * 10) / 10;
+    const easy1 = Math.round(ctx.adjustedTarget * 0.20 * 10) / 10;
+    const easy2 = Math.round(ctx.adjustedTarget * 0.18 * 10) / 10;
+    const easy3 = Math.round(ctx.adjustedTarget * 0.17 * 10) / 10;
+    const rec = Math.round(ctx.adjustedTarget * 0.15 * 10) / 10;
+    parts.push(`  Long: ${formatDistance(lr, units)}, Easy: ${formatDistance(easy1, units)}, Easy: ${formatDistance(easy2, units)}, Easy: ${formatDistance(easy3, units)}, Recovery: ${formatDistance(rec, units)}`);
+  } else if (ctx.numRuns >= 4) {
     const lr = Math.round(ctx.adjustedTarget * 0.33 * 10) / 10;
     const easy = Math.round(ctx.adjustedTarget * 0.23 * 10) / 10;
     const rec = Math.round(ctx.adjustedTarget * 0.18 * 10) / 10;
@@ -784,9 +828,21 @@ function validateWeek(
 
   // Phase-specific rules
   const qualityTypes = ['threshold', 'interval', 'tempo', 'marathon_pace'];
+  const hardTypes = ['interval', 'marathon_pace']; // these are never allowed in base
   const qualityCount = runs.filter((w: any) => qualityTypes.includes(w.type)).length;
-  if ((week.phase === 'base' || isRecoveryWeek) && qualityCount > 0) {
-    errors.push(`${isRecoveryWeek ? 'RECOVERY WEEK' : 'BASE phase'} must have NO quality sessions, but AI scheduled ${qualityCount}`);
+  const tempoCount = runs.filter((w: any) => w.type === 'tempo' || w.type === 'threshold').length;
+  const hardCount = runs.filter((w: any) => hardTypes.includes(w.type)).length;
+
+  if (isRecoveryWeek && qualityCount > 0) {
+    errors.push(`RECOVERY WEEK must have NO quality sessions, but AI scheduled ${qualityCount}`);
+  } else if (week.phase === 'base') {
+    // Base allows exactly 1 tempo/threshold, but NO intervals or marathon pace
+    if (hardCount > 0) {
+      errors.push(`BASE phase: intervals and marathon pace are NOT allowed, but AI scheduled ${hardCount}`);
+    }
+    if (tempoCount > 1) {
+      errors.push(`BASE phase: max 1 tempo per week, but AI scheduled ${tempoCount}`);
+    }
   }
 
   // 80/20 rule: max 2 quality sessions in any phase
@@ -830,10 +886,10 @@ function validateWeek(
     }
   }
 
-  // No run under 2mi
+  // No run under 2.5mi (must be meaningful training)
   for (const w of runs) {
-    if ((w.distanceMiles ?? 0) > 0 && (w.distanceMiles ?? 0) < 2) {
-      errors.push(`${w.type} on ${w.date} is ${w.distanceMiles}mi — minimum is 2mi`);
+    if ((w.distanceMiles ?? 0) > 0 && (w.distanceMiles ?? 0) < 2.5) {
+      errors.push(`${w.type} on ${w.date} is ${w.distanceMiles}mi — minimum is 2.5mi`);
     }
   }
 
@@ -848,10 +904,10 @@ function clampWorkoutDistances(workouts: any[], targetVolume: number): any[] {
   const runs = workouts.filter((w: any) => w.type !== 'rest');
   if (runs.length === 0) return workouts;
 
-  // Ensure no run is under 2mi
+  // Ensure no run is under 2.5mi (meaningful training distance)
   for (const w of runs) {
-    if ((w.distanceMiles ?? 0) > 0 && (w.distanceMiles ?? 0) < 2) {
-      w.distanceMiles = 2;
+    if ((w.distanceMiles ?? 0) > 0 && (w.distanceMiles ?? 0) < 2.5) {
+      w.distanceMiles = 2.5;
     }
   }
 

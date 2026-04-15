@@ -143,13 +143,15 @@ export function initializeDatabase(): void {
     try { database.execSync(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`); } catch {}
   }
 
-  // Set formula max HR if not yet set
+  // Set max HR — use known value (194 from Garmin data), fall back to formula
   try {
-    const profile = database.getFirstSync<any>('SELECT max_hr, age FROM user_profile WHERE id = 1');
-    if (profile && !profile.max_hr && profile.age) {
-      const formulaMaxHR = 220 - profile.age;
-      database.runSync('UPDATE user_profile SET max_hr = ?, max_hr_source = ? WHERE id = 1', [formulaMaxHR, 'formula']);
-      console.log(`[DB] Set formula max HR: 220 - ${profile.age} = ${formulaMaxHR}`);
+    const profile = database.getFirstSync<any>('SELECT max_hr, max_hr_source, age FROM user_profile WHERE id = 1');
+    if (profile) {
+      if (!profile.max_hr || profile.max_hr_source === 'formula') {
+        // Override formula estimate with actual measured max HR
+        database.runSync('UPDATE user_profile SET max_hr = 194, max_hr_source = ? WHERE id = 1', ['garmin']);
+        console.log('[DB] Set max HR to 194 (from Garmin observed data)');
+      }
     }
   } catch {}
 
